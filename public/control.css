@@ -99,5 +99,3 @@
 .stationStandbyUnit{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06)}
 .stationStandbyUnit span{font-size:10px;color:#8fb3ca}
 .standbyTurnoutEditor textarea{width:100%;resize:vertical}
-
-.ackControlBadge{display:inline-block;margin-left:7px;padding:3px 6px;border-radius:4px;background:#176f47;color:#dff7e9;font-size:9px;font-weight:800}

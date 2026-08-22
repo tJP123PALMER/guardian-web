@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.8.2 Reliable MDT Dispatch"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.7 Consolidated Dispatch"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.8.2 Reliable MDT Dispatch",
+  version:"Guardian Operations v2.7 Consolidated Dispatch",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -596,4 +596,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.8.2 Reliable MDT Dispatch running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7 Consolidated Dispatch running on port ${PORT}`));
