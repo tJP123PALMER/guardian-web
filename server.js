@@ -185,10 +185,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.4.1 Standby + Book Off Fix"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.4.2 Standby Selection Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.4.1 Standby + Book Off Fix",
+  version:"Guardian Operations v2.4.2 Standby Selection Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -482,4 +482,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.4.1 Standby + Book Off Fix running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.4.2 Standby Selection Fix running on port ${PORT}`));

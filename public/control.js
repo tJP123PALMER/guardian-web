@@ -24,6 +24,13 @@ let controlView="overview",selectedIncidentId=null;
 const pending999Conversions=new Set();
 const pending999Dismissals=new Set();
 
+// Keep manual standby selections stable while live SSE/state refreshes rerender Control.
+const standbyDraft={
+  callsign:"",
+  destination:"",
+  note:"Maintain cover while another appliance is committed"
+};
+
 const incidentDrafts=new Map();
 
 function incidentDraft(inc){
@@ -547,9 +554,9 @@ function renderCover(){
  suggestions.innerHTML=`
  <div class="sectionTitle"><span>Manual Standby Move</span><span class="small">Standby appliances remain available for emergency mobilisation</span></div>
  <div class="formGrid">
-  <div class="field"><label>Appliance</label><select id="standbyUnit"><option value="">Select appliance...</option>${Object.entries(state.units||{}).filter(([cs,u])=>{const s=String(u.status||"").toLowerCase();return !u.incidentId&&!/off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(s)}).map(([cs,u])=>`<option value="${esc(cs)}">${esc(cs)} — ${esc(u.status||"Available")}</option>`).join("")}</select></div>
-  <div class="field"><label>Destination Station</label><select id="standbyDestination"><option value="">Select station...</option>${Object.keys(state.stations||{}).sort().map(st=>`<option value="${esc(st)}">${esc(st)}</option>`).join("")}</select></div>
-  <div class="field" style="grid-column:1/-1"><label>Control Note</label><input id="standbyNote" placeholder="Maintain cover while another appliance is committed"></div>
+  <div class="field"><label>Appliance</label><select id="standbyUnit"><option value="">Select appliance...</option>${Object.entries(state.units||{}).filter(([cs,u])=>{const s=String(u.status||"").toLowerCase();return !u.incidentId&&!/off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(s)}).map(([cs,u])=>`<option value="${esc(cs)}" ${String(standbyDraft.callsign)===String(cs)?"selected":""}>${esc(cs)} — ${esc(u.status||"Available")}</option>`).join("")}</select></div>
+  <div class="field"><label>Destination Station</label><select id="standbyDestination"><option value="">Select station...</option>${Object.keys(state.stations||{}).sort().map(st=>`<option value="${esc(st)}" ${String(standbyDraft.destination)===String(st)?"selected":""}>${esc(st)}</option>`).join("")}</select></div>
+  <div class="field" style="grid-column:1/-1"><label>Control Note</label><input id="standbyNote" value="${esc(standbyDraft.note)}" placeholder="Maintain cover while another appliance is committed"></div>
   <div class="formActions" style="grid-column:1/-1"><button class="primary" id="sendStandbyMove">SEND STANDBY MOVE</button></div>
  </div>
  <div class="sectionTitle"><span>Active Standby Moves</span><span class="small">Real incidents automatically override standby</span></div>
@@ -557,15 +564,28 @@ function renderCover(){
  <div class="sectionTitle"><span>Standby Suggestions</span><span class="small">Based on current live cover</span></div>
  ${moves.length?moves.map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.unit)} → ${esc(m.to)}</strong><span>Suggested standby move from ${esc(m.from)}</span></div><button class="secondary" data-suggest-standby="${esc(m.unit)}" data-cover-target="${esc(m.to)}">USE SUGGESTION</button></div>`).join(""):'<div class="emptyState"><strong>No standby move suggested</strong><span>Current configured stations do not provide a clear donor appliance.</span></div>'}`;
 
+ document.getElementById("standbyUnit")?.addEventListener("change",e=>{standbyDraft.callsign=e.target.value||""});
+ document.getElementById("standbyDestination")?.addEventListener("change",e=>{standbyDraft.destination=e.target.value||""});
+ document.getElementById("standbyNote")?.addEventListener("input",e=>{standbyDraft.note=e.target.value||""});
+
  document.getElementById("sendStandbyMove")?.addEventListener("click",async()=>{
-   const callsign=document.getElementById("standbyUnit")?.value||"";
-   const destination=document.getElementById("standbyDestination")?.value||"";
-   const note=document.getElementById("standbyNote")?.value||"";
+   const callsign=standbyDraft.callsign||document.getElementById("standbyUnit")?.value||"";
+   const destination=standbyDraft.destination||document.getElementById("standbyDestination")?.value||"";
+   const note=standbyDraft.note||document.getElementById("standbyNote")?.value||"";
    if(!callsign||!destination)return alert("Select an appliance and destination station.");
-   try{await command("createStandbyMove",{callsign,destination,note});await load()}catch(e){alert(e.message||"Unable to send standby move")}
+   try{
+     await command("createStandbyMove",{callsign,destination,note});
+     standbyDraft.callsign="";
+     standbyDraft.destination="";
+     standbyDraft.note="Maintain cover while another appliance is committed";
+     await load();
+   }catch(e){alert(e.message||"Unable to send standby move")}
  });
- document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=async()=>{
-   try{await command("createStandbyMove",{callsign:b.dataset.suggestStandby,destination:b.dataset.coverTarget,note:"Standby move recommended by Guardian cover board"});await load()}catch(e){alert(e.message)}
+ document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{
+   standbyDraft.callsign=b.dataset.suggestStandby||"";
+   standbyDraft.destination=b.dataset.coverTarget||"";
+   standbyDraft.note="Standby move recommended by Guardian cover board";
+   renderCover();
  });
  document.querySelectorAll("[data-cancel-standby]").forEach(b=>b.onclick=async()=>{try{await command("cancelStandbyMove",{id:b.dataset.cancelStandby});await load()}catch(e){alert(e.message)}});
  document.querySelectorAll("[data-return-standby]").forEach(b=>b.onclick=async()=>{try{await command("returnStandbyMove",{id:b.dataset.returnStandby});await load()}catch(e){alert(e.message)}});
