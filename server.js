@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.8 Panasonic MDT + ACK Tracking"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.8.1 MDT Delivery Restore"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.8 Panasonic MDT + ACK Tracking",
+  version:"Guardian Operations v2.8.1 MDT Delivery Restore",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -596,4 +596,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.8 Panasonic MDT + ACK Tracking running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.8.1 MDT Delivery Restore running on port ${PORT}`));

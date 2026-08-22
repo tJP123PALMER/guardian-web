@@ -487,9 +487,14 @@
   box-shadow:0 -6px 12px rgba(0,0,0,.12)!important;
 }
 
-/* v2.8 Panasonic-style incident screen */
+/* v2.8.1 Panasonic presentation; dispatch code unchanged from v2.7 */
 .incidentLayout,.incidentInfo{min-height:0!important;overflow:hidden!important}
-#incidentDetail{min-height:0!important;height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;padding:0!important;scrollbar-gutter:stable!important;scrollbar-width:auto!important;scrollbar-color:#50759b #e0e5e9!important}
+#incidentDetail{
+  min-height:0!important;height:100%!important;
+  overflow-y:scroll!important;overflow-x:hidden!important;
+  padding:0!important;scrollbar-gutter:stable!important;
+  scrollbar-width:auto!important;scrollbar-color:#50759b #e0e5e9!important
+}
 #incidentDetail::-webkit-scrollbar{width:14px}
 #incidentDetail::-webkit-scrollbar-track{background:#e0e5e9}
 #incidentDetail::-webkit-scrollbar-thumb{background:#50759b;border:3px solid #e0e5e9;border-radius:8px}
@@ -497,11 +502,12 @@
 .panTopGrid{display:grid;grid-template-columns:1.15fr 1fr 1fr;background:#e1e4e7;border-bottom:1px solid #aeb8c0}
 .panCell{padding:8px 12px;border-right:1px solid #b8c0c7}.panCell:last-child{border-right:0}
 .panCell label{display:block;font-size:12px;color:#5a6168;margin-bottom:3px}.panCell strong{font-size:17px}
-.panBody{padding:10px 14px 18px;min-height:420px}
+.panBody{padding:10px 14px 18px;min-height:430px}
 .panLine{display:grid;grid-template-columns:110px 1fr;gap:8px;padding:4px 0;font-size:17px}
-.panLine label{color:#555f68}.panFurther{white-space:pre-wrap;font-size:18px;line-height:1.35;margin:14px 0 18px;padding:8px 0;border-top:1px solid #c7ced4;border-bottom:1px solid #c7ced4}
+.panLine label{color:#555f68}
+.panFurther{white-space:pre-wrap;font-size:18px;line-height:1.35;margin:14px 0 18px;padding:8px 0;border-top:1px solid #c7ced4;border-bottom:1px solid #c7ced4}
 .panStandby{background:#fff3c8;border-left:4px solid #e2ad19;padding:8px 10px;margin:8px 0}
 .panAckStatus{padding:10px 14px;text-align:center;font-size:16px;background:#d7dadd;color:#59616a;border-top:1px solid #aeb7bf;border-bottom:1px solid #aeb7bf}
-.panBottomActions{display:flex;gap:0;position:static!important;background:#17395b;padding:0;margin:0}
+.panBottomActions{display:flex!important;position:static!important;gap:0!important;background:#17395b!important;padding:0!important;margin:0!important}
 .panBottomActions button{flex:1;min-height:54px;border:0;border-right:1px solid #405b75;background:#17395b;color:#fff;font-weight:700;font-size:15px}
 .panBottomActions .panAckBtn{background:#d91f2b}.panBottomActions .panAckBtn.acked{background:#78838d}

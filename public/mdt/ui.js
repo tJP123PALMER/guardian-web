@@ -168,28 +168,27 @@ function showIncident(i){
                Array.isArray(inc.assignedAppliances)?inc.assignedAppliances:
                Array.isArray(inc.appliances)?inc.appliances:[])
                .map(x=>typeof x==='string'?x:(x?.callsign||x?.unit||'')).filter(Boolean);
-  const assignedRoles=inc.assignedRoles||inc.applianceRoles||{};
-  const roleText=Object.keys(assignedRoles).length
-    ? Object.entries(assignedRoles).map(([cs,role])=>`${cs}: ${typeof role==='string'?role:(role?.role||role?.name||'')}`).join(', ')
+  const roles=inc.assignedRoles||inc.applianceRoles||{};
+  const roleText=Object.keys(roles).length
+    ? Object.entries(roles).map(([cs,r])=>`${cs}: ${typeof r==='string'?r:(r?.role||r?.name||'')}`).join(', ')
     : (inc.roles||'Not assigned');
+  const standby=!!(inc.isStandby||inc.isStandbyMove);
   const further=inc.description||inc.details||inc.notes||'No further information.';
   const risk=inc.specialRisk||inc.hazards||'None notified';
   const talkgroup=inc.talkgroup||inc.talkGroup||'Not assigned';
   const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))}, ${Math.round(Number(inc.y))}`:'—');
   const received=inc.time||inc.dispatchedAt||inc.createdAt||'—';
-  const incidentNo=turnoutIncidentNo(inc);
-  const standby=!!(inc.isStandby||inc.isStandbyMove);
 
   incidentDetail.innerHTML=`
     <div class="panasonicIncident">
       <div class="panTopGrid">
-        <div class="panCell"><label>Date / Time Received</label><strong>${escapeHtml(received)}</strong></div>
-        <div class="panCell"><label>Incident</label><strong>${escapeHtml(incidentNo)}</strong></div>
+        <div class="panCell"><label>Date / Time Received</label><strong>${escapeHtml(String(received))}</strong></div>
+        <div class="panCell"><label>Incident</label><strong>${escapeHtml(turnoutIncidentNo(inc))}</strong></div>
         <div class="panCell"><label>Map Reference</label><strong>${escapeHtml(mapRef)}</strong></div>
       </div>
       <div class="panBody">
         <div class="panLine"><label>To Attend:</label><strong>${escapeHtml(units.join(', ')||'—')}</strong></div>
-        <div class="panLine panAddress"><label>Address:</label><strong>${escapeHtml(inc.address||inc.location||'—')}</strong></div>
+        <div class="panLine"><label>Address:</label><strong>${escapeHtml(inc.address||inc.location||'—')}</strong></div>
         ${inc.postal?`<div class="panLine"><label>Postal:</label><span>${escapeHtml(inc.postal)}</span></div>`:''}
         <div class="panLine"><label>Type:</label><strong>${escapeHtml(inc.type||inc.title||'Incident')}</strong></div>
         <div class="panLine"><label>Special Risk:</label><span>${escapeHtml(String(risk))}</span></div>
@@ -199,9 +198,7 @@ function showIncident(i){
         <div class="panLine"><label>Talkgrp:</label><strong>${escapeHtml(talkgroup)}</strong></div>
         <div class="panLine"><label>Roles:</label><strong>${escapeHtml(roleText)}</strong></div>
       </div>
-      <div class="panAckStatus" id="panAckStatus">
-        ${inc.acknowledgedBy?`Acknowledged by ${escapeHtml(String(inc.acknowledgedBy))}${inc.acknowledgedAt?` at ${escapeHtml(String(inc.acknowledgedAt))}`:''}`:'Not acknowledged'}
-      </div>
+      <div class="panAckStatus">Awaiting acknowledgement</div>
       <div class="panBottomActions">
         <button id="ackBtn" class="panAckBtn">ACKNOWLEDGE</button>
         ${inc.x!=null&&inc.y!=null?'<button id="routeBtn">SET ROUTE</button>':''}
@@ -213,9 +210,11 @@ function showIncident(i){
     nui('ackIncident',{id:inc.id});
     const b=document.getElementById('ackBtn');
     b.textContent='ACKNOWLEDGED'; b.disabled=true; b.classList.add('acked');
+    const a=incidentDetail.querySelector('.panAckStatus');
+    if(a)a.textContent='Acknowledged by this appliance';
   };
   const routeBtn=document.getElementById('routeBtn');
-  if(routeBtn) routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
+  if(routeBtn)routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
   document.getElementById('clearBtn').onclick=()=>{incidents.splice(i,1);renderIncidents();};
 }
 function applyMap(){ if(map) map.style.transform=`translate(${mapX}px,${mapY}px) scale(${mapScale})`; }
