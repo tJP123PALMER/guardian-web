@@ -103,7 +103,8 @@ let state = {
   applianceSkills: {},
   stations: {},
   bookings: {},
-  eventLog: []
+  eventLog: [],
+  standbyMoves: []
 };
 
 function auth(req,res,next){
@@ -184,10 +185,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.3.2 Stable Dispatch"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.4.1 Standby + Book Off Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.3.2 Stable Dispatch",
+  version:"Guardian Operations v2.4.1 Standby + Book Off Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -262,7 +263,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","cancelStandbyMove","returnStandbyMove","ackStandbyMove"
 ]);
 
 function queueCommand(action,data={}){
@@ -323,6 +324,59 @@ app.post("/api/command",(req,res)=>{
     const dismiss=queueCommand("dismiss999Call",{id:sourceId,callId:sourceId,reason:"Converted to incident"});
     pushEvent("999Converted",{callId:sourceId,createCommandId:create.id});
     return res.json({ok:true,command:create,dismissCommand:dismiss,converted:incidentData});
+  }
+
+
+  state.standbyMoves ||= [];
+  const activeStandby=(cs)=>state.standbyMoves.find(m=>String(m.callsign||"").toUpperCase()===String(cs||"").toUpperCase() && !["cancelled","completed","superseded"].includes(m.state));
+
+  if(action==="createStandbyMove" || action==="standbyMove"){
+    const callsign=String(data.callsign||"").trim().toUpperCase();
+    const destination=String(data.destination||data.station||"").trim();
+    if(!callsign||!destination) return res.status(400).json({ok:false,error:"Callsign and destination station are required"});
+    const u=state.units?.[callsign]||{};
+    const st=String(u.status||"").toLowerCase();
+    if(u.incidentId || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
+      return res.status(409).json({ok:false,error:`${callsign} is committed or unavailable`});
+    if(activeStandby(callsign)) return res.status(409).json({ok:false,error:`${callsign} already has an active standby move`});
+
+    const move={id:id(),type:"standby_move",callsign,
+      sourceStation:state.callSignStations?.[callsign]||u.station||"Unknown",
+      destination,note:String(data.note||data.reason||""),state:"sent",
+      status:"Standby Move Sent",sentAt:now()};
+    state.standbyMoves.unshift(move);
+    pushEvent("standbyMoveCreated",move); touch();
+    const command=queueCommand("standbyMove",move);
+    return res.json({ok:true,move,command});
+  }
+
+  if(action==="cancelStandbyMove" || action==="returnStandbyMove"){
+    const move=state.standbyMoves.find(m=>String(m.id)===String(data.id||data.moveId));
+    if(!move) return res.status(404).json({ok:false,error:"Standby move not found"});
+    move.state=action==="returnStandbyMove"?"returning":"cancelled";
+    move.status=action==="returnStandbyMove"?"Return to Home Station":"Standby Cancelled";
+    move.updatedAt=now(); pushEvent(action,move); touch();
+    return res.json({ok:true,move,command:queueCommand(action,{id:move.id,callsign:move.callsign})});
+  }
+
+  if(action==="ackStandbyMove"){
+    const move=state.standbyMoves.find(m=>String(m.id)===String(data.id||data.moveId));
+    if(!move) return res.status(404).json({ok:false,error:"Standby move not found"});
+    move.state="acknowledged"; move.status="Mobile to Standby Station"; move.acknowledgedAt=now();
+    if(state.units?.[move.callsign]) state.units[move.callsign]={...state.units[move.callsign],status:"Mobile to Standby Station"};
+    pushEvent("standbyMoveAcknowledged",move); touch();
+    return res.json({ok:true,move,command:queueCommand("ackStandbyMove",{id:move.id,callsign:move.callsign})});
+  }
+
+  // Emergency incident mobilisation automatically supersedes standby.
+  if(action==="assignAppliance"){
+    const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
+    const move=activeStandby(cs);
+    if(move){
+      move.state="superseded"; move.status="Superseded by Incident";
+      move.supersededAt=now(); move.supersededByIncident=data.incidentId||data.id||null;
+      pushEvent("standbyMoveSuperseded",move); touch();
+    }
   }
 
   if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
@@ -406,6 +460,7 @@ app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state
 app.get("/api/operational/incidents",(_req,res)=>res.json({ok:true,incidents:state.incidents}));
 app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:dedupe999Calls(state.calls999)}));
 app.get("/api/operational/events",(_req,res)=>res.json({ok:true,events:state.eventLog}));
+app.get("/api/operational/standby",(_req,res)=>res.json({ok:true,standbyMoves:state.standbyMoves||[]}));
 app.get("/api/operational/cover",(_req,res)=>{
   const stations={};
   for(const [station,callsigns] of Object.entries(state.stations||{})){
@@ -427,4 +482,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.3.2 Stable Dispatch running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.4.1 Standby + Book Off Fix running on port ${PORT}`));

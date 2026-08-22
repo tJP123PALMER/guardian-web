@@ -127,7 +127,10 @@
 
 
   function bookedUnit() {
-    return unitMap()[upper(callsign)] || null;
+    const cs=upper(callsign);
+    const u=unitMap()[cs] || null;
+    const booking=state.bookings?.[cs] || null;
+    return (u?.webBooked===true || booking?.webBooked===true) ? (u || booking) : null;
   }
 
   function updateBookUi() {
@@ -175,10 +178,14 @@
   async function bookOff() {
     if(!callsign) return;
     await command("webBookOff",{callsign});
+    const cs=upper(callsign);
     const next={...(state.units||{})};
-    const existing=next[upper(callsign)];
-    if(existing?.webOnly || !existing?.source) delete next[upper(callsign)];
+    const existing=next[cs];
+    if(existing?.webOnly || !existing?.source) delete next[cs];
+    else if(existing) next[cs]={...existing,webBooked:false,webOnly:false};
     state.units=next;
+    state.bookings={...(state.bookings||{})};
+    delete state.bookings[cs];
     optimisticStatus="";
     lastStatusPosted="";
     updateBookUi();
@@ -328,6 +335,31 @@
     const p = evt.payload || {};
     const target = upper(p.callsign || p.target || "");
 
+    if (evt.kind === "standbyMoveCreated") {
+      const move=p;
+      if(!callsign || upper(move.callsign)!==upper(callsign)) return;
+      const fake={
+        id:`STANDBY:${move.id}`,
+        type:"STANDBY MOVE",
+        priority:"Standby",
+        address:move.destination||"",
+        postal:"",
+        caller:"CONTROL",
+        notes:move.note||"Proceed to standby station and acknowledge Control.",
+        details:move.note||"",
+        assignedUnits:[upper(move.callsign)],
+        playAlert:true,
+        standbyMoveId:move.id,
+        isStandbyMove:true
+      };
+      post({type:"incident",item:fake});
+      post({type:"setCallsign",callsign:upper(callsign)});
+      post({type:"alert"});
+      post({type:"open"});
+      post({type:"mobilising"});
+      return;
+    }
+
     if (evt.kind === "mdtMobilise") {
       if (!callsign || target !== upper(callsign)) return;
       const inc = findIncident(p.incidentId, p.incident);
@@ -415,7 +447,11 @@
     } else if (name === "sendMessage") {
       await command("webMdtMessage", { callsign, message:data.message });
     } else if (name === "ackIncident") {
-      await command("webMdtAck", { callsign, incidentId:data.id });
+      if(String(data.id||"").startsWith("STANDBY:")){
+        await command("ackStandbyMove",{callsign,moveId:String(data.id).slice(8)});
+      }else{
+        await command("webMdtAck", { callsign, incidentId:data.id });
+      }
     } else if (name === "setIncidentWaypoint") {
       console.info("[Guardian Web MDT] waypoint selected", data);
     }
@@ -442,7 +478,7 @@
         if (m.type === "state") {
           state = { ...state, ...m.payload };
           syncStateToMdt(false);
-        } else if (m.type === "fivemEvent") {
+        } else if (m.type === "fivemEvent" || m.type === "event") {
           processRealtimeEvent(m.payload);
         }
       } catch (err) {

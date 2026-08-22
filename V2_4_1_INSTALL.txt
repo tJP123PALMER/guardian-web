@@ -1,0 +1,14 @@
+Guardian Operations v2.4.1
+
+Fixes:
+- Web MDT Book Off now works even if the same callsign remains live in FiveM.
+- Web booking state is based on webBooked/bookings, not simply "unit exists".
+- guardian_web calls Guardian_control's real Book On/Book Off exports.
+- Manual standby moves.
+- Standby appears on in-game MDT with the same alert sound + mobilisation popup.
+- Web MDT also receives standby as a dispatch.
+- Standby remains mobilisable; a real incident supersedes it automatically.
+- v2.3.2 duplicate 999 protections retained.
+
+FiveM files included under fivem_current_patched are patched directly from your
+Shockbyte 18:18 upload. KEEP your current guardian_web/shared/config.lua value.
