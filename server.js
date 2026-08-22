@@ -30,7 +30,6 @@ let state = {
   applianceSkills: {},
   stations: {},
   bookings: {},
-  tracking: {},
   eventLog: []
 };
 
@@ -106,10 +105,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Live Operations v2"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.3 Dispatch Upgrade"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Live Operations v2",
+  version:"Guardian Operations v2.3 Dispatch Upgrade",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -150,7 +149,6 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
   if(body.applianceSkills && typeof body.applianceSkills === "object") state.applianceSkills = body.applianceSkills;
   if(body.bookings && typeof body.bookings === "object") state.bookings = body.bookings;
-  if(body.tracking && typeof body.tracking === "object") state.tracking = body.tracking;
 
   state.connected = true;
   state.lastHeartbeat = now();
@@ -174,43 +172,62 @@ app.post("/api/fivem/event",auth,(req,res)=>{
   res.json({ok:true,event:e});
 });
 
-app.post("/api/fivem/tracking",auth,(req,res)=>{
-  const t = req.body || {};
-  const cs = String(t.callsign || "").trim();
-  if(!cs) return res.status(400).json({ok:false,error:"callsign required"});
-  state.tracking[cs] = {
-    callsign:cs,
-    x:Number(t.x||0),
-    y:Number(t.y||0),
-    z:Number(t.z||0),
-    heading:Number(t.heading||0),
-    speed:Number(t.speed||0),
-    status:t.status || state.units?.[cs]?.status || "Unknown",
-    incidentId:t.incidentId || state.units?.[cs]?.incidentId || null,
-    updatedAt:now()
-  };
-  if(state.units[cs]){
-    state.units[cs] = {...state.units[cs], lastSeen:now()};
-  }
-  broadcast("tracking", state.tracking[cs]);
-  res.json({ok:true});
-});
+
+const aliases = {
+  updateIncidentDetails: "updateIncident",
+  mobiliseAppliance: "assignAppliance"
+};
 
 const allowed = new Set([
-  "createIncident","updateIncident","closeIncident","reopenIncident",
+  "createIncident","createIncidentFrom999","updateIncident","closeIncident","reopenIncident",
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
-  "setApplianceCrew","setCrewMember","setIncidentRole",
+  "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","mobiliseAppliance","setSceneStatus"
+  "requestStatus","setSceneStatus","standbyMove"
 ]);
 
-app.post("/api/command",(req,res)=>{
-  const action = String(req.body?.action || "");
-  const data = req.body?.data || {};
-  if(!allowed.has(action)) return res.status(400).json({ok:false,error:"Unsupported action"});
-  const command = {id:id(),action,data,createdAt:now(),acknowledged:false};
-  commands.set(command.id, command);
+function queueCommand(action,data={}){
+  const command={id:id(),action,data,createdAt:now(),acknowledged:false};
+  commands.set(command.id,command);
   pushEvent("commandQueued",{id:command.id,action,data});
+  return command;
+}
+
+function find999(callId){
+  return (state.calls999||[]).find(c=>String(c.id)===String(callId));
+}
+
+app.post("/api/command",(req,res)=>{
+  let action=String(req.body?.action||"");
+  const data=req.body?.data||{};
+  action=aliases[action]||action;
+
+  if(action==="createIncidentFrom999"){
+    const call=find999(data.callId);
+    if(!call) return res.status(404).json({ok:false,error:"999 call no longer exists"});
+    const incidentData={
+      source999Id:call.id,
+      type:call.type||"999 EMERGENCY",
+      priority:call.priority||"Immediate",
+      address:call.address||call.location||"",
+      location:call.location||call.address||"",
+      postal:call.postal||call.postcode||"",
+      caller:call.caller||call.name||"",
+      phone:call.phone||call.telephone||"",
+      notes:call.description||call.details||call.message||"",
+      details:call.description||call.details||call.message||"",
+      enableMDT:true,
+      enableTurnout:false,
+      enablePager:false
+    };
+    const create=queueCommand("createIncident",incidentData);
+    const dismiss=queueCommand("dismiss999Call",{id:call.id,callId:call.id,reason:"Converted to incident"});
+    pushEvent("999Converted",{callId:call.id,createCommandId:create.id});
+    return res.json({ok:true,command:create,dismissCommand:dismiss,converted:incidentData});
+  }
+
+  if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
+  const command=queueCommand(action,data);
   res.json({ok:true,command});
 });
 
@@ -229,6 +246,16 @@ app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state
 app.get("/api/operational/incidents",(_req,res)=>res.json({ok:true,incidents:state.incidents}));
 app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:state.calls999}));
 app.get("/api/operational/events",(_req,res)=>res.json({ok:true,events:state.eventLog}));
+app.get("/api/operational/cover",(_req,res)=>{
+  const stations={};
+  for(const [station,callsigns] of Object.entries(state.stations||{})){
+    const rows=(callsigns||[]).map(cs=>({callsign:cs,status:state.units?.[cs]?.status||"OFF RUN",live:!!state.units?.[cs]}));
+    const available=rows.filter(r=>/AVAILABLE|HOME STATION/i.test(r.status)).length;
+    const committed=rows.filter(r=>/MOBILE|ATTENDANCE|INCIDENT/i.test(r.status)).length;
+    stations[station]={configured:rows.length,live:rows.filter(r=>r.live).length,available,committed,level:available===0?"RED":available===1?"AMBER":"GREEN",units:rows};
+  }
+  res.json({ok:true,stations});
+});
 
 const controlFile = path.join(__dirname,"public","control","index.html");
 const mdtFile = path.join(__dirname,"public","mdt","index.html");
@@ -240,4 +267,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Live Operations v2 running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.3 Dispatch Upgrade running on port ${PORT}`));

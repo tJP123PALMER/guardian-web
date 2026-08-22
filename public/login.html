@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian Operations · Sign In</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Segoe UI",Arial,sans-serif;background:#07111a;color:#eaf1f6}
+body{display:grid;place-items:center;background:radial-gradient(circle at 50% 0%,#102c42 0,#07111a 42%)}
+.card{width:min(430px,92vw);background:#0c1924;border:1px solid #284156;border-radius:10px;box-shadow:0 28px 80px #0008;overflow:hidden}
+.brand{padding:28px 30px 22px;border-bottom:1px solid #1f3547}.brandTop{display:flex;align-items:center;gap:12px}
+.mark{width:42px;height:42px;border-radius:7px;background:#cc2931;display:grid;place-items:center;font-weight:900;font-size:20px}
+.brand strong,.brand span{display:block}.brand strong{letter-spacing:1.7px;font-size:14px}.brand span{font-size:9px;color:#6f8da3;letter-spacing:1.5px;margin-top:3px}
+.brand p{margin:18px 0 0;color:#89a0b1;font-size:12px;line-height:1.55}
+form{padding:26px 30px 30px}label{display:block;font-size:9px;letter-spacing:1px;color:#748fa3;font-weight:800;margin-bottom:14px}
+input{display:block;width:100%;margin-top:7px;padding:12px;background:#071620;color:#fff;border:1px solid #2c4a60;border-radius:5px;outline:0}
+input:focus{border-color:#4b8cba;box-shadow:0 0 0 2px #2a63852b}
+button{width:100%;margin-top:6px;padding:12px;border:1px solid #387aaa;border-radius:5px;background:#176796;color:#fff;font-weight:900;letter-spacing:.5px;cursor:pointer}
+button:hover{background:#1f79ad}button:disabled{opacity:.6;cursor:wait}
+#error{min-height:18px;margin:12px 0 0;color:#e9858b;font-size:10px;text-align:center}
+.footer{border-top:1px solid #1c3142;padding:13px 30px;color:#526e82;font-size:9px;text-align:center}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <div class="brandTop"><div class="mark">G</div><div><strong>GUARDIAN OPERATIONS</strong><span>FIRE & RESCUE COMMAND PLATFORM</span></div></div>
+    <p>Sign in to your authorised Control Centre or Player MDT account.</p>
+  </div>
+  <form id="loginForm">
+    <label>USERNAME<input id="username" autocomplete="username" autofocus></label>
+    <label>PASSWORD<input id="password" type="password" autocomplete="current-password"></label>
+    <button id="loginBtn">SIGN IN</button>
+    <div id="error"></div>
+  </form>
+  <div class="footer">Authorised operational access only</div>
+</div>
+<script>
+document.getElementById("loginForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const btn=document.getElementById("loginBtn"),err=document.getElementById("error");
+ btn.disabled=true;btn.textContent="SIGNING IN…";err.textContent="";
+ try{
+   const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+     username:document.getElementById("username").value,
+     password:document.getElementById("password").value
+   })});
+   const j=await r.json();
+   if(!r.ok) throw new Error(j.error||"Sign in failed");
+   location.href=j.redirect||"/";
+ }catch(e){err.textContent=e.message}
+ finally{btn.disabled=false;btn.textContent="SIGN IN"}
+});
+</script>
+</body></html>

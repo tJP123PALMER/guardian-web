@@ -19,7 +19,7 @@ function allConfiguredCallsigns(){
  return [...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper),...Object.keys(state.callSignStations||{}).map(upper)])].filter(Boolean).sort();
 }
 
-let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{}};
+let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{},stations:{},eventLog:[]};
 let controlView="overview",selectedIncidentId=null;
 
 const incidentDrafts=new Map();
@@ -156,7 +156,7 @@ function render(){
  $("overviewUnits").innerHTML=units.length?units.slice(0,8).map(u=>`<div class="row"><div class="rowMeta"><strong>${esc(u.callsign)}</strong><span>${esc(stationFor(u.callsign)||"")}</span></div><span class="status ${statusClass(u.status)}">${esc(u.status||"OFF RUN")}</span></div>`).join(""):empty("No live appliances");
  renderIncidentList();
  if(!incidentEditorShouldHold())renderIncidentDetail();
- renderUnits();renderCalls();renderMessages();renderStations();renderMdt();
+ renderUnits();renderCalls();renderMessages();renderStations();renderCover();renderMdt();
 }
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
@@ -441,8 +441,33 @@ function renderUnits(){
  $("unitTable").innerHTML=`<div class="tableHead"><div>CALLSIGN</div><div>STATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+configured.map(cs=>`<div class="tableRow"><div><strong>${esc(cs)}</strong></div><div>${esc(stationFor(cs)||"—")}</div><div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div><div><span class="status ${statusClass(currentStatus(cs))}">${esc(currentStatus(cs))}</span></div><div>${state.units?.[cs]?"SIGNED ON":"OFF RUN"}</div></div>`).join("");
 }
 function renderCalls(){
- $("callsList").innerHTML=state.calls999.length?state.calls999.map(c=>`<div class="row"><div class="rowMeta"><strong>999 CALL #${esc(c.id||"")}</strong><span>${esc(c.location||c.address||"Location not supplied")}</span><small>${esc(c.description||"")}</small></div><button class="primary" data-call="${esc(c.id)}">CREATE INCIDENT</button></div>`).join(""):empty("999 queue clear");
- document.querySelectorAll("[data-call]").forEach(b=>b.onclick=()=>command("createIncidentFrom999",{callId:Number(b.dataset.call)}));
+ const calls=state.calls999||[];
+ $("callsList").innerHTML=calls.length?calls.map(c=>{
+   const idv=esc(c.id||"");
+   const location=esc(c.location||c.address||"Location not supplied");
+   const postal=esc(c.postal||c.postcode||"");
+   const caller=esc(c.caller||c.name||"Unknown caller");
+   const phone=esc(c.phone||c.telephone||"");
+   const description=esc(c.description||c.details||c.message||"No further details supplied");
+   const priority=esc(c.priority||"Immediate");
+   return `<article class="callCard">
+     <div class="callHead"><div><span class="panelKicker">INCOMING 999</span><strong>CALL #${idv}</strong></div><span class="callPriority">${priority}</span></div>
+     <div class="callFacts"><div><span>LOCATION</span><b>${location}</b></div><div><span>POSTAL</span><b>${postal||"—"}</b></div><div><span>CALLER</span><b>${caller}</b></div><div><span>CONTACT</span><b>${phone||"—"}</b></div></div>
+     <div class="callNarrative">${description}</div>
+     <div class="callActions"><button class="secondary" data-dismiss-call="${idv}">DISMISS</button><button class="primary" data-call="${idv}">CREATE INCIDENT</button></div>
+   </article>`;
+ }).join(""):empty("999 queue clear");
+ document.querySelectorAll("[data-call]").forEach(b=>b.onclick=async()=>{
+   b.disabled=true;b.textContent="CREATING...";
+   try{await command("createIncidentFrom999",{callId:b.dataset.call});setControlView("incidents");setTimeout(()=>load().catch(()=>{}),500)}
+   catch(err){console.error(err);alert("Unable to create incident from this 999 call. The call has been left in the queue.")}
+   finally{b.disabled=false;b.textContent="CREATE INCIDENT"}
+ });
+ document.querySelectorAll("[data-dismiss-call]").forEach(b=>b.onclick=async()=>{
+   if(!confirm(`Dismiss 999 call #${b.dataset.dismissCall}?`))return;
+   try{await command("dismiss999Call",{id:b.dataset.dismissCall,callId:b.dataset.dismissCall,reason:"Dismissed by Web Control"});setTimeout(()=>load().catch(()=>{}),300)}
+   catch(err){console.error(err);alert("Unable to dismiss the call.")}
+ });
 }
 function renderMessages(){
  $("messageTarget").innerHTML='<option value="ALL">All units</option>'+liveUnits().map(u=>`<option>${esc(u.callsign)}</option>`).join("");
@@ -470,6 +495,38 @@ function renderStations(){
      <footer>${list.length} configured appliance${list.length===1?"":"s"}</footer>
    </article>`;
  }).join(""):empty("No station configuration received");
+}
+function coverData(){
+ const groups={};
+ for(const cs of allConfiguredCallsigns()){
+   const station=stationFor(cs)||"Unassigned / Command";
+   (groups[station]=groups[station]||[]).push(cs);
+ }
+ return Object.entries(groups).map(([station,list])=>{
+   const rows=list.map(cs=>({callsign:cs,status:currentStatus(cs),live:!!state.units?.[cs]}));
+   const available=rows.filter(r=>/AVAILABLE|HOME STATION/i.test(r.status)).length;
+   const mobile=rows.filter(r=>/MOBILE|ATTENDANCE|INCIDENT/i.test(r.status)).length;
+   return {station,list,rows,available,mobile,live:rows.filter(r=>r.live).length,level:available===0?"red":available===1?"amber":"green"};
+ }).sort((a,b)=>a.station.localeCompare(b.station));
+}
+function renderCover(){
+ const summary=$("coverSummary"),suggestions=$("coverSuggestions"); if(!summary||!suggestions)return;
+ const data=coverData();
+ summary.innerHTML=data.length?data.map(s=>`<article class="coverCard ${s.level}"><header><div><span>STATION COVER</span><strong>${esc(s.station)}</strong></div><b>${s.available} AVAILABLE</b></header><div class="coverStats"><span>${s.live}/${s.list.length} live</span><span>${s.mobile} committed</span><span>${s.list.length} configured</span></div></article>`).join(""):empty("No station configuration received");
+ const deficits=data.filter(s=>s.available===0);
+ const donors=data.filter(s=>s.available>=2);
+ const moves=[];
+ for(const target of deficits){
+   const donor=donors.sort((a,b)=>b.available-a.available)[0]; if(!donor)continue;
+   const unit=donor.rows.find(r=>/AVAILABLE|HOME STATION/i.test(r.status)); if(!unit)continue;
+   moves.push({unit:unit.callsign,from:donor.station,to:target.station});
+ }
+ suggestions.innerHTML=moves.length?moves.map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.unit)} → ${esc(m.to)}</strong><span>Suggested standby move from ${esc(m.from)}</span></div><button class="secondary" data-cover-message="${esc(m.unit)}" data-cover-target="${esc(m.to)}">MESSAGE UNIT</button></div>`).join(""):'<div class="emptyState"><strong>No standby move suggested</strong><span>Current configured stations do not provide a clear donor appliance.</span></div>';
+ document.querySelectorAll("[data-cover-message]").forEach(b=>b.onclick=async()=>{
+   const cs=b.dataset.coverMessage,target=b.dataset.coverTarget;
+   await command("sendMessage",{target:cs,message:`Standby move requested: proceed to ${target}. Acknowledge Control.`});
+   alert(`Standby instruction sent to ${cs}.`);
+ });
 }
 function renderMdt(){
  const callsigns=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
@@ -512,13 +569,3 @@ window.addEventListener("online",()=>load().catch?.(()=>{}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
 
 
-
-// Guardian Live Operations v2 tracking helpers
-window.guardianTracking = {
-  last: {},
-  ingest(t){ if(t?.callsign) this.last[t.callsign]=t; },
-  stale(callsign, ms=15000){
-    const t=this.last[callsign];
-    return !t || (Date.now()-Date.parse(t.updatedAt||0)>ms);
-  }
-};

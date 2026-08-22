@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian Administration</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07111a;color:#e8f0f5;font:12px Inter,"Segoe UI",Arial}
+header{height:60px;border-bottom:1px solid #243b4d;background:#091622;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+header strong{letter-spacing:1.5px}main{max-width:1150px;margin:32px auto;padding:0 20px}
+.panel{background:#0b1924;border:1px solid #233d50;border-radius:7px;margin-bottom:16px;overflow:hidden}
+.panel h2{font-size:14px;margin:0;padding:16px;border-bottom:1px solid #20384a}
+.form{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;padding:14px}
+input,select{background:#071620;color:#fff;border:1px solid #2b495e;border-radius:4px;padding:9px}
+button{background:#195f89;color:#fff;border:1px solid #3478a4;border-radius:4px;padding:9px 12px;font-weight:800;cursor:pointer}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #1b3242}th{font-size:8px;letter-spacing:1px;color:#6e8ba0}
+small{color:#6d8799}.muted{color:#6e8798}.danger{background:#4c2228;border-color:#793941}
+</style></head><body>
+<header><strong>GUARDIAN ADMINISTRATION</strong><div><button onclick="location.href='/control/'">CONTROL</button> <button id="logout">SIGN OUT</button></div></header>
+<main>
+<section class="panel"><h2>Create Account</h2><div class="form">
+<input id="u" placeholder="Username"><input id="n" placeholder="Display name"><input id="p" type="password" placeholder="Password (8+)">
+<select id="r"><option value="player">Player / MDT</option><option value="control">Control</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select>
+<button id="create">CREATE</button></div></section>
+<section class="panel"><h2>Accounts</h2><table><thead><tr><th>USERNAME</th><th>DISPLAY NAME</th><th>ROLE</th><th>STATUS</th><th>LAST LOGIN</th></tr></thead><tbody id="rows"></tbody></table></section>
+</main>
+<script>
+async function api(url,opt){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||"Request failed");return j}
+async function load(){try{const j=await api("/api/admin/users");document.getElementById("rows").innerHTML=j.users.map(x=>`<tr><td><strong>${x.username}</strong></td><td>${x.display_name}</td><td>${x.role}</td><td>${x.enabled?"Enabled":"Disabled"}</td><td><small>${x.last_login_at?new Date(x.last_login_at).toLocaleString():"Never"}</small></td></tr>`).join("")}catch(e){if(e.message==="Forbidden")location.href="/control/";}}
+document.getElementById("create").onclick=async()=>{try{await api("/api/admin/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,displayName:n.value,password:p.value,role:r.value})});u.value=n.value=p.value="";load()}catch(e){alert(e.message)}};
+document.getElementById("logout").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
+load();
+</script></body></html>
