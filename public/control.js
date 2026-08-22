@@ -307,7 +307,7 @@ function renderIncidentDetail(){
          ${assigned.map(cs=>`<tr>
            <td><strong>${esc(cs)}</strong></td>
            <td>${standbyStationFor(cs)?`<strong>${esc(standbyStationFor(cs))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(cs)||"—")}</small>`:esc(stationFor(cs)||"")}</td>
-           <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}</td>
+           <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}${inc.acknowledgedBy?.[cs]?`<small class="ackControlBadge">ACK ${esc(inc.acknowledgedAt?.[cs]||"")}</small>`:""}</td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
            <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
          </tr>`).join("")}
