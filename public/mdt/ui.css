@@ -456,3 +456,33 @@
 .turnoutSlip{min-height:min-content;padding-bottom:6px}
 .turnoutActions{position:sticky;bottom:0;z-index:50;background:rgba(245,246,247,.98);border-top:2px solid #2d5f97;padding:10px 0 8px;margin-top:12px;box-shadow:0 -5px 12px rgba(0,0,0,.10)}
 .turnoutActions button{min-height:44px}
+
+/* v2.7 reliable turnout scrolling */
+.incidentLayout{min-height:0!important;overflow:hidden!important}
+.incidentInfo{min-height:0!important;overflow:hidden!important}
+#incidentDetail{
+  min-height:0!important;
+  height:100%!important;
+  overflow-y:scroll!important;
+  overflow-x:hidden!important;
+  scrollbar-gutter:stable!important;
+  overscroll-behavior:contain;
+  padding:16px 18px 100px 16px!important;
+  scrollbar-width:auto;
+  scrollbar-color:#557a9f #d7e0e7;
+}
+#incidentDetail::-webkit-scrollbar{width:16px}
+#incidentDetail::-webkit-scrollbar-track{background:#d7e0e7;border-left:1px solid #9aabb8}
+#incidentDetail::-webkit-scrollbar-thumb{background:#557a9f;border:3px solid #d7e0e7;border-radius:8px}
+#incidentDetail::-webkit-scrollbar-thumb:hover{background:#3d658c}
+.turnoutSlip{min-height:max-content!important;padding-bottom:15px}
+.turnoutActions{
+  position:sticky!important;
+  bottom:0!important;
+  z-index:100!important;
+  background:#f5f6f7!important;
+  border-top:2px solid #2d5f97!important;
+  padding:10px 0!important;
+  margin-top:12px!important;
+  box-shadow:0 -6px 12px rgba(0,0,0,.12)!important;
+}

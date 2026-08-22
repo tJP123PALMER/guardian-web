@@ -147,11 +147,16 @@ function wireMessageControls(){
 
 wireMessageControls();
 
+function turnoutIncidentNo(inc){
+  const raw=String(inc?.incidentNumber||inc?.id||"");
+  const digits=raw.replace(/\D/g,"");
+  return digits.length>=5?digits.slice(-5):digits.padStart(5,"0");
+}
 function renderIncidents(){
   incidentTabs.innerHTML='';
   if(!incidents.length){ incidentDetail.innerHTML='<h3>Mobile Available</h3><p>No active incidents.</p>'; return; }
   incidents.forEach((inc,i)=>{
-    const b=document.createElement('button'); b.className='incident'; b.textContent=`#${inc.id} ${(inc.isStandby||inc.isStandbyMove)?'STANDBY · ':''}${inc.type||'Incident'}`;
+    const b=document.createElement('button'); b.className='incident'; b.textContent=`#${turnoutIncidentNo(inc)} ${(inc.isStandby||inc.isStandbyMove)?'STANDBY · ':''}${inc.type||'Incident'}`;
     b.onclick=()=>{document.querySelectorAll('.incident').forEach(x=>x.classList.remove('activeIncident'));b.classList.add('activeIncident');showIncident(i);};
     incidentTabs.appendChild(b);
   });
@@ -177,7 +182,7 @@ function showIncident(i){
     <div class="turnoutSlip ${standby?'standbySlip':''}">
       <div class="turnoutHeader">
         <div><span>GUARDIAN TURNOUT</span><strong>${standby?'STANDBY COVER':'INCIDENT'}</strong></div>
-        <div class="turnoutNumber">INC NO ${escapeHtml(String(inc.id??'—'))}</div>
+        <div class="turnoutNumber">INC NO ${escapeHtml(turnoutIncidentNo(inc))}</div>
       </div>
       <div class="turnoutGrid">
         <div class="turnoutWide"><label>TO ATTEND</label><strong>${escapeHtml(units.join(', ')||callsignBox.textContent||'—')}</strong></div>
@@ -215,7 +220,12 @@ window.addEventListener('message',e=>{
     case 'setCallsign': callsignBox.textContent=d.callsign||'UNSET'; updateAgencyDisplay(); renderMessages(); break;
     case 'setStatus': currentStatus=d.status||currentStatus; liveStatus.textContent=currentStatus; if(!d.preserveSelection) selectedStatus=null; buildStatuses(); if(selectedStatus){const pb=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(pb)pb.classList.add('pending');} break;
     case 'loadIncidents': incidents=Array.isArray(d.incidents)?d.incidents:incidents; renderIncidents(); break;
-    case 'incident': if(d.item) { incidents.push(d.item); renderIncidents(); } break;
+    case 'incident': if(d.item) {
+      const idx=incidents.findIndex(x=>String(x.id)===String(d.item.id));
+      if(idx>=0) incidents[idx]={...incidents[idx],...d.item};
+      else incidents.push(d.item);
+      renderIncidents();
+    } break;
     case 'message': {
       if(!d.item) break;
       const item=d.item;

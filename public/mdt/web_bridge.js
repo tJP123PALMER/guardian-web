@@ -352,7 +352,7 @@
       const move=p;
       if(!callsign || upper(move.callsign)!==upper(callsign)) return;
       const fake={
-        id:`STANDBY:${move.id}`,
+        id:String(move.incidentNumber||"00000"),
         type:"STANDBY COVER",
         title:`Standby - ${move.destination||"Cover"}`,
         priority:"Standby",
@@ -367,6 +367,7 @@
         assignedAppliances:[upper(move.callsign)],
         playAlert:true,
         standbyMoveId:move.id,
+        incidentNumber:move.incidentNumber,
         standbySourceStation:move.sourceStation||"",
         standbyDestination:move.destination||"",
         isStandby:true,

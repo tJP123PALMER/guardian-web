@@ -188,7 +188,7 @@ function render(){
  $("lastSync").textContent=state.updatedAt?`Last sync ${new Date(state.updatedAt).toLocaleTimeString()}`:"Awaiting sync";
  $("incidentBadge").textContent=incs.length;$("callBadge").textContent=calls.length;
  $("mIncidents").textContent=incs.length;$("mAvailable").textContent=units.filter(availableUnit).length;$("mMobile").textContent=units.filter(u=>/MOBILE|ATTENDANCE/i.test(u.status||"")).length;$("mCalls").textContent=calls.length;
- $("overviewIncidents").innerHTML=incs.length?incs.slice(0,6).map(i=>`<div class="row"><div class="rowMeta"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><span>${esc(i.address||i.postal||"No location")}</span></div><span class="status">${assignedUnits(i).length} assigned</span></div>`).join(""):empty("No active incidents");
+ $("overviewIncidents").innerHTML=incs.length?incs.slice(0,6).map(i=>`<div class="row"><div class="rowMeta"><strong>#${esc(incidentNo(i))} · ${esc(i.type||"Incident")}</strong><span>${esc(i.address||i.postal||"No location")}</span></div><span class="status">${assignedUnits(i).length} assigned</span></div>`).join(""):empty("No active incidents");
  $("overviewUnits").innerHTML=units.length?units.slice(0,8).map(u=>{
    const home=stationFor(u.callsign),standby=standbyStationFor(u.callsign);
    return `<div class="row"><div class="rowMeta"><strong>${esc(u.callsign)}</strong><span>${standby?`Standby: ${esc(standby)} · Home: ${esc(home||"—")}`:esc(home||"")}</span></div><span class="status ${statusClass(u.status)}">${esc(u.status||"OFF RUN")}</span></div>`;
@@ -197,9 +197,14 @@ function render(){
  if(!incidentEditorShouldHold())renderIncidentDetail();
  renderUnits();renderCalls();renderMessages();renderStations();renderCover();renderMdt();
 }
+function incidentNo(inc){
+ const n=String(inc?.incidentNumber||inc?.id||"");
+ const digits=n.replace(/\D/g,"");
+ return digits.length>=5?digits.slice(-5):digits.padStart(5,"0");
+}
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
- $("incidentList").innerHTML=state.incidents.length?state.incidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
+ $("incidentList").innerHTML=state.incidents.length?state.incidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(incidentNo(i))} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
 }
 function renderIncidentDetail(){
  const el=$("incidentDetail"),inc=incidentById(selectedIncidentId);
@@ -227,7 +232,7 @@ function renderIncidentDetail(){
  el.innerHTML=`<div class="incidentDetailContent commandRecord">
    <div class="detailTop commandRecordTop">
      <div>
-       <span class="eyebrow">INCIDENT #${esc(inc.id)}</span>
+       <span class="eyebrow">INCIDENT #${esc(incidentNo(inc))}</span>
        <h2>${inc.isStandby?`<span class="standbyIncidentBadge">STANDBY</span> `:""}${esc(inc.type||"Incident")}</h2>
        <p>${esc(inc.address||"No location")}${inc.postal?` · ${esc(inc.postal)}`:""}${inc.priority?` · ${esc(inc.priority)}`:""}</p>
      </div>
@@ -620,7 +625,7 @@ function renderCover(){
   <div class="formActions" style="grid-column:1/-1"><button class="primary" id="sendStandbyMove">SEND STANDBY TURNOUT</button></div>
  </div>
  <div class="sectionTitle"><span>Active Standby Moves</span><span class="small">Return Home sends an MDT instruction</span></div>
- ${(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase())).map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.callsign)} → ${esc(m.destination)}</strong><span>${esc(m.status||m.state)}${m.talkgroup?` · ${esc(m.talkgroup)}`:""}${m.note?` · ${esc(m.note)}`:""}</span></div><div class="callActions"><button class="secondary" data-return-standby="${esc(m.id)}">RETURN HOME</button><button class="danger" data-cancel-standby="${esc(m.id)}">CANCEL</button></div></div>`).join("")||'<div class="emptyState"><strong>No active standby moves</strong></div>'}
+ ${(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase())).map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.callsign)} → ${esc(m.destination)}${m.incidentNumber?` · #${esc(String(m.incidentNumber))}`:""}</strong><span>${esc(m.status||m.state)}${m.talkgroup?` · ${esc(m.talkgroup)}`:""}${m.note?` · ${esc(m.note)}`:""}</span></div><div class="callActions"><button class="secondary" data-return-standby="${esc(m.id)}">RETURN HOME</button><button class="danger" data-cancel-standby="${esc(m.id)}">CANCEL</button></div></div>`).join("")||'<div class="emptyState"><strong>No active standby moves</strong></div>'}
  <div class="sectionTitle"><span>Standby Suggestions</span><span class="small">Based on current live cover</span></div>
  ${moves.length?moves.map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.unit)} → ${esc(m.to)}</strong><span>Suggested standby move from ${esc(m.from)}</span></div><button class="secondary" data-suggest-standby="${esc(m.unit)}" data-cover-target="${esc(m.to)}">USE SUGGESTION</button></div>`).join(""):'<div class="emptyState"><strong>No standby move suggested</strong></div>'}`;
  const bind=(id,event,field)=>document.getElementById(id)?.addEventListener(event,e=>standbyDraft[field]=e.target.value||"");
@@ -643,9 +648,9 @@ function renderMdt(){
  $("statusGrid").innerHTML=statusOptions.map(s=>`<button class="statusBtn ${selectedStatus===s?"selected":""}" data-status="${esc(s)}">${esc(s)}</button>`).join("");
  const assigned=mdtCallsign?state.incidents.filter(i=>assignedUnits(i).includes(upper(mdtCallsign))):[];
  $("mdtIncidentBadge").textContent=assigned.length;
- $("mdtIncidentList").innerHTML=assigned.length?assigned.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedMdtIncidentId)?"active":""}" data-mdtincident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"")}</p></div>`).join(""):'<div class="emptyState"><strong>No assigned incidents</strong><span>Mobilisations for this callsign will appear here.</span></div>';
+ $("mdtIncidentList").innerHTML=assigned.length?assigned.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedMdtIncidentId)?"active":""}" data-mdtincident="${esc(i.id)}"><strong>#${esc(incidentNo(i))} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"")}</p></div>`).join(""):'<div class="emptyState"><strong>No assigned incidents</strong><span>Mobilisations for this callsign will appear here.</span></div>';
  const inc=assigned.find(i=>String(i.id)===String(selectedMdtIncidentId));
- $("mdtIncidentDetail").innerHTML=inc?`<div class="incidentInfo"><span class="eyebrow">INCIDENT #${esc(inc.id)}</span><h2>${inc.isStandby?`<span class="standbyIncidentBadge">STANDBY</span> `:""}${esc(inc.type||"Incident")}</h2><dl><dt>Address</dt><dd>${esc(inc.address||"—")}</dd><dt>Postal</dt><dd>${esc(inc.postal||"—")}</dd><dt>Priority</dt><dd>${esc(inc.priority||"—")}</dd><dt>Notes</dt><dd>${esc(inc.notes||"—")}</dd><dt>Assigned</dt><dd>${esc(assignedUnits(inc).join(", "))}</dd></dl><div class="actions"><button class="primary" id="mdtAck">ACKNOWLEDGE</button></div></div>`:'<div class="emptyState"><strong>No incident selected</strong><span>Click an assigned incident to view it. New incidents will not steal focus.</span></div>';
+ $("mdtIncidentDetail").innerHTML=inc?`<div class="incidentInfo"><span class="eyebrow">INCIDENT #${esc(incidentNo(inc))}</span><h2>${inc.isStandby?`<span class="standbyIncidentBadge">STANDBY</span> `:""}${esc(inc.type||"Incident")}</h2><dl><dt>Address</dt><dd>${esc(inc.address||"—")}</dd><dt>Postal</dt><dd>${esc(inc.postal||"—")}</dd><dt>Priority</dt><dd>${esc(inc.priority||"—")}</dd><dt>Notes</dt><dd>${esc(inc.notes||"—")}</dd><dt>Assigned</dt><dd>${esc(assignedUnits(inc).join(", "))}</dd></dl><div class="actions"><button class="primary" id="mdtAck">ACKNOWLEDGE</button></div></div>`:'<div class="emptyState"><strong>No incident selected</strong><span>Click an assigned incident to view it. New incidents will not steal focus.</span></div>';
  $("mdtMessageList").innerHTML=state.messages.length?state.messages.slice().reverse().map(m=>`<div class="message"><strong>${esc(m.sender||"CONTROL")}</strong><p>${esc(m.text||"")}</p><small>${esc(m.time||"")}</small></div>`).join(""):empty("No messages");
  document.querySelectorAll("[data-status]").forEach(b=>b.onclick=()=>{selectedStatus=b.dataset.status;renderMdt()});
  document.querySelectorAll("[data-mdtincident]").forEach(b=>b.onclick=()=>{selectedMdtIncidentId=b.dataset.mdtincident;renderMdt()});
@@ -663,7 +668,31 @@ document.addEventListener("click",e=>{
  const mv=e.target.closest("[data-mdtview]");if(mv)setMdtView(mv.dataset.mdtview);
 });
 $("openCreate").onclick=$("openCreate2").onclick=openModal;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
-$("createIncident").onclick=async()=>{await command("createIncident",{type:$("fType").value,address:$("fAddress").value,postal:$("fPostal").value,priority:$("fPriority").value,caller:$("fCaller").value,notes:$("fNotes").value,enableMDT:$("fMDT").checked,enableTurnout:$("fTurnout").checked,enablePager:$("fPager").checked});closeModal()};
+$("createIncident").onclick=async()=>{
+ const b=$("createIncident");
+ if(b.disabled)return;
+ b.disabled=true;b.textContent="CREATING...";
+ try{
+   await command("createIncident",{
+     type:$("fType").value||"Incident",
+     address:$("fAddress").value,
+     postal:$("fPostal").value,
+     priority:$("fPriority").value,
+     caller:$("fCaller").value,
+     notes:$("fNotes").value,
+     enableMDT:$("fMDT").checked,
+     enableTurnout:$("fTurnout").checked,
+     enablePager:$("fPager").checked
+   });
+   closeModal();
+   setControlView("incidents");
+   setTimeout(()=>load().catch(()=>{}),250);
+ }catch(e){
+   alert(e.message||"Unable to create incident");
+ }finally{
+   b.disabled=false;b.textContent="CREATE INCIDENT";
+ }
+};
 $("sendMessage").onclick=async()=>{if(!$("messageText").value.trim())return;await command("sendMessage",{target:$("messageTarget").value,message:$("messageText").value.trim()});$("messageText").value=""};
 $("mdtCallsign").onchange=()=>{mdtCallsign=upper($("mdtCallsign").value);localStorage.setItem("guardianMdtCallsign",mdtCallsign);selectedMdtIncidentId=null;renderMdt()};
 $("sendStatus").onclick=()=>{if(!mdtCallsign)return alert("Select your callsign first.");if(!selectedStatus)return alert("Select a status first.");command("webMdtStatus",{callsign:mdtCallsign,status:selectedStatus})};
