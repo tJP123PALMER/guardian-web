@@ -1,169 +1,127 @@
-
 import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import pg from "pg";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { Pool } = pg;
-
 const app = express();
+const PORT = Number(process.env.PORT || 10000);
+const API_KEY = process.env.GUARDIAN_API_KEY || "";
+
 app.disable("x-powered-by");
-app.use(express.json({ limit:"2mb" }));
-app.use(express.urlencoded({ extended:false }));
-
-const PORT = Number(process.env.PORT || 3010);
-const API_KEY = process.env.GUARDIAN_API_KEY || "CHANGE_ME";
-const DATABASE_URL = process.env.DATABASE_URL || "";
-
-const pool = DATABASE_URL ? new Pool({
-  connectionString:DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized:false } : undefined
-}) : null;
+app.use(express.json({ limit: "4mb" }));
 
 const clients = new Set();
 const commands = new Map();
-const recentEvents = [];
-let eventSequence = 0;
+
+const now = () => new Date().toISOString();
+const id = () => crypto.randomUUID();
 
 let state = {
-  connected:false,
-  units:{},
-  incidents:[],
-  calls999:[],
-  messages:[],
-  callsigns:[],
-  callSignStations:{},
-  applianceSkills:{},
-  lastHeartbeat:null,
-  updatedAt:null
+  connected: false,
+  lastHeartbeat: null,
+  updatedAt: now(),
+  units: {},
+  incidents: [],
+  calls999: [],
+  messages: [],
+  callsigns: [],
+  callSignStations: {},
+  applianceSkills: {},
+  stations: {},
+  bookings: {},
+  tracking: {},
+  eventLog: []
 };
 
-function upper(v){ return String(v ?? "").trim().toUpperCase(); }
-
-async function db(sql, params=[]){
-  if(!pool) return { rows:[] };
-  return pool.query(sql, params);
-}
-
-async function initDb(){
-  if(!pool){
-    console.warn("[Guardian] DATABASE_URL not set. Running without PostgreSQL persistence.");
-    return;
-  }
-
-  await db(`
-    CREATE TABLE IF NOT EXISTS guardian_audit(
-      id BIGSERIAL PRIMARY KEY,
-      at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      username TEXT,
-      role TEXT,
-      action TEXT NOT NULL,
-      target TEXT,
-      details JSONB NOT NULL DEFAULT '{}'::jsonb
-    );
-
-    CREATE TABLE IF NOT EXISTS guardian_state_snapshots(
-      id BIGSERIAL PRIMARY KEY,
-      at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      state JSONB NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS guardian_event_log(
-      id BIGSERIAL PRIMARY KEY,
-      at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      kind TEXT NOT NULL,
-      payload JSONB NOT NULL DEFAULT '{}'::jsonb
-    );
-
-    CREATE TABLE IF NOT EXISTS guardian_web_bookings(
-      id BIGSERIAL PRIMARY KEY,
-      callsign TEXT NOT NULL,
-      booked_on_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      booked_off_at TIMESTAMPTZ
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_guardian_audit_at ON guardian_audit(at DESC);
-    CREATE INDEX IF NOT EXISTS idx_guardian_events_at ON guardian_event_log(at DESC);
-    CREATE INDEX IF NOT EXISTS idx_guardian_bookings_callsign ON guardian_web_bookings(callsign);
-  `);
-
-  console.log("[Guardian] PostgreSQL persistence ready.");
-}
-function authKey(req,res,next){
-  const supplied=req.header("x-guardian-key");
-  if(!supplied) return res.status(401).json({ok:false,error:"Unauthorized"});
-  const a=Buffer.from(String(supplied)), b=Buffer.from(String(API_KEY));
-  if(a.length!==b.length || !crypto.timingSafeEqual(a,b))
+function auth(req,res,next){
+  if(!API_KEY) return res.status(503).json({ok:false,error:"GUARDIAN_API_KEY not configured"});
+  const supplied = String(req.header("x-guardian-key") || "");
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(String(API_KEY));
+  if(!supplied || a.length !== b.length || !crypto.timingSafeEqual(a,b)){
     return res.status(401).json({ok:false,error:"Unauthorized"});
+  }
   next();
 }
 
-
-async function audit(req, action, target="", details={}){
-  try{
-    await db(
-      "INSERT INTO guardian_audit(username,role,action,target,details) VALUES($1,$2,$3,$4,$5::jsonb)",
-      ["WEB","operator",action,target,JSON.stringify(details||{})]
-    );
-  }catch(err){ console.error("[Guardian audit]",err.message); }
-}
-
-function sendSse(type,payload){
-  const line=`data: ${JSON.stringify({type,payload})}\n\n`;
+function broadcast(type,payload){
+  const packet = `data: ${JSON.stringify({type,payload})}\n\n`;
   for(const res of [...clients]){
-    try{res.write(line)}catch{clients.delete(res)}
+    try { res.write(packet); }
+    catch { clients.delete(res); }
   }
 }
 
-async function rememberEvent(kind,payload={}){
-  const item={id:++eventSequence,kind:String(kind),payload,at:Date.now()};
-  recentEvents.push(item);
-  while(recentEvents.length>200) recentEvents.shift();
-  sendSse("fivemEvent",item);
-  try{
-    await db("INSERT INTO guardian_event_log(kind,payload) VALUES($1,$2::jsonb)",[String(kind),JSON.stringify(payload||{})]);
-  }catch(err){console.error("[Guardian event db]",err.message)}
-  return item;
+function pushEvent(kind,payload={}){
+  const event = {id:id(),kind,payload,at:now()};
+  state.eventLog.unshift(event);
+  state.eventLog = state.eventLog.slice(0,500);
+  broadcast("event", event);
+  return event;
 }
 
-function pruneCommands(){
-  const cutoff=Date.now()-5*60*1000;
-  for(const [id,c] of commands){
-    const t=Date.parse(c.acknowledgedAt||c.createdAt||0);
-    if((c.acknowledged&&t<cutoff)||(!c.acknowledged&&t<Date.now()-30*60*1000)) commands.delete(id);
-  }
+function touch(){
+  state.updatedAt = now();
+  broadcast("state", state);
 }
-setInterval(pruneCommands,60_000).unref?.();
+
+function normalizeUnits(units){
+  if(Array.isArray(units)){
+    const map = {};
+    for(const u of units){
+      if(u?.callsign) map[u.callsign] = u;
+    }
+    return map;
+  }
+  return units && typeof units === "object" ? units : {};
+}
+
+function rebuildStations(){
+  const grouped = {};
+  const calls = new Set([
+    ...(state.callsigns || []),
+    ...Object.keys(state.units || {}),
+    ...Object.keys(state.callSignStations || {})
+  ]);
+  for(const cs of calls){
+    const station = state.callSignStations?.[cs] || state.units?.[cs]?.station || "Unassigned";
+    grouped[station] ||= [];
+    grouped[station].push(cs);
+  }
+  for(const list of Object.values(grouped)) list.sort();
+  state.stations = grouped;
+}
 
 setInterval(()=>{
-  for(const res of [...clients]){
-    try{res.write(`: keepalive ${Date.now()}\n\n`)}catch{clients.delete(res)}
+  const hb = state.lastHeartbeat ? Date.parse(state.lastHeartbeat) : 0;
+  const shouldBeConnected = hb && (Date.now() - hb < 15000);
+  if(state.connected !== !!shouldBeConnected){
+    state.connected = !!shouldBeConnected;
+    touch();
   }
-},15_000).unref?.();
+  for(const res of [...clients]){
+    try { res.write(`: keepalive ${Date.now()}\n\n`); }
+    catch { clients.delete(res); }
+  }
+},5000).unref?.();
 
-app.get("/healthz",(_,res)=>res.json({
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Live Operations v2"));
+app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  database:!!pool,
-  clients:clients.size,
-  commands:commands.size,
-  fivemConnected:!!state.connected,
+  version:"Guardian Live Operations v2",
+  fivemConnected:state.connected,
+  browserClients:clients.size,
+  units:Object.keys(state.units).length,
+  incidents:state.incidents.length,
+  calls999:state.calls999.length,
+  pendingCommands:[...commands.values()].filter(c=>!c.acknowledged).length,
   updatedAt:state.updatedAt
 }));
 
-// -------- Shared operational APIs --------
-
-app.get("/api/state",(_,res)=>{
+app.get("/api/state",(_req,res)=>{
   res.setHeader("Cache-Control","no-store");
   res.json({ok:true,state});
-});
-
-app.get("/api/recent-events",(req,res)=>{
-  const since=Number(req.query.since||0);
-  const ageMs=Math.max(1000,Math.min(Number(req.query.ageMs||30000),120000));
-  const cutoff=Date.now()-ageMs;
-  res.json({ok:true,events:recentEvents.filter(e=>e.id>since&&e.at>=cutoff)});
 });
 
 app.get("/api/events",(req,res)=>{
@@ -173,128 +131,113 @@ app.get("/api/events",(req,res)=>{
   res.setHeader("X-Accel-Buffering","no");
   res.flushHeaders?.();
   clients.add(res);
-  res.write("retry: 3000\n");
+  res.write("retry: 2500\n");
   res.write(`data: ${JSON.stringify({type:"state",payload:state})}\n\n`);
   const cleanup=()=>clients.delete(res);
-  req.on("close",cleanup);req.on("aborted",cleanup);res.on("error",cleanup);
+  req.on("close",cleanup); req.on("aborted",cleanup); res.on("error",cleanup);
 });
 
-// FiveM remains API-key authenticated, not session authenticated.
-app.post("/api/fivem/state",authKey,async(req,res)=>{
-  state={...state,...(req.body||{}),connected:true,lastHeartbeat:new Date().toISOString(),updatedAt:new Date().toISOString()};
-  sendSse("state",state);
-  try{
-    await db("INSERT INTO guardian_state_snapshots(state) VALUES($1::jsonb)",[JSON.stringify(state)]);
-    await db(`DELETE FROM guardian_state_snapshots WHERE id NOT IN
-              (SELECT id FROM guardian_state_snapshots ORDER BY id DESC LIMIT 500)`);
-  }catch(err){console.error("[Guardian snapshot db]",err.message)}
-  res.json({ok:true});
-});
+app.post("/api/fivem/state",auth,(req,res)=>{
+  const body = req.body || {};
+  const hadIncidents = new Map((state.incidents||[]).map(i=>[String(i.id), i]));
+  const hadCalls = new Set((state.calls999||[]).map(c=>String(c.id)));
 
-app.post("/api/fivem/event",authKey,async(req,res)=>{
-  const {kind,payload={}}=req.body||{};
-  if(!kind) return res.status(400).json({ok:false,error:"Missing event kind"});
-  await rememberEvent(kind,payload);
-  if(kind==="message"){
-    const item=payload.item||payload;
-    const key=[item.sender||"",item.time||"",item.text||""].join("|");
-    const exists=(state.messages||[]).some(m=>[m.sender||"",m.time||"",m.text||""].join("|")===key);
-    if(!exists){
-      state.messages=[...(state.messages||[]),item].slice(-100);
-      state.updatedAt=new Date().toISOString();
-      sendSse("state",state);
-    }
+  state.units = normalizeUnits(body.units ?? state.units);
+  if(Array.isArray(body.incidents)) state.incidents = body.incidents;
+  if(Array.isArray(body.calls999)) state.calls999 = body.calls999;
+  if(Array.isArray(body.messages)) state.messages = body.messages;
+  if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
+  if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
+  if(body.applianceSkills && typeof body.applianceSkills === "object") state.applianceSkills = body.applianceSkills;
+  if(body.bookings && typeof body.bookings === "object") state.bookings = body.bookings;
+  if(body.tracking && typeof body.tracking === "object") state.tracking = body.tracking;
+
+  state.connected = true;
+  state.lastHeartbeat = now();
+  rebuildStations();
+
+  for(const inc of state.incidents){
+    const key = String(inc.id);
+    if(!hadIncidents.has(key)) pushEvent("incidentCreated", inc);
+    else if(JSON.stringify(hadIncidents.get(key)) !== JSON.stringify(inc)) pushEvent("incidentUpdated", inc);
   }
+  for(const call of state.calls999){
+    if(!hadCalls.has(String(call.id))) pushEvent("999Call", call);
+  }
+
+  touch();
   res.json({ok:true});
 });
 
-app.get("/api/fivem/commands",authKey,(_,res)=>{
-  pruneCommands();
+app.post("/api/fivem/event",auth,(req,res)=>{
+  const e = pushEvent(String(req.body?.kind || "event"), req.body?.payload || {});
+  res.json({ok:true,event:e});
+});
+
+app.post("/api/fivem/tracking",auth,(req,res)=>{
+  const t = req.body || {};
+  const cs = String(t.callsign || "").trim();
+  if(!cs) return res.status(400).json({ok:false,error:"callsign required"});
+  state.tracking[cs] = {
+    callsign:cs,
+    x:Number(t.x||0),
+    y:Number(t.y||0),
+    z:Number(t.z||0),
+    heading:Number(t.heading||0),
+    speed:Number(t.speed||0),
+    status:t.status || state.units?.[cs]?.status || "Unknown",
+    incidentId:t.incidentId || state.units?.[cs]?.incidentId || null,
+    updatedAt:now()
+  };
+  if(state.units[cs]){
+    state.units[cs] = {...state.units[cs], lastSeen:now()};
+  }
+  broadcast("tracking", state.tracking[cs]);
+  res.json({ok:true});
+});
+
+const allowed = new Set([
+  "createIncident","updateIncident","closeIncident","reopenIncident",
+  "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
+  "setApplianceCrew","setCrewMember","setIncidentRole",
+  "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
+  "requestStatus","mobiliseAppliance","setSceneStatus"
+]);
+
+app.post("/api/command",(req,res)=>{
+  const action = String(req.body?.action || "");
+  const data = req.body?.data || {};
+  if(!allowed.has(action)) return res.status(400).json({ok:false,error:"Unsupported action"});
+  const command = {id:id(),action,data,createdAt:now(),acknowledged:false};
+  commands.set(command.id, command);
+  pushEvent("commandQueued",{id:command.id,action,data});
+  res.json({ok:true,command});
+});
+
+app.get("/api/fivem/commands",auth,(_req,res)=>{
   res.json({ok:true,commands:[...commands.values()].filter(c=>!c.acknowledged)});
 });
 
-app.post("/api/fivem/commands/:id/ack",authKey,(req,res)=>{
-  const c=commands.get(req.params.id);
-  if(c){c.acknowledged=true;c.acknowledgedAt=new Date().toISOString()}
+app.post("/api/fivem/commands/:id/ack",auth,(req,res)=>{
+  const c = commands.get(req.params.id);
+  if(c){ c.acknowledged = true; c.acknowledgedAt = now(); pushEvent("commandAcknowledged",{id:c.id,action:c.action}); }
   res.json({ok:true});
 });
 
-const allowedCommands = new Set([
-  "createIncident","createIncidentFrom999","assignAppliance","closeIncident",
-  "updateIncidentDetails","sendMessage","dismiss999Call","setApplianceCrew",
-  "setCrewMember","setIncidentRole","createResourceRequest","mobiliseResourceRequest",
-  "webMdtStatus","webMdtAck","webMdtMessage","webBookOn","webBookOff"
-]);
+app.get("/api/operational/units",(_req,res)=>res.json({ok:true,units:state.units,tracking:state.tracking,bookings:state.bookings}));
+app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state.stations,callSignStations:state.callSignStations,applianceSkills:state.applianceSkills}));
+app.get("/api/operational/incidents",(_req,res)=>res.json({ok:true,incidents:state.incidents}));
+app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:state.calls999}));
+app.get("/api/operational/events",(_req,res)=>res.json({ok:true,events:state.eventLog}));
 
-app.post("/api/command",async(req,res)=>{
-  const {action,data={}}=req.body||{};
-  if(!allowedCommands.has(action)){
-    return res.status(400).json({ok:false,error:"Unsupported action"});
-  }
+const controlFile = path.join(__dirname,"public","control","index.html");
+const mdtFile = path.join(__dirname,"public","mdt","index.html");
+app.get("/",(_q,r)=>r.sendFile(controlFile));
+app.get("/control",(_q,r)=>r.sendFile(controlFile));
+app.get("/control/",(_q,r)=>r.sendFile(controlFile));
+app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
+app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
-  if(action==="webBookOn"){
-    const callsign=upper(data.callsign);
-    if(!callsign) return res.status(400).json({ok:false,error:"Callsign required"});
-
-    if(pool){
-      const active=await db(
-        `SELECT id FROM guardian_web_bookings
-         WHERE callsign=$1 AND booked_off_at IS NULL LIMIT 1`,
-        [callsign]
-      );
-      if(!active.rows.length){
-        await db(
-          `INSERT INTO guardian_web_bookings(callsign) VALUES($1)`,
-          [callsign]
-        );
-      }
-    }
-  }
-
-  if(action==="webBookOff" && pool){
-    const callsign=upper(data.callsign);
-    await db(
-      `UPDATE guardian_web_bookings SET booked_off_at=NOW()
-       WHERE callsign=$1 AND booked_off_at IS NULL`,
-      [callsign]
-    );
-  }
-
-  const id=crypto.randomUUID();
-  commands.set(id,{
-    id,action,data,
-    createdAt:new Date().toISOString(),
-    acknowledged:false
-  });
-
-  await audit(req,"COMMAND",action,{id,data});
-  res.json({ok:true,id});
-});
-
-// -------- Direct application routes (no login layer) --------
-
-app.get("/control",(_,res)=>res.sendFile(path.join(__dirname,"public","control","index.html")));
-app.get("/control/",(_,res)=>{
-  res.sendFile(path.join(__dirname,"public","control","index.html"));
-});
-
-app.get("/mdt",(_,res)=>res.sendFile(path.join(__dirname,"public","mdt","index.html")));
-app.get("/mdt/",(_,res)=>{
-  res.sendFile(path.join(__dirname,"public","mdt","index.html"));
-});
-
-
-app.get("/guardian-version",(_,res)=>res.type("text/plain").send("Guardian Operations v11.2 ZERO-REDIRECTS"));
-// static files after protected HTML routes; APIs remain protected above.
 app.use(express.static(path.join(__dirname,"public")));
 
-app.get("/",(_,res)=>res.sendFile(path.join(__dirname,"public","control","index.html")));
-
-process.on("unhandledRejection",err=>console.error("[Guardian] unhandled rejection",err));
-process.on("uncaughtException",err=>console.error("[Guardian] uncaught exception",err));
-
-await initDb();
-
-app.listen(PORT,"0.0.0.0",()=>{
-  console.log(`Guardian Operations v11.2 zero-redirects running on port ${PORT}`);
-});
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Live Operations v2 running on port ${PORT}`));

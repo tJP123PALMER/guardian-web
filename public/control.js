@@ -511,3 +511,14 @@ setMode();load();connect();
 window.addEventListener("online",()=>load().catch?.(()=>{}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
 
+
+
+// Guardian Live Operations v2 tracking helpers
+window.guardianTracking = {
+  last: {},
+  ingest(t){ if(t?.callsign) this.last[t.callsign]=t; },
+  stale(callsign, ms=15000){
+    const t=this.last[callsign];
+    return !t || (Date.now()-Date.parse(t.updatedAt||0)>ms);
+  }
+};
