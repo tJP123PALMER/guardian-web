@@ -1,12 +1,13 @@
 {
-  "name": "guardian-web",
-  "version": "1.0.0",
+  "name": "guardian-operations-no-login",
+  "version": "0.11.2",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "pg": "^8.13.1"
   }
 }

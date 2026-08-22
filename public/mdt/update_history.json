@@ -1,0 +1,68 @@
+[
+  {
+    "date": "15/08/2026",
+    "time": "19:23",
+    "type": "Added",
+    "text": "Control Command Upgrade \u2014 live dashboard, appliance board presentation, station grouping, resource request tab, incident timeline, and shift handover summary."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "19:23",
+    "type": "Preserved",
+    "text": "Control configuration \u2014 uploaded Config.Callsigns, Config.AlertVehicles and Config.CallSignStations kept exactly as supplied."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:59",
+    "type": "Added",
+    "text": "SatNav 2.0 \u2014 Added an expanded offline map system with live GPS position, follow mode, map styles, search, GIS grid layer, route/measure tools, north arrow, scale bar, live GPS status and improved map controls."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:54",
+    "type": "Added",
+    "text": "Update History \u2014 Added a full in-game Update History tab opened from SatNav Admin Menu, matching the history stored in the resource files."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:48",
+    "type": "Added",
+    "text": "Update History \u2014 Added a persistent MDT update history showing date, time and work completed."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:48",
+    "type": "Added",
+    "text": "Keyboard shortcuts \u2014 F4 opens the MDT and F6 opens Control. Existing /getec and /control commands remain available."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:20",
+    "type": "Fixed",
+    "text": "Messaging \u2014 Control and MDT messages now use one shared conversation."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "13:10",
+    "type": "Fixed",
+    "text": "Pager \u2014 Pager popup and Enter-to-close behaviour fixed."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "12:55",
+    "type": "Updated",
+    "text": "Incident alerts \u2014 Incidents continue to arrive on the MDT when the alert sound is disabled."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "12:40",
+    "type": "Fixed",
+    "text": "Control appliance list \u2014 Callsigns now synchronise correctly with Control."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "12:20",
+    "type": "Added",
+    "text": "Admin Menu \u2014 Battery Status, Screen Settings and About panels restored."
+  }
+]

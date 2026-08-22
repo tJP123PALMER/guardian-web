@@ -1,0 +1,435 @@
+*{box-sizing:border-box}body{margin:0;display:none;font-family:"Segoe UI",Arial,sans-serif;background:transparent;overflow:hidden;color:#102033}button{font:inherit}.frame{width:1240px;height:760px;margin:auto;position:absolute;inset:0;background:#eef2f4;border:1px solid #29465e;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.25)}.top{height:58px;display:grid;grid-template-columns:76px 1fr 1.35fr 1fr 62px 62px 72px 48px;background:#4f7397;border-bottom:2px solid #294760}.logoBox,.headerBox,.headerIcon,.headerOnline,.headerClose{border-right:1px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff}.logoBox img{width:36px;height:36px;object-fit:contain}.headerBox{font-size:19px;font-weight:600;background:#557a9f}.headerButton{border-top:0;border-bottom:0;cursor:pointer}.liveStatusButton{appearance:none;padding:0}.headerButton:hover,.headerIcon:hover{background:#6288ac}.liveStatusButton:hover{background:#6288ac !important;filter:brightness(1.08);box-shadow:inset 0 1px rgba(255,255,255,.16)}.liveStatusButton:active{background:#557a9f !important;filter:brightness(.98)}.headerIcon{border:0;border-right:1px solid rgba(255,255,255,.18);background:#4f7397;flex-direction:column;cursor:pointer;gap:2px}.headerIcon img{width:19px;height:19px;object-fit:contain;filter:brightness(0) invert(1)}.headerIcon small{font-size:10px;color:#fff}.headerOnline{flex-direction:column;gap:0;font-size:22px;background:#4f7397}.headerOnline span{color:#48f32d;line-height:18px}.headerOnline small{font-size:8px;color:#fff}.headerClose{border:0;background:#d91d2b;color:#fff;font-size:25px;font-weight:700;cursor:pointer}.headerClose:hover{background:#ee2937}.statusStrip{height:34px;display:flex;align-items:center;justify-content:center;background:#557a9f;color:#fff;font-size:14px;font-weight:600;border-bottom:1px solid #1b6db0;text-shadow:0 1px 0 rgba(0,0,0,.35)}.body{height:624px;display:flex}.main{flex:1;position:relative;background:#eef2f4;overflow:hidden}.pane{display:none;width:100%;height:100%;position:relative}.pane.active{display:block}.statusHint{position:absolute;right:18px;top:8px;font-size:12px;color:#4b5964}.liveStatusButton:focus{outline:none}.status-grid{width:94%;margin:16px auto 0;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:100px;gap:10px;align-content:start}.statusBtn{height:100px;border:2px solid #536b7d;background:linear-gradient(#7da5c5,#5e86aa);color:#fff;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.12s;box-shadow:inset 0 1px rgba(255,255,255,.25)}.statusBtn:hover{background:linear-gradient(#8bb0ce,#678eaf);filter:brightness(1.12);transform:translateY(-1px);box-shadow:inset 0 1px rgba(255,255,255,.35),0 2px 6px rgba(0,0,0,.18)}.statusBtn.current:hover,.statusBtn.sent:hover,.statusBtn.active:hover,.statusBtn.pending:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:inset 0 1px rgba(255,255,255,.35),0 2px 6px rgba(0,0,0,.18)}.statusBtn:active{transform:translateY(0);filter:brightness(.98)}.statusBtn.pending{background:#ffe600!important;color:#111;border-color:#bba800}.statusBtn.current{background:#5df11b!important;color:#111;border-color:#42c617}.statusBtn.sent,.statusBtn.active{background:#5df11b!important;color:#111;border-color:#42c617}.send{position:absolute;left:18px;bottom:18px;width:145px;height:58px;border:2px solid #385b7a;background:linear-gradient(#638bb0,#4d7599);color:#fff;font-size:15px;font-weight:600;cursor:pointer}.send:hover{background:#5f88ac}.close{position:absolute;right:24px;bottom:22px;width:150px;height:60px;border:2px solid #8d0c0c;background:linear-gradient(#ff2b2b,#d80000);color:#fff;font-size:16px;font-weight:600;cursor:pointer}.bottom{height:44px;display:grid;grid-template-columns:1fr 1.25fr 1fr 1fr;background:#557a9f;border-top:2px solid #294760}.footerItem{display:flex;align-items:center;justify-content:center;color:#fff;border-right:1px solid rgba(255,255,255,.2);font-size:14px}.footerButton{border:0;background:transparent;cursor:pointer}.footerButton:hover{background:rgba(255,255,255,.12)}.incidentLayout,.messageLayout{display:grid;grid-template-columns:320px 1fr;gap:12px;height:100%;padding:12px}.incidentList,.incidentInfo,.messageListPanel,.messageContent{display:flex;flex-direction:column;border:2px solid #2d5f97;background:#fff}.incidentHeader,.messageHeader{height:38px;display:flex;align-items:center;justify-content:center;background:#557a9f;color:#fff;font-size:15px;font-weight:600;border-bottom:1px solid #1b5ea8}.incident{background:#5f87aa;border:1px solid #315f84;color:#fff;padding:12px;font-size:14px;font-weight:600;cursor:pointer;text-align:left}.incident:hover{background:#7098b8}.activeIncident{background:#5df11b!important;color:#111!important;border-color:#43c81c!important}#incidentTabs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}#incidentDetail{flex:1;overflow:auto;padding:16px;background:#f5f6f7;font-size:14px;line-height:1.45}#incidentDetail h3{margin:0 0 15px;color:#174f7d;border-bottom:2px solid #2196f3;padding-bottom:8px}#ackBtn,#clearBtn{width:100%;border:0;padding:14px;margin-top:10px;font-size:16px;font-weight:700;cursor:pointer}#ackBtn{background:#d91d2b;color:#fff}#clearBtn{background:#244866;color:#fff}#ackBtn.acked{background:#777!important;color:#ddd!important}.messageLayout{grid-template-columns:320px 1fr}.messageListPanel,.messageContent{background:#fff}#messageList{flex:1;overflow:auto;padding:10px}#messageView{flex:1;overflow:auto;padding:15px;background:#f5f7fa}.messageReply{display:flex;gap:8px;padding:10px;border-top:2px solid #2d5f97}#msgBox{flex:1;padding:10px;font-size:15px;border:2px solid #2d5f97}#sendMsg{width:170px;border:0;background:#0c5aa6;color:#fff;font-weight:700;cursor:pointer}.chatMessage{max-width:75%;margin:8px;padding:9px 12px;border-radius:6px;word-break:break-word}.chatMessage.control{background:#3a3a3a;color:#fff;margin-right:auto;border-left:4px solid #58a4e8}.chatMessage.crew{background:#1f4f88;color:#fff;margin-left:auto;border-right:4px solid #8fd3ff;text-align:right}.chatHeader{display:flex;justify-content:space-between;font-size:11px;font-weight:bold;margin-bottom:5px}.chatText{font-size:14px}.mapPage{display:grid;grid-template-columns:1fr 250px;height:100%}.mapViewportWrap{position:relative;overflow:hidden;background:#d7dde1}.mapViewportWrap #mapViewport{position:absolute;inset:0;overflow:hidden;background:#ddd}.mapViewportWrap #dispatchMap{position:absolute;left:0;top:0;width:2048px;height:auto;user-select:none;pointer-events:none;transform-origin:top left}.mapToolbar{position:absolute;left:10px;top:10px;display:flex;gap:4px}.mapToolbar button{width:42px;height:36px;border:1px solid #33526e;background:#557a9f;color:#fff;cursor:pointer}.mapToolbar button:last-child{width:65px}.mapMenu{background:#557a9f;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;border-left:2px solid #294760}.mapMenu>button{border:0;border-bottom:1px solid rgba(255,255,255,.2);border-right:1px solid rgba(255,255,255,.2);background:#557a9f;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}.mapMenu>button:hover,.mapMenuGrid button:hover{background:#668caf}.mapMenu>button:nth-child(1),.mapMenu>button:nth-child(2),.mapMenu>button:nth-child(3),.mapMenu>.mapBack{grid-column:1/3}.mapMenuGrid{display:grid;grid-template-columns:1fr 1fr;grid-column:1/3}.mapMenuGrid button{border:0;border-bottom:1px solid rgba(255,255,255,.2);border-right:1px solid rgba(255,255,255,.2);background:#557a9f;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer}.mapBack{background:#e31c2b!important}.mapBack:hover{background:#f52c3a!important}.browserPage{height:100%;background:#f5f5f5;display:flex;flex-direction:column}.browserHeader{height:44px;background:#557a9f;color:#fff;display:flex;align-items:center;padding:0 18px;font-weight:600}.browserContent{flex:1;display:flex;align-items:center;justify-content:center;color:#58656e;font-size:18px}.browserPage button{height:60px;border:0;background:#e31c2b;color:#fff;font-size:16px;cursor:pointer}#incidentMarker{position:absolute;width:18px;height:18px;background:#e31c2b;border:3px solid #fff;border-radius:50%;left:300px;top:300px;box-shadow:0 1px 4px #000}#mobilisingOverlay{display:none;position:absolute;inset:0;background:#f2f2f2;z-index:999999;cursor:pointer;overflow:hidden}.mobilising-stars{text-align:center;color:#b00000;font-size:34px;font-weight:900;letter-spacing:2px;white-space:nowrap;overflow:hidden;animation:flashRed .8s infinite;margin-top:18px}.mobilising-message{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:90%;text-align:center;font-size:50px;line-height:1.15;font-weight:900;text-transform:uppercase;color:#d10000;animation:flashRed .8s infinite;pointer-events:none}.mobilising-message div{margin:5px 0}.bottom-stars{position:absolute;bottom:10px;left:0;right:0}@keyframes flashRed{0%{opacity:1;color:#ff0000}50%{opacity:.4;color:#7a0000}100%{opacity:1;color:#ff0000}}
+
+/* Agency / Radio login */
+.radioFooter{background:transparent;cursor:pointer;transition:background .12s,filter .12s}.radioFooter:hover{background:rgba(255,255,255,.12);filter:brightness(1.08)}.radioFooter:active{filter:brightness(.96)}
+.agencyPage{height:100%;background:#eef2f4;display:flex;flex-direction:column}.agencyHeader{height:76px;display:grid;grid-template-columns:1fr 1fr;background:#557a9f;color:#fff;border-bottom:1px solid #294760}.agencyHeader>div{display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;border-right:1px solid rgba(255,255,255,.2)}.agencyMessage{flex:1;background:#f5f5f5;color:#3e4b55;padding:18px;font-size:16px}.agencyActions{height:74px;display:grid;grid-template-columns:1fr 1fr}.agencyActions button{border:0;font-size:17px;font-weight:600;cursor:pointer}.agencyLogin{background:#5df11b;color:#111}.agencyLogin:hover{background:#6dfb31}.agencyReturn{background:#ef1e2b;color:#fff}.agencyReturn:hover{background:#f5323f}
+#agencyChoiceOverlay{position:absolute;inset:0;z-index:100000;background:rgba(10,20,30,.62);display:flex;align-items:center;justify-content:center}.agencyChoiceCard{width:520px;background:#eef2f4;border:2px solid #294760;box-shadow:0 10px 30px rgba(0,0,0,.35)}.agencyChoiceTitle{height:58px;background:#557a9f;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;border-bottom:1px solid #294760}.agencyChoiceGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:18px}.agencyChoiceGrid button{height:90px;border:2px solid #536b7d;background:linear-gradient(#7da5c5,#5e86aa);color:#fff;font-size:20px;font-weight:700;cursor:pointer}.agencyChoiceGrid button:hover{background:linear-gradient(#8bb0ce,#678eaf);filter:brightness(1.08);transform:translateY(-1px)}.agencyChoiceCancel{width:100%;height:54px;border:0;background:#e31c2b;color:#fff;font-size:16px;font-weight:700;cursor:pointer}.agencyChoiceCancel:hover{background:#f02c3a}
+
+/* SatNav two-level menus — deliberately separate layouts */
+.satnavMainMenu{
+  grid-template-columns:1fr 1fr;
+  grid-auto-rows:1fr;
+}
+.satnavMainMenu .spanBoth{grid-column:1/3}
+.satnavMainMenu>button:nth-child(5){grid-column:1/3}
+.satnavMainMenu[hidden],
+.satnavMapMenu[hidden],
+.satnavAdminMenu[hidden]{display:none!important}
+
+/* MAP MENU — 5 rows of two buttons, then full-width Back */
+.satnavMapMenu{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-auto-rows:1fr;
+}
+.satnavMapMenu>button{
+  grid-column:auto !important;
+}
+.satnavMapMenu>.mapBack{
+  grid-column:1/3 !important;
+}
+
+/* ADMIN MENU — three full-width buttons, a 2x2 group, then Back */
+.satnavAdminMenu{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-auto-rows:1fr;
+}
+.satnavAdminMenu>button:nth-child(1),
+.satnavAdminMenu>button:nth-child(2),
+.satnavAdminMenu>button:nth-child(3){
+  grid-column:1/3 !important;
+}
+.satnavAdminMenu .mapMenuGrid{
+  grid-column:1/3 !important;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+}
+.satnavAdminMenu .mapMenuGrid button{
+  grid-column:auto !important;
+}
+.satnavAdminMenu>.mapBack{
+  grid-column:1/3 !important;
+}
+
+/* Browser reference screen */
+.browserReference{background:#f5f5f5;color:#333;display:flex;flex-direction:column;min-height:100%;}
+.browserToolbar{height:48px;background:#5d83a8;border-bottom:2px solid #17344d;display:grid;grid-template-columns:repeat(5,1fr);gap:0;flex:0 0 auto;}
+.browserToolbar button{border:1px solid #294762;background:#5d83a8;color:#fff;font-size:18px;cursor:pointer;transition:background .12s ease;}
+.browserToolbar button:hover{background:#7398bb;}
+.browserLegend{flex:1;background:#fafafa;padding:28px 70px 20px;overflow:auto;font-family:Arial,sans-serif;}
+.browserLegend h1{font-size:28px;margin:0 0 28px;font-weight:600;color:#333;}
+.legendColumns{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:70px;max-width:1000px;}
+.legendColumn h3{font-size:14px;margin:0 0 10px;font-weight:600;color:#555;}
+.legendSub{font-size:12px;color:#777;margin:8px 0 6px;}
+.legendRow,.lineRow{display:flex;align-items:center;gap:9px;font-size:12px;line-height:21px;color:#666;}
+.swatch{width:15px;height:15px;display:inline-block;border:1px solid #bbb;}
+.blue1{background:#4168c5}.blue2{background:#5e8fda}.blue3{background:#a6b9df}
+.green1{background:#9acb7d}.green2{background:#67a95a}.green3{background:#4d8d4b}
+.purple1{background:#d2a2e0}.purple2{background:#ad68c8}.purple3{background:#8d3c8f}
+.legendBlock{margin-top:42px}.line{width:28px;height:3px;display:inline-block}.red{background:#d24d55}.blue{background:#3d73c5}.yellow{background:#c9cf48}.brown{background:#a67c70}.lime{background:#7cc45a}.cyan{background:#63b8cf}.maroon{background:#7c4a50}
+.site{width:15px;height:15px;background:#e8e8e8;border:1px solid #c9c9c9;display:inline-block}.site.medical{border-color:#ef9ca5}.site.education{border-color:#ef9ca5}
+.hydrant{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;border:2px solid #555;font-size:11px;font-weight:bold;line-height:1}.abandoned{background:#e6df50}.defective{background:#f5c3cc}.operational{background:#e78f75}.unverified{background:#e78f75}.live{background:#e4d53b}.private{background:#9d66d1}.proposed{background:#72a9df}.unadopted{background:#fff}
+.browserStatus{height:30px;background:#eee;border-top:1px solid #bbb;display:flex;align-items:flex-end;gap:0;font:11px Arial,sans-serif;color:#555;flex:0 0 auto;}
+.browserStatus span{padding:5px 10px;border-right:1px solid #ccc;white-space:nowrap}.browserTabActive{background:#fafafa;border-top:2px solid #8aa0b4;margin-top:-2px;}
+
+/* Exact Browser / Map Legend reference layout */
+.browserReference{height:100%;min-height:0;background:#f7f7f7;color:#333;display:flex!important;flex-direction:column;overflow:hidden}
+.browserToolbar{height:48px;min-height:48px;background:#557a9f;border-bottom:2px solid #294760;display:grid;grid-template-columns:repeat(5,1fr);}
+.browserToolbar button{height:48px!important;border:1px solid rgba(255,255,255,.28)!important;border-top:0!important;background:#557a9f!important;color:#fff!important;font-size:17px!important;cursor:pointer!important}
+.browserToolbar button:hover{background:#6a8fb1!important}
+.browserLegend{flex:1;min-height:0;background:#fafafa;padding:22px 72px 16px;overflow:auto;font-family:Arial,sans-serif}
+.browserLegend h1{font-size:28px;line-height:1.1;margin:0 0 26px;font-weight:600;color:#333}
+.legendColumns{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:80px;max-width:1040px}
+.legendColumn h3{font-size:14px;margin:0 0 9px;font-weight:600;color:#555}
+.legendSub{font-size:12px;color:#777;margin:8px 0 5px}
+.legendRow,.lineRow{display:flex;align-items:center;gap:9px;font-size:12px;line-height:21px;color:#666}
+.swatch{width:15px;height:15px;display:inline-block;border:1px solid #bbb;flex:none}
+.legendBlock{margin-top:40px}
+.browserStatus{height:30px;min-height:30px;background:#eee;border-top:1px solid #bbb;display:flex;align-items:flex-end;font:11px Arial,sans-serif;color:#555;overflow:hidden}
+.browserStatus span{padding:5px 10px;border-right:1px solid #ccc;white-space:nowrap;height:29px}
+.browserStatus .browserTabActive{background:#fafafa;border-top:2px solid #8aa0b4;margin-top:-2px}
+
+.satnavMapMenu{grid-template-columns:1fr 1fr;grid-auto-rows:1fr}
+.satnavMapMenu>.mapBack{grid-column:1/3}
+.mapMenu>button:hover,.mapMenuGrid button:hover{background:#668caf;filter:brightness(1.06)}
+.mapOptionActive{background:#6d95b8!important;box-shadow:inset 0 0 0 2px rgba(255,255,255,.2)}
+#mapViewport.mapDimmed:after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.28);pointer-events:none;z-index:4}
+#mapViewport.measuringMode{cursor:crosshair}
+#mapRefReadout{position:absolute;left:10px;bottom:10px;z-index:10;background:rgba(37,70,96,.88);color:#fff;padding:5px 9px;font-size:12px;border:1px solid rgba(255,255,255,.25);pointer-events:none}
+.gisLayerHint{filter:saturate(.75) contrast(1.03)}
+@media print{.frame{box-shadow:none}.mapMenu,.top,.statusStrip,.bottom,.mapToolbar,#incidentMarker,#mapRefReadout{display:none!important}.mapViewportWrap{width:100%!important}}
+
+/* Messages reference screen */
+.messageReferenceLayout{position:relative;height:100%;display:flex;flex-direction:column;background:#f4f4f4}
+.messageReferenceTitle{height:38px;line-height:38px;padding:0 8px;background:#587fa4;color:#fff;font-size:17px;border-bottom:1px solid #284d70}
+.messageReferenceMain{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 165px}
+.messageReferenceDetails{background:#fafafa;padding:0 8px;color:#303943}
+.messageType{font-size:16px;line-height:24px}
+.messageSubject{font-size:16px;line-height:24px;border-top:1px solid #c9cdd1}
+.messageReferenceList{background:#e7e9ec;border-left:1px solid #9aa1a8}
+.messageReferenceListTitle{height:38px;line-height:38px;padding-left:8px;background:#263b50;color:#fff;font-size:17px}
+.referenceMessageItem{display:grid;grid-template-columns:25px 1fr;grid-template-rows:auto auto;width:100%;min-height:70px;padding:8px;border:1px solid #aeb4ba;background:#f0f0f0;text-align:left;color:#30363b;cursor:pointer}
+.referenceMessageItem:hover{background:#e3e9ee}
+.referenceMessageItem.selected{outline:2px solid #ef2435;outline-offset:-2px}
+.messageTick{grid-row:1/3;font-size:16px}
+.messageTime,.messageItemType{font-size:12px}
+.messageReferenceActions{height:54px;display:grid;grid-template-columns:repeat(7,1fr) 1.05fr;border-top:1px solid #284d70}
+.messageReferenceActions button{border:1px solid #284d70;background:#50799e;color:#fff;font-size:12px;cursor:pointer}
+.messageReferenceActions button:hover{background:#658cad}
+.messageReferenceActions .danger{background:#ed1c2b}
+.messageReferenceActions .danger:hover{background:#f13b48}
+.sendMessagePanel{position:absolute;right:175px;bottom:61px;display:flex;gap:6px;background:#fff;border:1px solid #284d70;padding:6px}
+.sendMessagePanel[hidden]{display:none}
+.sendMessagePanel input{width:390px;height:34px;border:1px solid #32669a;padding:0 9px}
+.sendMessagePanel button{height:34px;background:#1762a0;color:#fff;border:0;padding:0 18px;font-weight:bold}
+
+/* SatNav Messages Menu reference screen */
+.satnavMessagesMenu{
+  position:absolute;
+  top:0;
+  right:0;
+  width:250px;
+  height:100%;
+  z-index:20;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:1.15fr 1.15fr 1.55fr 1fr;
+  background:#557a9f;
+  border-left:2px solid #294760;
+}
+.satnavMessagesMenu[hidden]{display:none!important}
+.satnavMessagesMenu>button{
+  border:0;
+  border-bottom:1px solid rgba(255,255,255,.2);
+  border-right:1px solid rgba(255,255,255,.2);
+  background:#557a9f;
+  color:#fff;
+  cursor:pointer;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  font-size:15px;
+}
+.satnavMessagesMenu>button:hover{background:#668caf}
+.satnavMessagesMenu>button:nth-child(1),
+.satnavMessagesMenu>button:nth-child(2){grid-column:1/3}
+.satnavMessagesSpacer{grid-column:1/3;min-height:0;border-bottom:1px solid rgba(255,255,255,.2)}
+.satnavMessagesMenu>#messageHistoryBtn{grid-column:1/2}
+.satnavMessagesMenu>.mapBack{grid-column:1/3!important;background:#e31c2b!important;font-size:16px}
+.satnavMessagesMenu>.mapBack:hover{background:#f52c3a!important}
+
+.adminPopup{position:absolute;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.22)}
+.adminPopup[hidden]{display:none!important}
+.adminPopupCard{width:600px;max-width:82%;background:#e7e7e7;border:2px solid #59636b;box-shadow:0 12px 30px rgba(0,0,0,.45);color:#27323a;font-family:Arial,sans-serif}
+.adminPopupTitle{padding:8px 12px;background:linear-gradient(#d5d5d5,#bfc0c1);border-bottom:1px solid #888;font-size:21px;font-weight:600}
+.batteryGrid{display:grid;grid-template-columns:1fr auto;gap:0 20px;padding:12px 20px}
+.batteryGrid div,.batteryGrid strong{padding:9px 0;border-bottom:1px solid #c8c8c8;font-size:16px}
+.batteryGrid strong{text-align:right}.adminPopupOk{display:block;margin:8px auto 14px;padding:9px 50px;background:#268b45;color:#fff;border:1px solid #175d2d;font-size:16px;cursor:pointer}
+.settingsColumns{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px}
+.screenCard fieldset{border:1px solid #bbb;padding:8px}.screenCard legend{font-size:18px}.screenCard label{display:block;padding:6px;font-size:16px}.brightnessField{margin:0 10px 10px}.brightnessField input{width:100%}
+.popupActions{display:grid;grid-template-columns:1fr 1fr}.popupActions button{height:52px;border:1px solid #294760;background:#285b84;color:#fff;font-size:16px}.popupActions .popupClose,.aboutClose{background:#e31c2b}
+.aboutCard{width:100%;height:100%;display:flex;flex-direction:column;background:#f4f4f4;color:#303840}
+.aboutTitle{height:40px;padding:9px 12px;box-sizing:border-box;background:#587fa4;color:#fff;font-size:18px}.aboutTabs{display:flex;background:#ddd;border-bottom:1px solid #999}.aboutTabs span{padding:8px 14px;border-right:1px solid #aaa}.aboutTabs .active{background:#fff}.aboutContent{flex:1;padding:20px}.aboutContent h2{margin-top:0}.aboutClose{height:50px;border:0;color:#fff;font-size:17px;cursor:pointer}
+.frame.screenInverted{filter:invert(1) hue-rotate(180deg)}
+
+/* --- Reference-matched Admin popups --- */
+.adminPopup{
+  position:absolute; inset:0; z-index:10000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.18);
+}
+.adminPopup[hidden]{display:none!important}
+
+/* Battery: grey information dialog with a bright green full-width OK bar */
+.adminPopup .batteryCard{
+  width:min(930px,82vw);
+  max-width:none;
+  background:#ededed;
+  border:3px solid #252a2d;
+  box-shadow:0 10px 24px rgba(0,0,0,.42);
+}
+.batteryCard .adminPopupTitle{
+  background:#ededed;
+  border:0;
+  padding:28px 34px 20px;
+  font-size:34px;
+  font-weight:500;
+}
+.batteryGrid{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:0;
+  padding:0 34px 24px;
+}
+.batteryGrid div,.batteryGrid strong{
+  padding:4px 0;
+  border:0;
+  font-size:25px;
+  line-height:1.15;
+}
+.batteryGrid strong{text-align:left;font-weight:500;padding-left:8px}
+.batteryCard .adminPopupOk{
+  width:100%;
+  height:105px;
+  margin:0;
+  padding:0;
+  border:0;
+  border-top:2px solid #1d2527;
+  border-radius:0;
+  background:#39ff00;
+  color:#111;
+  font-size:34px;
+  font-weight:500;
+}
+
+/* Screen Settings: compact centred CF33-style dialog */
+.adminPopup .screenCard{
+  width:min(720px,70vw);
+  max-width:none;
+  background:#bfc0c1;
+  border:2px solid #6d7072;
+  box-shadow:0 10px 25px rgba(0,0,0,.45);
+}
+.screenCard .adminPopupTitle{
+  background:#bfc0c1;
+  border:0;
+  padding:10px 12px 6px;
+  font-size:25px;
+  font-weight:400;
+}
+.screenCard .settingsColumns{
+  gap:12px;
+  padding:8px 12px 10px;
+}
+.screenCard fieldset{
+  border:1px solid #e8e8e8;
+  padding:10px 12px 8px;
+  margin:0;
+}
+.screenCard legend{font-size:22px;padding:0 3px}
+.screenCard label{font-size:20px;padding:8px 4px}
+.screenCard input[type=radio]{accent-color:#1976d2}
+.screenCard .brightnessField{
+  margin:0 12px 12px;
+  padding:10px 12px 12px;
+}
+.screenCard .brightnessField input{height:26px}
+.screenCard .popupActions{grid-template-columns:1fr 1fr}
+.screenCard .popupActions button{
+  height:72px;
+  font-size:21px;
+}
+.screenCard .popupActions button:first-child{
+  background:#163b5c;
+}
+.screenCard .popupActions .popupClose{
+  background:#ed1c24;
+}
+
+/* About: a contained application window, not a full-screen replacement */
+.adminPopup .aboutCard{
+  width:min(1040px,86vw);
+  height:min(720px,84vh);
+  max-width:none;
+  background:#f5f5f5;
+  border:2px solid #66717a;
+  box-shadow:0 12px 32px rgba(0,0,0,.48);
+}
+.aboutCard .aboutTitle{
+  height:150px;
+  padding:22px 26px;
+  background:linear-gradient(#6e9bc1,#4f7598);
+  color:#fff;
+  font-size:28px;
+  font-weight:600;
+  text-align:center;
+}
+.aboutCard .aboutTabs{
+  height:44px;
+  align-items:center;
+  background:#ececec;
+  border-bottom:1px solid #bbb;
+}
+.aboutCard .aboutTabs span{
+  padding:8px 13px;
+  font-size:17px;
+  color:#24384a;
+}
+.aboutCard .aboutTabs .active{background:#fff}
+.aboutCard .aboutContent{
+  flex:1;
+  overflow:auto;
+  padding:18px 24px;
+  font-size:15px;
+  color:#333;
+}
+.aboutCard .aboutContent h2{
+  margin:0 0 18px;
+  text-align:center;
+  color:#2d5591;
+  font-size:25px;
+}
+.aboutCard .aboutContent p{margin:7px 0}
+.aboutCard .aboutClose{
+  height:62px;
+  min-height:62px;
+  background:#ed1c24;
+  border:0;
+  color:#fff;
+  font-size:20px;
+}
+
+
+/* GPS / AVL diagnostics popup */
+.gpsDiagnosticsCard{
+  width:82%;
+  max-width:1080px;
+  height:72%;
+  min-height:430px;
+  background:#f4f4f4;
+  border:2px solid #59636b;
+  box-shadow:0 14px 36px rgba(0,0,0,.45);
+  color:#27323a;
+  font-family:Arial,sans-serif;
+  display:flex;
+  flex-direction:column;
+}
+.gpsTopTabs{
+  height:38px;
+  display:flex;
+  background:#efefef;
+  border-bottom:1px solid #a7a7a7;
+}
+.gpsTab{
+  min-width:168px;
+  padding:7px 14px;
+  border:0;
+  border-right:1px solid #bcbcbc;
+  background:#e4e4e4;
+  color:#333;
+  font-size:13px;
+  cursor:pointer;
+}
+.gpsTab.active{background:#fff;font-weight:600}
+.gpsBody{
+  flex:1;
+  overflow:auto;
+  background:#f7f7f7;
+  padding:28px 28px 20px;
+  font-size:16px;
+  line-height:1.42;
+}
+#gpsSummary{white-space:pre-line}
+.gpsRules{margin-top:28px}
+.gpsActions{
+  height:72px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+}
+.gpsActions button{
+  border:1px solid rgba(0,0,0,.22);
+  font-size:15px;
+  cursor:pointer;
+}
+.gpsSend{background:#20f000;color:#102000}
+.gpsClose{background:#f21c2a;color:#fff}
+#coordsFooter{cursor:pointer}
+
+.coordsFooter{cursor:pointer!important;user-select:none}.coordsFooter:hover{background:rgba(255,255,255,.12)}
+
+.chatMessage.selectedMessage{outline:2px solid #ef2435;outline-offset:-2px;}
+#sendMessagePanel{z-index:1000;}
+
+/* Update History */
+.updateHistoryModal{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.22)}
+.updateHistoryModal[hidden]{display:none!important}
+.updateHistoryCard{width:min(860px,78vw);max-height:min(700px,78vh);background:#eee;border:2px solid #4b5963;box-shadow:0 12px 30px rgba(0,0,0,.45);display:flex;flex-direction:column}
+.updateHistoryHeader{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#5f7f9c;color:#fff;font-size:24px}
+.updateHistoryHeader button{width:42px;height:42px;border:0;background:#ed1c24;color:#fff;font-size:30px;line-height:1;cursor:pointer}
+.updateHistoryList{padding:14px;overflow:auto}
+.updateHistoryEntry{background:#fff;border:1px solid #c2c2c2;margin-bottom:9px;padding:11px 14px}
+.updateHistoryMeta{display:flex;gap:14px;align-items:center;font-size:14px;color:#5b6872;margin-bottom:5px}
+.updateHistoryType{font-weight:700}
+.updateHistoryText{font-size:17px;color:#252a2d;line-height:1.3}
+
+.updateHistoryPage{height:100%;display:flex;flex-direction:column;background:#f2f4f6}.updateHistoryPageHeader{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#557a9f;color:#fff;border-bottom:2px solid #294760;font-size:20px;font-weight:700}.updateHistoryPageSub{font-size:12px;font-weight:400;opacity:.9}.updateHistoryPage>.updateHistoryList{flex:1;overflow:auto;padding:14px 18px 74px;background:#eef2f4}.updateHistoryPage .updateHistoryEntry{background:#fff;border:1px solid #b8c4ce;border-left:5px solid #557a9f;margin-bottom:10px;padding:12px 15px;box-shadow:0 1px 3px rgba(0,0,0,.12)}.updateHistoryPage .updateHistoryMeta{display:flex;gap:16px;align-items:center;font-size:13px;color:#5b6872;margin-bottom:6px}.updateHistoryPage .updateHistoryType{font-weight:700;color:#1f4f7a;text-transform:uppercase}.updateHistoryPage .updateHistoryText{font-size:16px;color:#252a2d;line-height:1.35}.updateHistoryBack{position:absolute;right:18px;bottom:18px;width:150px;height:56px;border:2px solid #8d0c0c;background:#e31c2b;color:#fff;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}.updateHistoryBack:hover{background:#f52c3a}.updateHistoryBack span{display:inline-block}
+
+/* Guardian SatNav 2.0 */
+.mapViewportWrap{background:#d9e0e5!important}
+#dispatchMap{transition:filter .15s ease}
+#mapViewport{cursor:grab}
+#mapViewport:active{cursor:grabbing}
+#mapGrid{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .15s;background-image:linear-gradient(rgba(0,100,180,.28) 1px,transparent 1px),linear-gradient(90deg,rgba(0,100,180,.28) 1px,transparent 1px);background-size:80px 80px}
+#mapGrid.active{opacity:1}
+#routeLine{position:absolute;inset:0;z-index:5;pointer-events:none}
+#routeLine svg{width:100%;height:100%;overflow:visible}
+#gpsMarker,#mapSearchMarker{position:absolute;width:22px;height:22px;border-radius:50%;z-index:9;transform:translate(-50%,-50%);pointer-events:none}
+#gpsMarker{left:50%;top:50%;background:#16a6ff;border:3px solid #fff;box-shadow:0 0 0 5px rgba(22,166,255,.25),0 2px 8px #000}
+#gpsMarker span{position:absolute;left:50%;top:50%;width:6px;height:6px;background:#fff;border-radius:50%;transform:translate(-50%,-50%)}
+#gpsMarker.following{box-shadow:0 0 0 8px rgba(0,255,120,.18),0 2px 8px #000}
+#mapSearchMarker{background:#ffcc00;border:3px solid #fff;box-shadow:0 1px 6px #000}
+#mapSearchMarker:after{content:"";position:absolute;inset:4px;border-radius:50%;background:#d33}
+#northArrow{position:absolute;right:14px;top:12px;z-index:10;width:40px;height:40px;border:2px solid #294760;border-radius:50%;background:rgba(255,255,255,.88);display:flex;align-items:center;justify-content:center;font-weight:900;color:#c20f20;pointer-events:none}
+#mapScaleBar{position:absolute;left:14px;bottom:42px;z-index:10;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;pointer-events:none}
+#mapScaleBar span{display:block;width:80px;height:6px;border:2px solid #fff;border-top:0;box-shadow:0 1px 2px #000;margin-bottom:3px}
+#mapStatusReadout{position:absolute;right:12px;bottom:10px;z-index:10;background:rgba(37,70,96,.88);color:#fff;padding:5px 9px;font-size:11px;border:1px solid rgba(255,255,255,.25);pointer-events:none}
+.mapToolbar{z-index:30;top:10px!important}
+.mapToolbar button{font-weight:700;font-size:16px}
+.mapToolbar button:hover{filter:brightness(1.12)}
+#mapSearchPanel{position:absolute;left:10px;top:54px;width:330px;z-index:40;background:#f4f5f6;border:2px solid #294760;box-shadow:0 5px 16px rgba(0,0,0,.35)}
+#mapSearchPanel[hidden]{display:none!important}
+.mapSearchTitle{padding:9px 12px;background:#557a9f;color:#fff;font-weight:700}
+.mapSearchRow{display:flex;padding:8px;gap:6px}.mapSearchRow input{flex:1;height:34px;border:1px solid #557a9f;padding:0 8px}.mapSearchRow button{height:34px;background:#1762a0;color:#fff;border:0;padding:0 12px;font-weight:700;cursor:pointer}
+#mapSearchResults{max-height:170px;overflow:auto}.mapSearchResult{padding:8px;border-top:1px solid #ccd2d7;cursor:pointer;font-size:12px}.mapSearchResult:hover{background:#dfe8ef}
+.satnavMapMenu{grid-template-columns:1fr 1fr;grid-auto-rows:1fr}
+.satnavMapMenu>#mapMenuBack{grid-column:1/3}
+.mapMenu .mapOptionActive{background:#5df11b!important;color:#111!important}
+
+
+.incident-nav-panel{position:absolute;left:14px;bottom:14px;min-width:210px;background:rgba(10,32,55,.94);border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:10px;color:#fff;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.incident-nav-title{font-weight:700;font-size:13px;margin-bottom:6px}
+.incident-nav-panel>div:not(.incident-nav-title){font-size:12px;line-height:1.45}
+#incidentNavGo{margin-top:7px;width:100%;border:0;padding:6px;background:#18a84b;color:#fff;font-weight:700;cursor:pointer}

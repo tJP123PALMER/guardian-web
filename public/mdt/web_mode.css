@@ -1,0 +1,19 @@
+
+
+/* v8 web terminal chrome: restrained control-room treatment.
+   The actual Guardian MDT interior remains the exact supplied UI. */
+.guardianWebBar{
+  box-shadow:0 10px 28px rgba(0,0,0,.22);
+  backdrop-filter:blur(8px);
+}
+.guardianWebBrandMark{
+  box-shadow:0 0 0 1px rgba(255,255,255,.08),0 6px 18px rgba(0,0,0,.22);
+}
+.guardianWebUnit select{
+  min-width:170px;
+  font-weight:700;
+  letter-spacing:.04em;
+}
+.guardianWebLive{
+  box-shadow:0 0 0 4px rgba(34,197,94,.10),0 0 12px rgba(34,197,94,.65);
+}
