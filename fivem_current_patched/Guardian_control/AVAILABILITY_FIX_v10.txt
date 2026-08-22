@@ -1,0 +1,6 @@
+Guardian Fire Dispatch v10
+
+Appliance selection now treats every signed-on callsign as dispatchable unless it is committed to another open incident.
+Unassign / Release immediately makes the pump selectable again on the same or another ongoing incident.
+A callsign only disappears when it is assigned to another open incident or the operator books OFF RUN (which removes it from the active unit board).
+MDT radio status such as Home Station, Available Pager, Mobile And Available, etc. no longer incorrectly hides the pump from Control.

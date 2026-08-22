@@ -1,0 +1,325 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Control MDT</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body style="display:none;">
+
+<div id="app">
+
+    <aside class="side">
+        <div class="sideBrand"><div class="sideBrandMark">🚒</div><div><strong>GUARDIAN</strong><span>FIRE CONTROL</span></div></div>
+        <div class="navDivider">COMMAND</div>
+        <button class="tab active" data-tab="dashboard"><span class="navIcon">📊</span><span>Dashboard</span></button>
+        <button class="tab" data-tab="ongoing"><span class="navIcon">🔥</span><span>Ongoing Incidents</span></button>
+        <button class="tab" data-tab="appliance"><span class="navIcon">🚒</span><span>Appliance Board</span></button>
+        <button class="tab" data-tab="messages"><span class="navIcon">📩</span><span>Messages</span></button>
+        <button class="tab" data-tab="acks"><span class="navIcon">✅</span><span>Dispatch ACKs</span></button>
+<button class="tab" data-tab="999calls"><span class="navIcon">📞</span><span>999 Calls</span><span id="guardian999Badge" class="navBadge" hidden>0</span></button>
+        <div class="navDivider">RESOURCES</div>
+        <button class="tab" data-tab="stations"><span class="navIcon">🏠</span><span>Stations</span></button>
+        <button class="tab" data-tab="handover"><span class="navIcon">📝</span><span>Shift Handover</span></button>
+        <button id="close"><span class="navIcon">✕</span><span>Close Control</span></button>
+    </aside>
+
+    
+<div id="guardian999Toast" class="control999Toast" hidden><div class="control999ToastIcon">📞</div><div class="control999ToastText"><strong>999 CALL RECEIVED</strong><span id="guardian999ToastText">New emergency report</span></div><button id="guardian999ToastOpen" type="button">OPEN</button><button id="guardian999ToastDismiss" type="button" aria-label="Dismiss">×</button></div>
+<div id="guardian999Panel" class="control999Panel" hidden>
+  <div class="control999Header">
+    <div>
+      <div class="eyebrow">INCOMING EMERGENCY CALL</div>
+      <h2>📞 999 CALL</h2>
+    </div>
+    <span class="control999Badge">999</span>
+  </div>
+  <div id="guardian999List"></div>
+</div>
+<main>
+
+        <div class="controlGrid">
+
+            <!-- LEFT SIDE -->
+            <div class="incidentColumn">
+
+                <section id="tab-dashboard" class="pane active">
+                    <div class="controlHeader commandHero">
+                        <div><div class="eyebrow">GUARDIAN FIRE CONTROL</div><h1>Command Dashboard</h1><span class="subTitle">Live operational overview</span></div>
+                        <div class="liveBadge"><span></span> ONLINE</div>
+                    </div>
+                    <div id="dashboardStats" class="statGrid"></div>
+                    <div class="dashboardGrid">
+                        <div class="featureCard"><div class="featureTitle">🚨 Active Incidents</div><div id="dashboardIncidents"></div></div>
+                        <div class="featureCard"><div class="featureTitle">🚒 Appliance Snapshot</div><div id="dashboardAppliances"></div></div>
+                    </div>
+                    <div class="featureCard"><div class="featureTitle">⚡ Recent Control Activity</div><div id="dashboardActivity"></div></div>
+                </section>
+                <section id="tab-incident" class="pane active">
+
+                    <div class="controlHeader">
+
+                        <div>
+                            <h1>🚒 Guardian Fire Control</h1>
+                            <span class="subTitle">
+                                Scottish Fire & Rescue Service
+                            </span>
+                        </div>
+
+                        <div class="headerInfo">
+
+                            <div class="infoBox">
+                                <span>Control</span>
+                                <strong>Alpha</strong>
+                            </div>
+
+                            <div class="infoBox">
+                                <span>Status</span>
+                                <strong>ONLINE</strong>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <div class="sectionTitle">
+                        🚨 Incident Information
+                    </div>
+
+                    <label>Incident Type</label>
+
+                    <select id="type">
+                <option>DWELLING FIRE</option>
+                <option>COMMERCIAL FIRE</option>
+                <option>BIN FIRE</option>
+                <option>VEHICLE FIRE</option>
+                <option>FIRE IN OPEN</option>
+                <option>CHEMICAL FIRE</option>
+                <option>FARM FIRE</option>
+                <option>ELECTRICAL FIRE</option>
+                <option>AFA</option>
+                <option>RTC - UP TO 2 VEHICLES</option>
+                <option>RTC - MULTIPLE VEHICLES</option>
+                <option>STANDBY DUTIES</option>
+                <option>HAZMAT</option>
+                <option>FLOODING</option>
+                <option>WATER RESCUE</option>
+                <option>ROPE RESCUE</option>
+                <option>WILDFIRE</option>
+                <option>HEIGHT RESCUE</option>
+                <option>SPECIAL SERVICE</option>
+                <option>EFFECTING ENTRY</option>
+                <option>TEST Turnout</option>
+                    </select>
+
+<label>Address</label>
+<input id="address">
+
+<label>Postal</label>
+<input id="postal" placeholder="e.g. 7035">
+
+                    <label>Priority</label>
+
+                    <select id="priority">
+                        <option>Immediate</option>
+                        <option>Prompt</option>
+                        <option>Non Emergency</option>
+                    </select>
+
+                    <label>Caller</label>
+                    <input id="caller">
+
+                    <label>Notes</label>
+                    <textarea id="notes"></textarea>
+
+<div class="toggle-row" style="margin-top:20px;">
+    <label for="enableMDT">Send to MDT</label>
+    <input type="checkbox" id="enableMDT" checked>
+</div>
+
+<div class="toggle-row">
+    <label for="enableTurnout">Send to Turnout System</label>
+    <input type="checkbox" id="enableTurnout" checked>
+</div>
+
+<div class="toggle-row">
+    <label for="enablePager">Send to Pager</label>
+    <input type="checkbox" id="enablePager">
+</div>
+
+                    <button id="submit">
+                        Submit Incident
+                    </button>
+
+                </section>
+
+                <section id="tab-messages" class="pane">
+
+    <h2>📩 Control Messages</h2>
+
+    <label>Send To</label>
+
+    <select id="messageTarget">
+        <option value="ALL">ALL APPLIANCES</option>
+    </select>
+
+    <label style="margin-top:15px;">Message</label>
+
+    <textarea
+        id="messageBox"
+        rows="5"
+        placeholder="Type message..."></textarea>
+
+    <button id="sendMessageBtn">
+        Send Message
+    </button>
+
+    <hr style="margin:25px 0;">
+
+    <div id="msgs"></div>
+
+</section>
+
+                <section id="tab-appliance" class="pane">
+                    <div id="statuses"></div>
+                </section>
+
+                <section id="tab-acks" class="pane">
+                    <div id="acks"></div>
+                </section>
+
+                <section id="tab-ongoing" class="pane">
+                    <div class="sectionTitle">🔥 Ongoing Incidents</div>
+                    <div id="ongoingIncidentList" class="ongoingIncidentList"></div>
+
+                    <div id="ongoingIncidentDetails" class="ongoingIncidentDetails" hidden>
+                        <button id="backToOngoing" class="smallBack">← Back to incidents</button>
+                        <div id="ongoingIncidentHeader"></div>
+                        <div class="ongoingDetailGrid">
+                            <div class="ongoingDetailCard">
+                                <h3>Incident Details</h3>
+                                <div id="ongoingIncidentInfo"></div>
+                                <div class="incidentEditGrid">
+                                    <label>Incident Type
+                                      <select id="incidentTypeEdit">
+                                        <option>DWELLING FIRE</option>
+                                        <option>COMMERCIAL FIRE</option>
+                                        <option>BIN FIRE</option>
+                                        <option>VEHICLE FIRE</option>
+                                        <option>FIRE IN OPEN</option>
+                                        <option>CHEMICAL FIRE</option>
+                                        <option>FARM FIRE</option>
+                                        <option>ELECTRICAL FIRE</option>
+                                        <option>AFA</option>
+                                        <option>RTC - UP TO 2 VEHICLES</option>
+                                        <option>RTC - MULTIPLE VEHICLES</option>
+                                        <option>STANDBY DUTIES</option>
+                                        <option>HAZMAT</option>
+                                        <option>FLOODING</option>
+                                        <option>WATER RESCUE</option>
+                                        <option>ROPE RESCUE</option>
+                                        <option>WILDFIRE</option>
+                                        <option>HEIGHT RESCUE</option>
+                                        <option>SPECIAL SERVICE</option>
+                                        <option>EFFECTING ENTRY</option>
+                                        <option>999 EMERGENCY</option>
+                                    </select>
+                                    </label>
+                                    <label>Priority
+                                      <select id="incidentPriorityEdit">
+                                        <option>Immediate</option>
+                                        <option>Prompt</option>
+                                        <option>Non Emergency</option>
+                                      </select>
+                                    </label>
+                                    <label>Location / Address<input id="incidentAddressEdit" type="text"></label>
+                                    <label>Postal<input id="incidentPostalEdit" type="text"></label>
+                                    <label>Caller<input id="incidentCallerEdit" type="text"></label>
+                                    <label>Scene Status<select id="incidentSceneStatus">
+                                        <option value="">Not set</option>
+                                        <option>Being Attended</option>
+                                        <option>Under Control</option>
+                                        <option>Making Pumps</option>
+                                        <option>Rescue Underway</option>
+                                        <option>Evacuation</option>
+                                        <option>All Clear</option>
+                                    </select></label>
+                                    <label>Casualties<input id="incidentCasualties" type="number" min="0" value="0"></label>
+                                    <label class="wide">Additional Details<textarea id="incidentDetailsEdit" rows="4" placeholder="Add incident details..."></textarea></label>
+                                    <label class="wide">Hazards<textarea id="incidentHazardsEdit" rows="3" placeholder="Gas, electricity, structural instability, chemicals..."></textarea></label>
+                                    <label class="wide">Additional Resources<textarea id="incidentResourcesEdit" rows="3" placeholder="Additional appliances, specialist teams, water resources..."></textarea></label>
+                                </div>
+                                <button id="saveIncidentDetails" class="saveDetailsBtn">Save Incident Details</button>
+                            </div>
+                            <div class="ongoingDetailCard">
+                                <h3>Appliances & Crew</h3>
+                                <div id="incidentApplianceList"></div>
+                                <div class="crewRosterHint">Assign each person on the appliance. The selected person's role/name will identify them when they radio Control.</div>
+                            </div>
+                        </div>
+                        <div class="incidentOpsGrid">
+                            <div class="ongoingDetailCard">
+                                <h3>🧰 Resource Request</h3>
+                                <div class="resourceRequestForm">
+                                    <select id="resourceRequestType">
+                                        <option>Additional Pump</option><option>Aerial Appliance</option><option>Water Carrier</option>
+                                        <option>Rescue Appliance</option><option>Command Unit</option><option>Specialist Resource</option>
+                                        <option>Ambulance</option><option>Police</option><option>Other</option>
+                                    </select>
+                                    <select id="resourceRequestPriority"><option>Normal</option><option>Urgent</option></select>
+                                    <textarea id="resourceRequestNotes" rows="3" placeholder="Reason / details..."></textarea>
+                                    <button id="sendResourceRequest" class="saveDetailsBtn">Send Request</button>
+                                </div>
+                            </div>
+                            <div class="ongoingDetailCard">
+                                <h3>📋 Incident Timeline</h3>
+                                <div id="incidentTimeline" class="incidentTimeline"></div>
+                            </div>
+                        </div>
+                        <button id="closeOngoingIncident" class="closeIncidentBtn">Close Incident</button>
+                    </div>
+                </section>
+
+            </div>
+
+                
+<section id="tab-999calls" class="pane">
+  <div class="pageHead">
+    <div class="eyebrow">EMERGENCY CALLS</div>
+    <h2>📞 999 Calls</h2>
+    <p>Incoming emergency reports from Guardian_999. Review a call and turn it into the normal incident workflow.</p>
+  </div>
+  <div id="guardian999Inbox" class="guardian999Inbox"></div>
+</section>
+
+<section id="tab-stations" class="pane">
+                    <div class="pageHead"><div class="eyebrow">RESOURCES</div><h2>🏠 Stations</h2><p>Appliances grouped using your configured callsign-to-station mapping.</p></div>
+                    <div id="stationGrid" class="stationGrid"></div>
+                </section>
+<section id="tab-handover" class="pane">
+                    <div class="pageHead"><div class="eyebrow">CONTROL</div><h2>📝 Shift Handover</h2><p>Live summary for the incoming Control operator.</p></div>
+                    <div id="handoverBoard"></div>
+                </section>
+
+            <!-- RIGHT SIDE -->
+            <div class="applianceColumn">
+
+                <div class="sectionTitle">
+                    🚒 Live Appliance Status
+                </div>
+
+                <div id="liveMDTBoard" class="dispatchBoard"></div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+</div>
+
+<script src="ui.js"></script>
+
+</body>
+</html>

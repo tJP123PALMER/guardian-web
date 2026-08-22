@@ -104,7 +104,8 @@ let state = {
   stations: {},
   bookings: {},
   eventLog: [],
-  standbyMoves: []
+  standbyMoves: [],
+  standbyIncidents: []
 };
 
 function auth(req,res,next){
@@ -185,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.4.2 Standby Selection Fix"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5 Standby-as-Incident"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.4.2 Standby Selection Fix",
+  version:"Guardian Operations v2.5 Standby-as-Incident",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -222,7 +223,15 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   const hadCalls = new Set((state.calls999||[]).map(c=>String(c.id)));
 
   state.units = normalizeUnits(body.units ?? state.units);
-  if(Array.isArray(body.incidents)) state.incidents = body.incidents;
+  if(Array.isArray(body.incidents)){
+    const liveIncidents=body.incidents;
+    const activeStandbys=(state.standbyIncidents||[]).filter(i=>String(i.status||"").toUpperCase()!=="CLOSED");
+    const liveIds=new Set(liveIncidents.map(i=>String(i.id)));
+    state.incidents=[
+      ...liveIncidents,
+      ...activeStandbys.filter(i=>!liveIds.has(String(i.id)))
+    ];
+  }
   if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
   if(Array.isArray(body.messages)) state.messages = body.messages;
   if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
@@ -271,6 +280,52 @@ function queueCommand(action,data={}){
   commands.set(command.id,command);
   pushEvent("commandQueued",{id:command.id,action,data});
   return command;
+}
+
+
+function activeStandbyIncident(moveId){
+  return (state.standbyIncidents||[]).find(i=>String(i.standbyMoveId||"")===String(moveId||"") && String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+}
+
+function makeStandbyIncident(move){
+  const short=String(move.id||"").split("-")[0].toUpperCase();
+  return {
+    id:`STBY-${short}`,
+    type:"STANDBY COVER",
+    title:`Standby - ${move.destination}`,
+    category:"standby",
+    isStandby:true,
+    standbyMoveId:move.id,
+    standbySourceStation:move.sourceStation,
+    standbyDestination:move.destination,
+    priority:"Standby",
+    location:move.destination,
+    address:move.destination,
+    postal:"",
+    caller:"Control",
+    details:move.note||`Proceed to ${move.destination} for standby cover.`,
+    notes:move.note||"",
+    sceneStatus:"Standby Move Sent",
+    status:"ONGOING",
+    appliances:[move.callsign],
+    assignedAppliances:[move.callsign],
+    applianceStatuses:{[move.callsign]:"Standby Move Sent"},
+    enableMDT:true,
+    enableTurnout:true,
+    enablePager:false,
+    createdAt:now()
+  };
+}
+
+function closeStandbyIncident(move,reason){
+  const inc=activeStandbyIncident(move?.id);
+  if(!inc) return null;
+  inc.status="CLOSED";
+  inc.sceneStatus="Closed";
+  inc.closedAt=now();
+  inc.closeReason=reason||"Standby completed";
+  pushEvent("standbyIncidentClosed",{incidentId:inc.id,standbyMoveId:move.id,reason:inc.closeReason});
+  return inc;
 }
 
 function find999(callId){
@@ -334,20 +389,46 @@ app.post("/api/command",(req,res)=>{
     const callsign=String(data.callsign||"").trim().toUpperCase();
     const destination=String(data.destination||data.station||"").trim();
     if(!callsign||!destination) return res.status(400).json({ok:false,error:"Callsign and destination station are required"});
+
     const u=state.units?.[callsign]||{};
     const st=String(u.status||"").toLowerCase();
     if(u.incidentId || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
       return res.status(409).json({ok:false,error:`${callsign} is committed or unavailable`});
     if(activeStandby(callsign)) return res.status(409).json({ok:false,error:`${callsign} already has an active standby move`});
 
-    const move={id:id(),type:"standby_move",callsign,
+    const move={
+      id:id(),type:"standby_move",callsign,
       sourceStation:state.callSignStations?.[callsign]||u.station||"Unknown",
-      destination,note:String(data.note||data.reason||""),state:"sent",
-      status:"Standby Move Sent",sentAt:now()};
+      destination,note:String(data.note||data.reason||""),
+      state:"sent",status:"Standby Move Sent",sentAt:now()
+    };
     state.standbyMoves.unshift(move);
-    pushEvent("standbyMoveCreated",move); touch();
-    const command=queueCommand("standbyMove",move);
-    return res.json({ok:true,move,command});
+
+    // Create a special incident and feed it through the normal dispatch pipeline.
+    const standbyIncident=makeStandbyIncident(move);
+    state.standbyIncidents ||= [];
+    state.standbyIncidents.unshift(standbyIncident);
+    state.incidents ||= [];
+    state.incidents.unshift(standbyIncident);
+
+    pushEvent("standbyMoveCreated",move);
+    pushEvent("incidentCreated",standbyIncident);
+    touch();
+
+    const createCommand=queueCommand("createIncident",standbyIncident);
+    const assignCommand=queueCommand("assignAppliance",{
+      incidentId:standbyIncident.id,
+      id:standbyIncident.id,
+      callsign,
+      appliance:callsign,
+      standby:true,
+      standbyMoveId:move.id,
+      enableMDT:true,
+      enableTurnout:true,
+      enablePager:false
+    });
+
+    return res.json({ok:true,move,standbyIncident,command:createCommand,assignCommand});
   }
 
   if(action==="cancelStandbyMove" || action==="returnStandbyMove"){
@@ -355,8 +436,17 @@ app.post("/api/command",(req,res)=>{
     if(!move) return res.status(404).json({ok:false,error:"Standby move not found"});
     move.state=action==="returnStandbyMove"?"returning":"cancelled";
     move.status=action==="returnStandbyMove"?"Return to Home Station":"Standby Cancelled";
-    move.updatedAt=now(); pushEvent(action,move); touch();
-    return res.json({ok:true,move,command:queueCommand(action,{id:move.id,callsign:move.callsign})});
+    move.updatedAt=now();
+    const standbyIncident=activeStandbyIncident(move.id);
+    if(action==="cancelStandbyMove"){
+      closeStandbyIncident(move,"Standby cancelled by Control");
+    }else if(standbyIncident){
+      standbyIncident.sceneStatus="Return Home";
+      standbyIncident.applianceStatuses ||= {};
+      standbyIncident.applianceStatuses[move.callsign]="Return to Home Station";
+    }
+    pushEvent(action,move); touch();
+    return res.json({ok:true,move,standbyIncident,command:queueCommand(action,{id:move.id,callsign:move.callsign,incidentId:standbyIncident?.id})});
   }
 
   if(action==="ackStandbyMove"){
@@ -364,17 +454,25 @@ app.post("/api/command",(req,res)=>{
     if(!move) return res.status(404).json({ok:false,error:"Standby move not found"});
     move.state="acknowledged"; move.status="Mobile to Standby Station"; move.acknowledgedAt=now();
     if(state.units?.[move.callsign]) state.units[move.callsign]={...state.units[move.callsign],status:"Mobile to Standby Station"};
+    const standbyIncident=activeStandbyIncident(move.id);
+    if(standbyIncident){
+      standbyIncident.sceneStatus="Mobile to Standby Station";
+      standbyIncident.applianceStatuses ||= {};
+      standbyIncident.applianceStatuses[move.callsign]="Mobile to Standby Station";
+    }
     pushEvent("standbyMoveAcknowledged",move); touch();
     return res.json({ok:true,move,command:queueCommand("ackStandbyMove",{id:move.id,callsign:move.callsign})});
   }
 
   // Emergency incident mobilisation automatically supersedes standby.
-  if(action==="assignAppliance"){
+  if(action==="assignAppliance" && !data.standby){
     const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
     const move=activeStandby(cs);
     if(move){
       move.state="superseded"; move.status="Superseded by Incident";
       move.supersededAt=now(); move.supersededByIncident=data.incidentId||data.id||null;
+      const standbyIncident=closeStandbyIncident(move,`Superseded by incident ${move.supersededByIncident||""}`.trim());
+      if(standbyIncident) standbyIncident.supersededByIncident=move.supersededByIncident;
       pushEvent("standbyMoveSuperseded",move); touch();
     }
   }
@@ -435,6 +533,19 @@ app.post("/api/command",(req,res)=>{
     const cs=String(data.callsign||"").trim().toUpperCase();
     if(cs && state.units?.[cs]){
       state.units[cs]={...state.units[cs],status:String(data.status||state.units[cs].status||"Home Station")};
+      const move=activeStandby(cs);
+      if(move){
+        const st=String(data.status||state.units[cs].status||"");
+        move.status=st;
+        if(/mobile to standby/i.test(st)) move.state="mobile";
+        if(/available standby/i.test(st)) move.state="available";
+        const standbyIncident=activeStandbyIncident(move.id);
+        if(standbyIncident){
+          standbyIncident.sceneStatus=st;
+          standbyIncident.applianceStatuses ||= {};
+          standbyIncident.applianceStatuses[cs]=st;
+        }
+      }
       if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
       pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
       touch();
@@ -460,6 +571,7 @@ app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state
 app.get("/api/operational/incidents",(_req,res)=>res.json({ok:true,incidents:state.incidents}));
 app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:dedupe999Calls(state.calls999)}));
 app.get("/api/operational/events",(_req,res)=>res.json({ok:true,events:state.eventLog}));
+app.get("/api/operational/standby-incidents",(_req,res)=>res.json({ok:true,incidents:state.standbyIncidents||[]}));
 app.get("/api/operational/standby",(_req,res)=>res.json({ok:true,standbyMoves:state.standbyMoves||[]}));
 app.get("/api/operational/cover",(_req,res)=>{
   const stations={};
@@ -482,4 +594,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.4.2 Standby Selection Fix running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5 Standby-as-Incident running on port ${PORT}`));

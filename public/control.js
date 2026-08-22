@@ -15,11 +15,31 @@ function stationFor(cs){
  const map=state.callSignStations||{};
  return map[key] ?? map[cs] ?? "";
 }
+function activeStandbyMove(cs){
+ const key=upper(cs);
+ return (state.standbyMoves||[]).find(m=>
+   upper(m.callsign)===key &&
+   !["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase())
+ )||null;
+}
+function standbyStationFor(cs){
+ const move=activeStandbyMove(cs);
+ return move?String(move.destination||""):"";
+}
+function effectiveStationFor(cs){
+ return standbyStationFor(cs)||stationFor(cs);
+}
+function standbyLabel(cs){
+ const move=activeStandbyMove(cs);
+ if(!move)return "";
+ const st=String(move.status||move.state||"Standby");
+ return `${st} at ${move.destination||"standby station"}`;
+}
 function allConfiguredCallsigns(){
  return [...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper),...Object.keys(state.callSignStations||{}).map(upper)])].filter(Boolean).sort();
 }
 
-let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{},stations:{},eventLog:[]};
+let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{},stations:{},eventLog:[],standbyMoves:[]};
 let controlView="overview",selectedIncidentId=null;
 const pending999Conversions=new Set();
 const pending999Dismissals=new Set();
@@ -162,7 +182,10 @@ function render(){
  $("incidentBadge").textContent=incs.length;$("callBadge").textContent=calls.length;
  $("mIncidents").textContent=incs.length;$("mAvailable").textContent=units.filter(availableUnit).length;$("mMobile").textContent=units.filter(u=>/MOBILE|ATTENDANCE/i.test(u.status||"")).length;$("mCalls").textContent=calls.length;
  $("overviewIncidents").innerHTML=incs.length?incs.slice(0,6).map(i=>`<div class="row"><div class="rowMeta"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><span>${esc(i.address||i.postal||"No location")}</span></div><span class="status">${assignedUnits(i).length} assigned</span></div>`).join(""):empty("No active incidents");
- $("overviewUnits").innerHTML=units.length?units.slice(0,8).map(u=>`<div class="row"><div class="rowMeta"><strong>${esc(u.callsign)}</strong><span>${esc(stationFor(u.callsign)||"")}</span></div><span class="status ${statusClass(u.status)}">${esc(u.status||"OFF RUN")}</span></div>`).join(""):empty("No live appliances");
+ $("overviewUnits").innerHTML=units.length?units.slice(0,8).map(u=>{
+   const home=stationFor(u.callsign),standby=standbyStationFor(u.callsign);
+   return `<div class="row"><div class="rowMeta"><strong>${esc(u.callsign)}</strong><span>${standby?`Standby: ${esc(standby)} · Home: ${esc(home||"—")}`:esc(home||"")}</span></div><span class="status ${statusClass(u.status)}">${esc(u.status||"OFF RUN")}</span></div>`;
+ }).join(""):empty("No live appliances");
  renderIncidentList();
  if(!incidentEditorShouldHold())renderIncidentDetail();
  renderUnits();renderCalls();renderMessages();renderStations();renderCover();renderMdt();
@@ -198,7 +221,7 @@ function renderIncidentDetail(){
    <div class="detailTop commandRecordTop">
      <div>
        <span class="eyebrow">INCIDENT #${esc(inc.id)}</span>
-       <h2>${esc(inc.type||"Incident")}</h2>
+       <h2>${inc.isStandby?`<span class="standbyIncidentBadge">STANDBY</span> `:""}${esc(inc.type||"Incident")}</h2>
        <p>${esc(inc.address||"No location")}${inc.postal?` · ${esc(inc.postal)}`:""}${inc.priority?` · ${esc(inc.priority)}`:""}</p>
      </div>
      <div class="incidentTopActions">
@@ -265,14 +288,14 @@ function renderIncidentDetail(){
        <tbody>
          ${assigned.map(cs=>`<tr>
            <td><strong>${esc(cs)}</strong></td>
-           <td>${esc(stationFor(cs)||"")}</td>
+           <td>${standbyStationFor(cs)?`<strong>${esc(standbyStationFor(cs))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(cs)||"—")}</small>`:esc(stationFor(cs)||"")}</td>
            <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}</td>
            <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
          </tr>`).join("")}
          ${candidates.map(u=>`<tr>
            <td><strong>${esc(u.callsign)}</strong></td>
-           <td>${esc(stationFor(u.callsign)||"")}</td>
-           <td>${esc(u.status||"AVAILABLE")}</td>
+           <td>${standbyStationFor(u.callsign)?`<strong>${esc(standbyStationFor(u.callsign))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(u.callsign)||"—")}</small>`:esc(stationFor(u.callsign)||"")}</td>
+           <td>${esc(u.status||"AVAILABLE")}${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
            <td><button data-mobilise="${esc(u.callsign)}">MOBILISE</button></td>
          </tr>`).join("")}
          ${!assigned.length&&!candidates.length?'<tr><td colspan="4" class="tableEmpty">No active appliances currently available.</td></tr>':""}
@@ -447,7 +470,22 @@ function renderIncidentDetail(){
 }
 function renderUnits(){
  const configured=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
- $("unitTable").innerHTML=`<div class="tableHead"><div>CALLSIGN</div><div>STATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+configured.map(cs=>`<div class="tableRow"><div><strong>${esc(cs)}</strong></div><div>${esc(stationFor(cs)||"—")}</div><div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div><div><span class="status ${statusClass(currentStatus(cs))}">${esc(currentStatus(cs))}</span></div><div>${state.units?.[cs]?"SIGNED ON":"OFF RUN"}</div></div>`).join("");
+ $("unitTable").innerHTML=`<div class="tableHead applianceBoardHead"><div>CALLSIGN</div><div>HOME STATION</div><div>CURRENT COVER / LOCATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+
+ configured.map(cs=>{
+   const home=stationFor(cs)||"—";
+   const move=activeStandbyMove(cs);
+   const current=move?(move.destination||"Standby"):(state.units?.[cs]?home:"—");
+   const live=!!state.units?.[cs];
+   const status=currentStatus(cs);
+   return `<div class="tableRow applianceBoardRow">
+     <div><strong>${esc(cs)}</strong>${move?'<span class="standbyFlag">STANDBY</span>':""}</div>
+     <div>${esc(home)}</div>
+     <div>${move?`<strong>${esc(current)}</strong><small class="standbySub">${esc(move.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
+     <div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div>
+     <div><span class="status ${statusClass(status)}">${esc(status)}</span>${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}</div>
+     <div>${live?"SIGNED ON":"OFF RUN"}</div>
+   </div>`;
+ }).join("");
 }
 function renderCalls(){
  const calls=state.calls999||[];
@@ -602,7 +640,7 @@ function renderMdt(){
  $("mdtIncidentBadge").textContent=assigned.length;
  $("mdtIncidentList").innerHTML=assigned.length?assigned.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedMdtIncidentId)?"active":""}" data-mdtincident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"")}</p></div>`).join(""):'<div class="emptyState"><strong>No assigned incidents</strong><span>Mobilisations for this callsign will appear here.</span></div>';
  const inc=assigned.find(i=>String(i.id)===String(selectedMdtIncidentId));
- $("mdtIncidentDetail").innerHTML=inc?`<div class="incidentInfo"><span class="eyebrow">INCIDENT #${esc(inc.id)}</span><h2>${esc(inc.type||"Incident")}</h2><dl><dt>Address</dt><dd>${esc(inc.address||"—")}</dd><dt>Postal</dt><dd>${esc(inc.postal||"—")}</dd><dt>Priority</dt><dd>${esc(inc.priority||"—")}</dd><dt>Notes</dt><dd>${esc(inc.notes||"—")}</dd><dt>Assigned</dt><dd>${esc(assignedUnits(inc).join(", "))}</dd></dl><div class="actions"><button class="primary" id="mdtAck">ACKNOWLEDGE</button></div></div>`:'<div class="emptyState"><strong>No incident selected</strong><span>Click an assigned incident to view it. New incidents will not steal focus.</span></div>';
+ $("mdtIncidentDetail").innerHTML=inc?`<div class="incidentInfo"><span class="eyebrow">INCIDENT #${esc(inc.id)}</span><h2>${inc.isStandby?`<span class="standbyIncidentBadge">STANDBY</span> `:""}${esc(inc.type||"Incident")}</h2><dl><dt>Address</dt><dd>${esc(inc.address||"—")}</dd><dt>Postal</dt><dd>${esc(inc.postal||"—")}</dd><dt>Priority</dt><dd>${esc(inc.priority||"—")}</dd><dt>Notes</dt><dd>${esc(inc.notes||"—")}</dd><dt>Assigned</dt><dd>${esc(assignedUnits(inc).join(", "))}</dd></dl><div class="actions"><button class="primary" id="mdtAck">ACKNOWLEDGE</button></div></div>`:'<div class="emptyState"><strong>No incident selected</strong><span>Click an assigned incident to view it. New incidents will not steal focus.</span></div>';
  $("mdtMessageList").innerHTML=state.messages.length?state.messages.slice().reverse().map(m=>`<div class="message"><strong>${esc(m.sender||"CONTROL")}</strong><p>${esc(m.text||"")}</p><small>${esc(m.time||"")}</small></div>`).join(""):empty("No messages");
  document.querySelectorAll("[data-status]").forEach(b=>b.onclick=()=>{selectedStatus=b.dataset.status;renderMdt()});
  document.querySelectorAll("[data-mdtincident]").forEach(b=>b.onclick=()=>{selectedMdtIncidentId=b.dataset.mdtincident;renderMdt()});

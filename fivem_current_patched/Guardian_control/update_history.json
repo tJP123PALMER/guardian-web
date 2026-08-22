@@ -1,0 +1,32 @@
+[
+  {
+    "date": "15/08/2026",
+    "time": "20:29",
+    "type": "Added",
+    "text": "Editable incident dispatch details \u2014 Ongoing Incident workspace can now change incident type, priority, address, postal and caller before or after appliance mobilisation, with changes logged in the incident timeline."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "20:27",
+    "type": "Redesigned",
+    "text": "Control workflow \u2014 removed the standalone New Incident tab. Incoming 999 calls now create the normal ongoing incident directly, and Control can edit/manage/mobilise it from Ongoing Incidents."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "20:24",
+    "type": "Redesigned",
+    "text": "999 Control presentation \u2014 replaced the large blocking emergency panel with a compact non-blocking 999 notification, persistent sidebar badge and dedicated 999 Calls inbox. Opening a call still hands it into the normal incident form."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "20:20",
+    "type": "Fixed",
+    "text": "Guardian_999 integration \u2014 Control now exposes a Receive999Call server export and the incoming 999 call panel; Guardian_999 can hand emergency reports directly into Control."
+  },
+  {
+    "date": "15/08/2026",
+    "time": "19:58",
+    "type": "Added",
+    "text": "Appliance skills \u2014 added configurable per-callsign skills, pattern rules for G=Wildfire Unit and W=Swift Water Rescue, and explicit K07P1=Turntable Ladder."
+  }
+]
