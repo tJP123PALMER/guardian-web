@@ -486,3 +486,18 @@
   margin-top:12px!important;
   box-shadow:0 -6px 12px rgba(0,0,0,.12)!important;
 }
+
+/* v2.7.1 CF-33 incident UI only. Dispatch/alerts are untouched from v2.7. */
+#incidentDetail{position:relative!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:auto!important}
+.cf33Incident{position:relative;min-height:100%;padding-bottom:55px;background:#d9dde0;color:#20242a;font-family:Arial,sans-serif}
+.cf33Header{display:grid;grid-template-columns:1.1fr .9fr 1fr;background:#e7e9ea;border-bottom:1px solid #a7adb2}
+.cf33Header>div{padding:5px 9px;border-right:1px solid #b6bcc1}.cf33Header>div:last-child{border-right:0}
+.cf33Header span{display:block;font-size:12px;color:#646b70}.cf33Header strong{display:block;font-size:17px;margin-top:2px}
+.cf33Paper{padding:8px 92px 75px 12px;min-height:470px;background:#e4e6e7}
+.cf33Row{display:grid;grid-template-columns:110px 1fr;gap:8px;font-size:17px;line-height:1.35;padding:2px 0}
+.cf33Row span{color:#5b6268}.cf33Details{white-space:pre-wrap;font-size:18px;line-height:1.4;margin:8px 0 15px}
+.cf33Side{position:absolute;right:8px;top:70px;display:flex;flex-direction:column;gap:8px}
+.cf33Side button{width:68px;height:82px;background:#153e65;color:#fff;border:0;font-size:38px;font-weight:700}
+.cf33Ack{position:absolute;left:0;right:0;bottom:52px;background:#aeb3b7;color:#e7e7e7;text-align:center;padding:8px;font-size:18px;font-weight:700}
+.cf33Bottom{position:absolute;left:0;right:0;bottom:0;height:52px;display:grid;grid-template-columns:repeat(6,1fr) 1.2fr}
+.cf33Bottom button{background:#173e64;color:#fff;border:1px solid #355778;font-size:12px}.cf33Bottom button:last-child{background:#c82026}

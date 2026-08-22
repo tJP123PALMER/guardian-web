@@ -168,89 +168,58 @@ function showIncident(i){
                Array.isArray(inc.assignedAppliances)?inc.assignedAppliances:
                Array.isArray(inc.appliances)?inc.appliances:[])
                .map(x=>typeof x==='string'?x:(x?.callsign||x?.unit||'')).filter(Boolean);
-  const roles=inc.assignedRoles&&typeof inc.assignedRoles==='object'
-    ? Object.entries(inc.assignedRoles).map(([k,v])=>`${k}: ${typeof v==='string'?v:(v?.role||v?.name||'')}`).filter(Boolean).join(', ')
-    : (inc.roles||'');
-  const further=inc.description||inc.details||inc.notes||'No further information.';
-  const risk=inc.specialRisk||inc.hazards||'None notified';
-  const talkgroup=inc.talkgroup||inc.talkGroup||'Not assigned';
-  const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))}, ${Math.round(Number(inc.y))}`:'—');
-  const stationArea=inc.stationArea||inc.standbyDestination||inc.address||'—';
-  const standby=!!(inc.isStandby||inc.isStandbyMove);
+  const roles=inc.assignedRoles||inc.applianceRoles||{};
+  const roleText=Object.keys(roles).length
+    ? Object.entries(roles).map(([cs,r])=>`${cs}:${typeof r==='string'?r:(r?.role||r?.name||'')}`).join(', ')
+    : (inc.roles||'—');
+  const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))},${Math.round(Number(inc.y))}`:'—');
+  const received=inc.time||inc.dispatchedAt||inc.createdAt||'—';
+  const incidentNo=typeof turnoutIncidentNo==='function'?turnoutIncidentNo(inc):String(inc.incidentNumber||inc.id||'—');
+  const details=inc.description||inc.details||inc.notes||'';
+  const talkgroup=inc.talkgroup||inc.talkGroup||'—';
 
   incidentDetail.innerHTML=`
-    <div class="turnoutSlip ${standby?'standbySlip':''}">
-      <div class="turnoutHeader">
-        <div><span>GUARDIAN TURNOUT</span><strong>${standby?'STANDBY COVER':'INCIDENT'}</strong></div>
-        <div class="turnoutNumber">INC NO ${escapeHtml(turnoutIncidentNo(inc))}</div>
+    <div class="cf33Incident">
+      <div class="cf33Header">
+        <div><span>Date / Time Received</span><strong>${escapeHtml(String(received))}</strong></div>
+        <div><span>Incident</span><strong>${escapeHtml(incidentNo)}</strong></div>
+        <div><span>Map Reference</span><strong>${escapeHtml(mapRef)}</strong></div>
       </div>
-      <div class="turnoutGrid">
-        <div class="turnoutWide"><label>TO ATTEND</label><strong>${escapeHtml(units.join(', ')||callsignBox.textContent||'—')}</strong></div>
-        <div class="turnoutWide"><label>ADDRESS</label><strong>${escapeHtml(inc.address||inc.location||'—')}</strong></div>
-        <div><label>POSTAL</label><span>${escapeHtml(inc.postal||'—')}</span></div>
-        <div><label>STATION AREA</label><span>${escapeHtml(stationArea)}</span></div>
-        <div><label>MAP REF</label><span>${escapeHtml(mapRef)}</span></div>
-        <div><label>PRIORITY</label><span>${escapeHtml(inc.priority||'—')}</span></div>
-        <div class="turnoutWide"><label>TYPE</label><strong>${escapeHtml(inc.type||inc.title||'Incident')}</strong></div>
-        <div class="turnoutWide"><label>SPECIAL RISK / HAZARDS</label><span>${escapeHtml(String(risk))}</span></div>
-        <div><label>CALLER</label><span>${escapeHtml(inc.caller||'—')}</span></div>
-        <div><label>TIME</label><span>${escapeHtml(inc.time||inc.dispatchedAt||'—')}</span></div>
-        <div><label>TALKGROUP</label><span>${escapeHtml(talkgroup)}</span></div>
-        <div><label>ROLES</label><span>${escapeHtml(roles||'Not assigned')}</span></div>
-        ${standby?`<div class="turnoutWide standbyRoute"><label>STANDBY MOVE</label><strong>${escapeHtml(inc.standbySourceStation||'Home Station')} → ${escapeHtml(inc.standbyDestination||inc.address||'Standby Station')}</strong></div>`:''}
-        <div class="turnoutWide"><label>FURTHER INFORMATION</label><div class="turnoutInfo">${escapeHtml(further)}</div></div>
-        <div class="turnoutWide"><label>ASSIGNED</label><span>${escapeHtml(units.join(', ')||'—')}</span></div>
+      <div class="cf33Paper">
+        <div class="cf33Row"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="cf33Row"><span>Address:</span><b>${escapeHtml(inc.address||inc.location||'—')}</b></div>
+        ${inc.postal?`<div class="cf33Row"><span>Postal:</span><b>${escapeHtml(String(inc.postal))}</b></div>`:''}
+        <div class="cf33Row"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
+        <div class="cf33Row"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards||'—')}</b></div>
+        <div class="cf33Details">${escapeHtml(details)}</div>
+        <div class="cf33Row"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="cf33Row"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
+        <div class="cf33Row"><span>Roles</span><b>${escapeHtml(roleText)}</b></div>
       </div>
-      <div class="turnoutActions">
-        <button id="ackBtn">ACKNOWLEDGE</button>
-        ${inc.x!=null&&inc.y!=null?'<button id="routeBtn">SET ROUTE</button>':''}
-        <button id="clearBtn">CLEAR FROM MDT</button>
+      <div class="cf33Side">
+        <button id="cfPrint" title="Print">▣</button>
+        ${inc.x!=null&&inc.y!=null?'<button id="routeBtn" title="Set route">⌃</button>':''}
+        <button id="cfDown" title="Scroll down">⌄</button>
+      </div>
+      <div class="cf33Ack">Incident received by ${escapeHtml(units[0]||'appliance')}</div>
+      <div class="cf33Bottom">
+        <button id="clearBtn">Remove Message</button>
+        <button type="button">Audible Alarm Off</button>
+        <button type="button">Last Received</button>
+        <button type="button">Find First Unread</button>
+        <button type="button">Clear All Read</button>
+        <button type="button">Clear All Messages</button>
+        <button id="cfClose">Close</button>
       </div>
     </div>`;
-  document.getElementById('ackBtn').onclick=()=>{nui('ackIncident',{id:inc.id});const b=document.getElementById('ackBtn');b.textContent='ACKNOWLEDGED';b.disabled=true;b.classList.add('acked');};
-  const routeBtn=document.getElementById('routeBtn'); if(routeBtn)routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
+
+  const routeBtn=document.getElementById('routeBtn');
+  if(routeBtn)routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
+  document.getElementById('cfDown').onclick=()=>incidentDetail.scrollBy({top:220,behavior:'smooth'});
+  document.getElementById('cfPrint').onclick=()=>window.print();
   document.getElementById('clearBtn').onclick=()=>{incidents.splice(i,1);renderIncidents();};
+  document.getElementById('cfClose').onclick=()=>{ if(typeof closeModal==='function') closeModal(); };
 }
-
-window.addEventListener('message',e=>{
-  const d=e.data||{};
-  switch(d.type){
-    case 'open': body.style.display='block'; switchTab('status'); buildStatuses(); updateAgencyDisplay(); renderMessages(); break;
-    case 'close': body.style.display='none'; break;
-    case 'setCallsign': callsignBox.textContent=d.callsign||'UNSET'; updateAgencyDisplay(); renderMessages(); break;
-    case 'setStatus': currentStatus=d.status||currentStatus; liveStatus.textContent=currentStatus; if(!d.preserveSelection) selectedStatus=null; buildStatuses(); if(selectedStatus){const pb=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(pb)pb.classList.add('pending');} break;
-    case 'loadIncidents': incidents=Array.isArray(d.incidents)?d.incidents:incidents; renderIncidents(); break;
-    case 'incident': if(d.item) {
-      const idx=incidents.findIndex(x=>String(x.id)===String(d.item.id));
-      if(idx>=0) incidents[idx]={...incidents[idx],...d.item};
-      else incidents.push(d.item);
-      renderIncidents();
-    } break;
-    case 'message': {
-      if(!d.item) break;
-      const item=d.item;
-      const key=[item.sender||'',item.time||'',item.text||''].join('|');
-      const duplicate=messages.some(m=>[m.sender||'',m.time||'',m.text||''].join('|')===key);
-      if(!duplicate){
-        messages.push({sender:item.sender||'CONTROL',text:item.text||'',time:item.time||'',direction:item.direction||'',conversation:'CONTROL'});
-        if(String(item.sender||'').toUpperCase()==='CONTROL'){
-          unreadMessageIndexes.add(messages.length-1);
-          playMessagePing();
-        }
-      }
-      selectedMessageIndex=messages.length-1;
-      renderMessages();
-      break;
-    }
-    case 'alert': { const a=document.getElementById('alert'); if(a){a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{});} break; }
-    case 'mobilising': body.style.display='block'; mobilisingOverlay.style.display='block'; switchTab('incidents'); break;
-  }
-});
-
-if(mobilisingOverlay) mobilisingOverlay.onclick=()=>{mobilisingOverlay.style.display='none';};
-
-/* Map controls */
-const viewport=document.getElementById('mapViewport'),map=document.getElementById('dispatchMap');
 function applyMap(){ if(map) map.style.transform=`translate(${mapX}px,${mapY}px) scale(${mapScale})`; }
 const zoomIn=document.getElementById('zoomIn'); if(zoomIn) zoomIn.onclick=()=>{if(scaleFrozen)return;mapScale=Math.min(2,mapScale+.1);applyMap();};
 const zoomOut=document.getElementById('zoomOut'); if(zoomOut) zoomOut.onclick=()=>{if(scaleFrozen)return;mapScale=Math.max(.25,mapScale-.1);applyMap();};
