@@ -46,9 +46,10 @@ const pending999Dismissals=new Set();
 
 // Keep manual standby selections stable while live SSE/state refreshes rerender Control.
 const standbyDraft={
-  callsign:"",
-  destination:"",
-  note:"Maintain cover while another appliance is committed"
+  callsign:"", destination:"",
+  note:"Maintain cover while another appliance is committed",
+  postal:"", mapRef:"", talkgroup:"FLAB-OPS1", role:"Pump",
+  specialRisk:"", furtherInfo:""
 };
 
 const incidentDrafts=new Map();
@@ -67,6 +68,9 @@ function incidentDraft(inc){
     details:String(inc.details||inc.notes||""),
     hazards:String(inc.hazards||""),
     resources:String(inc.resources||""),
+    mapRef:String(inc.mapRef||""),
+    talkgroup:String(inc.talkgroup||""),
+    specialRisk:String(inc.specialRisk||""),
     dirty:false,
     saving:false,
     saveStartedAt:0,
@@ -99,7 +103,10 @@ function incidentStateMatchesDraft(inc,d){
     && Number(inc.casualties||0)===Number(d.casualties||0)
     && norm(inc.details||inc.notes)===norm(d.details)
     && norm(inc.hazards)===norm(d.hazards)
-    && norm(inc.resources)===norm(d.resources);
+    && norm(inc.resources)===norm(d.resources)
+    && norm(inc.mapRef)===norm(d.mapRef)
+    && norm(inc.talkgroup)===norm(d.talkgroup)
+    && norm(inc.specialRisk)===norm(d.specialRisk);
 }
 
 function reconcileIncidentDrafts(){
@@ -242,6 +249,8 @@ function renderIncidentDetail(){
          </label>
          <label>Location / Address<input id="editIncidentAddress" value="${esc(draft.address)}"></label>
          <label>Postal<input id="editIncidentPostal" value="${esc(draft.postal)}"></label>
+         <label>Map Ref<input id="editMapRef" value="${esc(draft.mapRef)}" placeholder="e.g. 387534,656222"></label>
+         <label>Talkgroup<select id="editTalkgroup">${["","FLAB-OPS1","FLAB-OPS2","FLAB-OPS3","FLAB-OPS4","FLAB-OPS5","FLAB-OPS6","COMMAND"].map(v=>`<option value="${esc(v)}" ${v===draft.talkgroup?"selected":""}>${esc(v||"Not assigned")}</option>`).join("")}</select></label>
          <label>Caller<input id="editIncidentCaller" value="${esc(draft.caller)}"></label>
          <label>Scene Status
            <select id="editSceneStatus">${sceneOptions.map(v=>`<option value="${esc(v)}" ${v===draft.sceneStatus?"selected":""}>${esc(v||"Not set")}</option>`).join("")}</select>
@@ -253,6 +262,9 @@ function renderIncidentDetail(){
          </label>
          <label class="wideField">Hazards
            <textarea id="editHazards" rows="3" placeholder="Gas, electricity, chemicals, structural instability, cylinders...">${esc(draft.hazards)}</textarea>
+         </label>
+         <label class="wideField">Special Risk / Turnout Warning
+           <textarea id="editSpecialRisk" rows="2" placeholder="Prominent information for the MDT / turnout slip">${esc(draft.specialRisk)}</textarea>
          </label>
          <label class="wideField">Additional Resources / Notes
            <textarea id="editResources" rows="3" placeholder="Additional pumps, specialist teams, water, police, ambulance...">${esc(draft.resources)}</textarea>
@@ -283,22 +295,25 @@ function renderIncidentDetail(){
        <label><input id="prefTurnout" type="checkbox" ${turnout?"checked":""}> Send to Turnout</label>
        <label><input id="prefPager" type="checkbox" ${pager?"checked":""}> Send to Pager</label>
      </div>
+     <div class="turnoutPreflight"><strong>TURNOUT PRE-FLIGHT</strong><span>Set talkgroup, map ref, hazards and further information above. Select an appliance role before mobilisation.</span></div>
      <table class="resourceTable">
-       <thead><tr><th>CALLSIGN</th><th>STATION</th><th>STATUS</th><th>ACTION</th></tr></thead>
+       <thead><tr><th>CALLSIGN</th><th>STATION</th><th>STATUS</th><th>ROLE</th><th>ACTION</th></tr></thead>
        <tbody>
          ${assigned.map(cs=>`<tr>
            <td><strong>${esc(cs)}</strong></td>
            <td>${standbyStationFor(cs)?`<strong>${esc(standbyStationFor(cs))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(cs)||"—")}</small>`:esc(stationFor(cs)||"")}</td>
            <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}</td>
+           <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
            <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
          </tr>`).join("")}
          ${candidates.map(u=>`<tr>
            <td><strong>${esc(u.callsign)}</strong></td>
            <td>${standbyStationFor(u.callsign)?`<strong>${esc(standbyStationFor(u.callsign))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(u.callsign)||"—")}</small>`:esc(stationFor(u.callsign)||"")}</td>
            <td>${esc(u.status||"AVAILABLE")}${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
+           <td><select class="mobiliseRole" data-role-cs="${esc(u.callsign)}">${["Pump","Pump Commander","Incident Commander","Sector Commander","Safety Officer","Water","Aerial","Rescue","Command","Other"].map(r=>`<option>${esc(r)}</option>`).join("")}</select></td>
            <td><button data-mobilise="${esc(u.callsign)}">MOBILISE</button></td>
          </tr>`).join("")}
-         ${!assigned.length&&!candidates.length?'<tr><td colspan="4" class="tableEmpty">No active appliances currently available.</td></tr>':""}
+         ${!assigned.length&&!candidates.length?'<tr><td colspan="5" class="tableEmpty">No active appliances currently available.</td></tr>':""}
        </tbody>
      </table>
    </section>
@@ -352,8 +367,8 @@ function renderIncidentDetail(){
  // Keep every editable field as a local draft while heartbeats arrive.
  const draftBindings={
    editIncidentType:"type",editIncidentPriority:"priority",editIncidentAddress:"address",
-   editIncidentPostal:"postal",editIncidentCaller:"caller",editSceneStatus:"sceneStatus",
-   editCasualties:"casualties",editDetails:"details",editHazards:"hazards",editResources:"resources"
+   editIncidentPostal:"postal",editMapRef:"mapRef",editTalkgroup:"talkgroup",editIncidentCaller:"caller",editSceneStatus:"sceneStatus",
+   editCasualties:"casualties",editDetails:"details",editHazards:"hazards",editSpecialRisk:"specialRisk",editResources:"resources"
  };
  Object.entries(draftBindings).forEach(([id,field])=>{
    const input=$(id); if(!input)return;
@@ -387,7 +402,8 @@ function renderIncidentDetail(){
      await command("updateIncidentDetails",{
        incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,
        caller:d.caller,sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),
-       details:d.details,hazards:d.hazards,resources:d.resources
+       details:d.details,hazards:d.hazards,resources:d.resources,
+       mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
      });
      hint.textContent="Sent — waiting for FiveM confirmation…";
 
@@ -432,11 +448,17 @@ function renderIncidentDetail(){
 
  el.querySelectorAll("[data-mobilise]").forEach(b=>b.onclick=async()=>{
    savePrefs();
+   const cs=b.dataset.mobilise;
+   const d=incidentDraft(inc);
+   await command("updateIncidentDetails",{
+     incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,caller:d.caller,
+     sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),details:d.details,hazards:d.hazards,resources:d.resources,
+     mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
+   });
+   const role=el.querySelector(`.mobiliseRole[data-role-cs="${CSS.escape(cs)}"]`)?.value||"Pump";
    await command("assignAppliance",{
-     incidentId:inc.id,callsign:b.dataset.mobilise,assign:true,
-     enableMDT:$("prefMDT")?.checked===true,
-     enableTurnout:$("prefTurnout")?.checked===true,
-     enablePager:$("prefPager")?.checked===true
+     incidentId:inc.id,callsign:cs,assign:true,role,
+     enableMDT:$("prefMDT")?.checked===true,enableTurnout:$("prefTurnout")?.checked===true,enablePager:$("prefPager")?.checked===true
    });
  });
  el.querySelectorAll("[data-unassign]").forEach(b=>b.onclick=()=>command("assignAppliance",{incidentId:inc.id,callsign:b.dataset.unassign,assign:false}));
@@ -543,27 +565,27 @@ function renderMessages(){
 }
 function renderStations(){
  const groups={};
- for(const cs of allConfiguredCallsigns()){
-   const station=stationFor(cs)||"Unassigned / Command";
-   (groups[station]=groups[station]||[]).push(cs);
- }
+ for(const cs of allConfiguredCallsigns()){const station=stationFor(cs)||"Unassigned / Command";(groups[station]=groups[station]||[]).push(cs)}
  const entries=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0]));
  $("stationGrid").innerHTML=entries.length?entries.map(([st,list])=>{
    const rows=list.sort().map(cs=>{
-     const status=currentStatus(cs);
-     return `<div class="stationUnit">
-       <div><strong>${esc(cs)}</strong><small>${esc(skillText(state.applianceSkills?.[cs])||"General Appliance")}</small></div>
-       <span class="status ${statusClass(status)}">${esc(status)}</span>
-     </div>`;
+     const status=currentStatus(cs),away=activeStandbyMove(cs);
+     return `<div class="stationUnit"><div><strong>${esc(cs)}</strong><small>${esc(skillText(state.applianceSkills?.[cs])||"General Appliance")}${away?` · AWAY COVERING ${esc(away.destination)}`:""}</small></div><span class="status ${statusClass(status)}">${esc(status)}</span></div>`;
    }).join("");
    const live=list.filter(cs=>!!state.units?.[cs]).length;
-   return `<article class="station stationFull">
-     <header><div><span>FIRE STATION</span><strong>${esc(st)}</strong></div><b>${live}/${list.length} LIVE</b></header>
+   const active=(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase()));
+   const incoming=active.filter(m=>String(m.destination||"")===String(st));
+   const outgoing=active.filter(m=>String(m.sourceStation||"")===String(st));
+   return `<article class="station stationFull ${incoming.length?"hasStandbyCover":""}">
+     <header><div><span>FIRE STATION</span><strong>${esc(st)}</strong></div><b>${live}/${list.length} LIVE${incoming.length?` · +${incoming.length} STANDBY`:""}</b></header>
      <div class="stationUnits">${rows}</div>
-     <footer>${list.length} configured appliance${list.length===1?"":"s"}</footer>
+     ${incoming.length?`<section class="stationStandbySection"><h4>TEMPORARY STANDBY COVER AT STATION</h4>${incoming.map(m=>`<div class="stationStandbyUnit"><strong>${esc(m.callsign)}</strong><span>${esc(m.status||"Standby")} · Home: ${esc(m.sourceStation||"—")}${m.talkgroup?` · ${esc(m.talkgroup)}`:""}</span></div>`).join("")}</section>`:""}
+     ${outgoing.length?`<section class="stationAwaySection"><h4>HOME APPLIANCES PROVIDING COVER ELSEWHERE</h4>${outgoing.map(m=>`<div class="stationStandbyUnit"><strong>${esc(m.callsign)}</strong><span>→ ${esc(m.destination||"—")} · ${esc(m.status||"Standby")}</span></div>`).join("")}</section>`:""}
+     <footer>${list.length} configured appliance${list.length===1?"":"s"}${incoming.length?` · ${incoming.length} temporary standby`:""}</footer>
    </article>`;
  }).join(""):empty("No station configuration received");
 }
+
 function coverData(){
  const groups={};
  for(const cs of allConfiguredCallsigns()){
@@ -581,54 +603,37 @@ function renderCover(){
  const summary=$("coverSummary"),suggestions=$("coverSuggestions"); if(!summary||!suggestions)return;
  const data=coverData();
  summary.innerHTML=data.length?data.map(s=>`<article class="coverCard ${s.level}"><header><div><span>STATION COVER</span><strong>${esc(s.station)}</strong></div><b>${s.available} AVAILABLE</b></header><div class="coverStats"><span>${s.live}/${s.list.length} live</span><span>${s.mobile} committed</span><span>${s.list.length} configured</span></div></article>`).join(""):empty("No station configuration received");
- const deficits=data.filter(s=>s.available===0);
- const donors=data.filter(s=>s.available>=2);
- const moves=[];
- for(const target of deficits){
-   const donor=donors.sort((a,b)=>b.available-a.available)[0]; if(!donor)continue;
-   const unit=donor.rows.find(r=>/AVAILABLE|HOME STATION/i.test(r.status)); if(!unit)continue;
-   moves.push({unit:unit.callsign,from:donor.station,to:target.station});
- }
+ const deficits=data.filter(s=>s.available===0),donors=data.filter(s=>s.available>=2),moves=[];
+ for(const target of deficits){const donor=donors.sort((a,b)=>b.available-a.available)[0];if(!donor)continue;const unit=donor.rows.find(r=>/AVAILABLE|HOME STATION/i.test(r.status));if(unit)moves.push({unit:unit.callsign,from:donor.station,to:target.station})}
  suggestions.innerHTML=`
- <div class="sectionTitle"><span>Manual Standby Move</span><span class="small">Standby appliances remain available for emergency mobilisation</span></div>
- <div class="formGrid">
+ <div class="sectionTitle"><span>Manual Standby Move</span><span class="small">Complete the turnout brief before dispatch</span></div>
+ <div class="formGrid standbyTurnoutEditor">
   <div class="field"><label>Appliance</label><select id="standbyUnit"><option value="">Select appliance...</option>${Object.entries(state.units||{}).filter(([cs,u])=>{const s=String(u.status||"").toLowerCase();return !u.incidentId&&!/off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(s)}).map(([cs,u])=>`<option value="${esc(cs)}" ${String(standbyDraft.callsign)===String(cs)?"selected":""}>${esc(cs)} — ${esc(u.status||"Available")}</option>`).join("")}</select></div>
   <div class="field"><label>Destination Station</label><select id="standbyDestination"><option value="">Select station...</option>${Object.keys(state.stations||{}).sort().map(st=>`<option value="${esc(st)}" ${String(standbyDraft.destination)===String(st)?"selected":""}>${esc(st)}</option>`).join("")}</select></div>
-  <div class="field" style="grid-column:1/-1"><label>Control Note</label><input id="standbyNote" value="${esc(standbyDraft.note)}" placeholder="Maintain cover while another appliance is committed"></div>
-  <div class="formActions" style="grid-column:1/-1"><button class="primary" id="sendStandbyMove">SEND STANDBY MOVE</button></div>
+  <div class="field"><label>Postal<input id="standbyPostal" value="${esc(standbyDraft.postal)}"></label></div>
+  <div class="field"><label>Map Ref<input id="standbyMapRef" value="${esc(standbyDraft.mapRef)}" placeholder="387534,656222"></label></div>
+  <div class="field"><label>Talkgroup<select id="standbyTalkgroup">${["FLAB-OPS1","FLAB-OPS2","FLAB-OPS3","FLAB-OPS4","FLAB-OPS5","FLAB-OPS6","COMMAND"].map(v=>`<option ${v===standbyDraft.talkgroup?"selected":""}>${v}</option>`).join("")}</select></label></div>
+  <div class="field"><label>Role<select id="standbyRole">${["Pump","Pump Commander","Incident Commander","Sector Commander","Safety Officer","Water","Aerial","Rescue","Command","Other"].map(v=>`<option ${v===standbyDraft.role?"selected":""}>${v}</option>`).join("")}</select></label></div>
+  <div class="field" style="grid-column:1/-1"><label>Special Risk / Turnout Warning<input id="standbySpecialRisk" value="${esc(standbyDraft.specialRisk)}"></label></div>
+  <div class="field" style="grid-column:1/-1"><label>Further Information<textarea id="standbyFurtherInfo" rows="3">${esc(standbyDraft.furtherInfo)}</textarea></label></div>
+  <div class="field" style="grid-column:1/-1"><label>Control Note<input id="standbyNote" value="${esc(standbyDraft.note)}"></label></div>
+  <div class="formActions" style="grid-column:1/-1"><button class="primary" id="sendStandbyMove">SEND STANDBY TURNOUT</button></div>
  </div>
- <div class="sectionTitle"><span>Active Standby Moves</span><span class="small">Real incidents automatically override standby</span></div>
- ${(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(m.state)).map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.callsign)} → ${esc(m.destination)}</strong><span>${esc(m.status||m.state)}${m.note?` · ${esc(m.note)}`:""}</span></div><div class="callActions"><button class="secondary" data-return-standby="${esc(m.id)}">RETURN HOME</button><button class="danger" data-cancel-standby="${esc(m.id)}">CANCEL</button></div></div>`).join("")||'<div class="emptyState"><strong>No active standby moves</strong></div>'}
+ <div class="sectionTitle"><span>Active Standby Moves</span><span class="small">Return Home sends an MDT instruction</span></div>
+ ${(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase())).map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.callsign)} → ${esc(m.destination)}</strong><span>${esc(m.status||m.state)}${m.talkgroup?` · ${esc(m.talkgroup)}`:""}${m.note?` · ${esc(m.note)}`:""}</span></div><div class="callActions"><button class="secondary" data-return-standby="${esc(m.id)}">RETURN HOME</button><button class="danger" data-cancel-standby="${esc(m.id)}">CANCEL</button></div></div>`).join("")||'<div class="emptyState"><strong>No active standby moves</strong></div>'}
  <div class="sectionTitle"><span>Standby Suggestions</span><span class="small">Based on current live cover</span></div>
- ${moves.length?moves.map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.unit)} → ${esc(m.to)}</strong><span>Suggested standby move from ${esc(m.from)}</span></div><button class="secondary" data-suggest-standby="${esc(m.unit)}" data-cover-target="${esc(m.to)}">USE SUGGESTION</button></div>`).join(""):'<div class="emptyState"><strong>No standby move suggested</strong><span>Current configured stations do not provide a clear donor appliance.</span></div>'}`;
-
- document.getElementById("standbyUnit")?.addEventListener("change",e=>{standbyDraft.callsign=e.target.value||""});
- document.getElementById("standbyDestination")?.addEventListener("change",e=>{standbyDraft.destination=e.target.value||""});
- document.getElementById("standbyNote")?.addEventListener("input",e=>{standbyDraft.note=e.target.value||""});
-
+ ${moves.length?moves.map(m=>`<div class="coverMove"><div class="rowMeta"><strong>${esc(m.unit)} → ${esc(m.to)}</strong><span>Suggested standby move from ${esc(m.from)}</span></div><button class="secondary" data-suggest-standby="${esc(m.unit)}" data-cover-target="${esc(m.to)}">USE SUGGESTION</button></div>`).join(""):'<div class="emptyState"><strong>No standby move suggested</strong></div>'}`;
+ const bind=(id,event,field)=>document.getElementById(id)?.addEventListener(event,e=>standbyDraft[field]=e.target.value||"");
+ bind("standbyUnit","change","callsign");bind("standbyDestination","change","destination");bind("standbyPostal","input","postal");bind("standbyMapRef","input","mapRef");bind("standbyTalkgroup","change","talkgroup");bind("standbyRole","change","role");bind("standbySpecialRisk","input","specialRisk");bind("standbyFurtherInfo","input","furtherInfo");bind("standbyNote","input","note");
  document.getElementById("sendStandbyMove")?.addEventListener("click",async()=>{
-   const callsign=standbyDraft.callsign||document.getElementById("standbyUnit")?.value||"";
-   const destination=standbyDraft.destination||document.getElementById("standbyDestination")?.value||"";
-   const note=standbyDraft.note||document.getElementById("standbyNote")?.value||"";
-   if(!callsign||!destination)return alert("Select an appliance and destination station.");
-   try{
-     await command("createStandbyMove",{callsign,destination,note});
-     standbyDraft.callsign="";
-     standbyDraft.destination="";
-     standbyDraft.note="Maintain cover while another appliance is committed";
-     await load();
-   }catch(e){alert(e.message||"Unable to send standby move")}
+   const {callsign,destination}=standbyDraft;if(!callsign||!destination)return alert("Select an appliance and destination station.");
+   try{await command("createStandbyMove",{...standbyDraft});Object.assign(standbyDraft,{callsign:"",destination:"",note:"Maintain cover while another appliance is committed",postal:"",mapRef:"",talkgroup:"FLAB-OPS1",role:"Pump",specialRisk:"",furtherInfo:""});await load()}catch(e){alert(e.message||"Unable to send standby move")}
  });
- document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{
-   standbyDraft.callsign=b.dataset.suggestStandby||"";
-   standbyDraft.destination=b.dataset.coverTarget||"";
-   standbyDraft.note="Standby move recommended by Guardian cover board";
-   renderCover();
- });
+ document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{standbyDraft.callsign=b.dataset.suggestStandby||"";standbyDraft.destination=b.dataset.coverTarget||"";standbyDraft.note="Standby move recommended by Guardian cover board";standbyDraft.furtherInfo=`Proceed to ${standbyDraft.destination} and provide standby cover until released by Control.`;renderCover()});
  document.querySelectorAll("[data-cancel-standby]").forEach(b=>b.onclick=async()=>{try{await command("cancelStandbyMove",{id:b.dataset.cancelStandby});await load()}catch(e){alert(e.message)}});
  document.querySelectorAll("[data-return-standby]").forEach(b=>b.onclick=async()=>{try{await command("returnStandbyMove",{id:b.dataset.returnStandby});await load()}catch(e){alert(e.message)}});
-
 }
+
 function renderMdt(){
  const callsigns=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
  const sel=$("mdtCallsign"),old=upper(mdtCallsign||sel.value);

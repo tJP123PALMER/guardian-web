@@ -450,3 +450,9 @@
 .standbySlip .turnoutHeader{border-bottom-color:#e4a917}
 .standbyRoute{background:#fff4cd!important;border-left:4px solid #e4a917}
 @media(max-width:900px){.turnoutGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* v2.6 turnout scrolling */
+#incidentDetail{overflow-y:auto!important;overscroll-behavior:contain;padding-bottom:90px}
+.turnoutSlip{min-height:min-content;padding-bottom:6px}
+.turnoutActions{position:sticky;bottom:0;z-index:50;background:rgba(245,246,247,.98);border-top:2px solid #2d5f97;padding:10px 0 8px;margin-top:12px;box-shadow:0 -5px 12px rgba(0,0,0,.10)}
+.turnoutActions button{min-height:44px}

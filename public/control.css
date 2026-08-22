@@ -88,3 +88,14 @@
 }
 
 .standbyIncidentBadge{display:inline-block;padding:3px 7px;margin-right:5px;border-radius:4px;background:#d39a18;color:#08131b;font-size:9px;font-weight:900;letter-spacing:.08em}
+
+/* v2.6 turnout and station standby */
+.turnoutPreflight{display:flex;gap:12px;align-items:center;margin:10px 0;padding:10px 12px;border-left:4px solid #2f94d0;background:rgba(47,148,208,.08)}
+.turnoutPreflight span{font-size:11px;color:#77a8c8}.mobiliseRole{min-width:145px}
+.station.hasStandbyCover{box-shadow:inset 0 0 0 1px rgba(233,184,62,.45)}
+.stationStandbySection,.stationAwaySection{margin:8px 10px;padding:9px;border:1px solid rgba(233,184,62,.25);background:rgba(233,184,62,.06)}
+.stationStandbySection h4,.stationAwaySection h4{margin:0 0 7px;font-size:9px;letter-spacing:.11em;color:#e9b83e}
+.stationAwaySection{border-color:rgba(80,160,210,.25);background:rgba(80,160,210,.05)}.stationAwaySection h4{color:#62a9d4}
+.stationStandbyUnit{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06)}
+.stationStandbyUnit span{font-size:10px;color:#8fb3ca}
+.standbyTurnoutEditor textarea{width:100%;resize:vertical}

@@ -400,6 +400,8 @@ app.post("/api/command",(req,res)=>{
       id:id(),type:"standby_move",callsign,
       sourceStation:state.callSignStations?.[callsign]||u.station||"Unknown",
       destination,note:String(data.note||data.reason||""),
+      postal:String(data.postal||""),mapRef:String(data.mapRef||""),talkgroup:String(data.talkgroup||"FLAB-OPS1"),role:String(data.role||"Pump"),
+      specialRisk:String(data.specialRisk||""),furtherInfo:String(data.furtherInfo||""),
       state:"sent",status:"Standby Move Sent",sentAt:now()
     };
     state.standbyMoves.unshift(move);
@@ -410,8 +412,8 @@ app.post("/api/command",(req,res)=>{
       standbyMoveId:move.id,
       callsign,
       sourceStation:move.sourceStation,
-      destination,
-      note:move.note,
+      destination,note:move.note,postal:move.postal,mapRef:move.mapRef,talkgroup:move.talkgroup,role:move.role,
+      specialRisk:move.specialRisk,furtherInfo:move.furtherInfo,
       enableMDT:true,
       enableTurnout:true,
       enablePager:false
@@ -536,6 +538,11 @@ app.post("/api/command",(req,res)=>{
         }
       }
       if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
+      const finalStatus=String(state.units[cs].status||"").toLowerCase();
+      if(finalStatus==="home station" || finalStatus==="mobile and available"){
+        const move=activeStandby(cs);
+        if(move){move.state="completed";move.status="Standby Completed";move.completedAt=now();closeStandbyIncident(move,"Returned from standby");pushEvent("standbyMoveCompleted",move)}
+      }
       pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
       touch();
     }
