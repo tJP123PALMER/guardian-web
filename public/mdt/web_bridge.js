@@ -184,6 +184,7 @@
       status:"Home Station",webOnly:true,webBooked:true
     }};
     updateBookUi();
+    forceVisibleCallsign();
     post({type:"setCallsign",callsign:upper(callsign)});
     syncStatus(true);
     await command("webBookOn",{callsign,status:"Home Station"});
@@ -318,22 +319,35 @@
 
   function ensureBookedCallsign(){
     const current=upper(callsign), units=unitMap(), bookings=state.bookings||{};
-    if(current){
-      const u=units[current],b=bookings[current];
-      if(u?.webBooked===true||b?.webBooked===true)return;
-    }
+
+    const isBookedCs = cs => {
+      const u=units[cs], b=bookings[cs];
+      return !!b || u?.webBooked===true || b?.webBooked===true;
+    };
+
+    if(current && isBookedCs(current)) return;
+
     const booked=[...new Set([
-      ...Object.entries(units).filter(([,u])=>u?.webBooked===true).map(([cs])=>upper(cs)),
-      ...Object.entries(bookings).filter(([,b])=>b?.webBooked===true).map(([cs])=>upper(cs))
+      ...Object.keys(bookings).map(upper),
+      ...Object.entries(units).filter(([,u])=>u?.webBooked===true).map(([cs])=>upper(cs))
     ])].filter(Boolean);
+
     if(booked.length===1){
       callsign=booked[0];
       localStorage.setItem("guardianExactMdtCallsign",callsign);
     }
   }
 
+  function forceVisibleCallsign(){
+    const el=document.getElementById("callsignBox");
+    if(el) el.textContent=upper(callsign)||"UNSET";
+    const agencyCs=document.getElementById("agencyCallsign");
+    if(agencyCs) agencyCs.textContent=upper(callsign)||"UNSET";
+  }
+
   function syncStateToMdt(force = false) {
     ensureBookedCallsign();
+    forceVisibleCallsign();
     updatePicker();
     updateBookUi();
     post({ type:"setCallsign", callsign:callsign || "UNSET" });

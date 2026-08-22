@@ -696,6 +696,19 @@ window.addEventListener('message',function(e){
     switchTab('messages');
     return;
   }
+
+  if(d.type==='message' && d.item){
+    const item=d.item;
+    const key=[item.sender||"",item.time||"",item.text||""].join("|");
+    const exists=messages.some(m=>[m.sender||"",m.time||"",m.text||""].join("|")===key);
+    if(!exists){
+      messages.push(item);
+      selectedMessageIndex=messages.length-1;
+      unreadMessageIndexes.add(messages.length-1);
+    }
+    renderMessages();
+    return;
+  }
 });
 
   let activeIncident=null;

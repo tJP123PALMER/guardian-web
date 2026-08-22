@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.1 Callsign Sync Fix"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.2 MDT Browser Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.9.1 Callsign Sync Fix",
+  version:"Guardian Operations v2.9.2 MDT Browser Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -605,4 +605,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9.1 Callsign Sync Fix running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9.2 MDT Browser Fix running on port ${PORT}`));
