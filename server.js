@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.7.1 CF33 UI Only"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9 Message-First MDT"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.7.1 CF33 UI Only",
+  version:"Guardian Operations v2.9 Message-First MDT",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -596,4 +596,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7.1 CF33 UI Only running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9 Message-First MDT running on port ${PORT}`));

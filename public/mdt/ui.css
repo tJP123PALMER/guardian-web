@@ -501,3 +501,19 @@
 .cf33Ack{position:absolute;left:0;right:0;bottom:52px;background:#aeb3b7;color:#e7e7e7;text-align:center;padding:8px;font-size:18px;font-weight:700}
 .cf33Bottom{position:absolute;left:0;right:0;bottom:0;height:52px;display:grid;grid-template-columns:repeat(6,1fr) 1.2fr}
 .cf33Bottom button{background:#173e64;color:#fff;border:1px solid #355778;font-size:12px}.cf33Bottom button:last-child{background:#c82026}
+
+/* v2.9 message-first incident presentation */
+#messageView{overflow-y:auto!important;overflow-x:hidden!important;min-height:0!important;scrollbar-gutter:stable}
+.cf33DispatchMessage{min-height:max-content;background:#e2e5e7;color:#23272b;font-family:Arial,sans-serif;border:1px solid #9ca8b0}
+.cf33MsgTop{display:grid;grid-template-columns:1.2fr .8fr 1fr;background:#d9dde0;border-bottom:1px solid #a2abb2}
+.cf33MsgTop>div{padding:7px 10px;border-right:1px solid #aeb5ba}.cf33MsgTop>div:last-child{border-right:0}
+.cf33MsgTop span{display:block;font-size:11px;color:#646c72}.cf33MsgTop strong{font-size:17px}
+.cf33MsgBody{padding:10px 14px 18px;min-height:360px}
+.cf33MsgRow{display:grid;grid-template-columns:105px 1fr;gap:8px;padding:3px 0;font-size:17px;line-height:1.35}
+.cf33MsgRow span{color:#596167}.cf33MsgFurther{white-space:pre-wrap;font-size:18px;line-height:1.4;margin:10px 0 18px}
+.cf33Standby{background:#fff2bf;border-left:4px solid #d6a20c;padding:8px}
+.cf33MsgAck{text-align:center;padding:9px;background:#b9bec2;color:#f4f4f4;font-size:17px;font-weight:700}
+.cf33MsgActions{display:flex;background:#163e64}.cf33MsgActions button{flex:1;min-height:50px;border:0;border-right:1px solid #375b7d;background:#163e64;color:white;font-weight:700}
+.cf33MsgActions #dispatchAckBtn{background:#ba1e25}
+.referenceMessageItem{display:grid!important;grid-template-columns:34px 72px 1fr!important;align-items:center!important;width:100%;text-align:left}
+.referenceMessageItem.selected{outline:2px solid #2d6fa8}

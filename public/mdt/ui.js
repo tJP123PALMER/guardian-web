@@ -22,30 +22,118 @@ function markMessagesRead(){
   unreadMessageIndexes.clear();
 }
 
-function renderMessages(){
-  if(!messageList || !messageView) return;
-  messageList.innerHTML='';
 
-  const thread=document.createElement('button');
-  thread.type='button';
-  thread.className='referenceMessageItem selected';
-  const latest=messages.length ? messages[messages.length-1] : null;
-  thread.innerHTML='<span class="messageTick">✓✓</span>'+
-    '<span class="messageTime">'+escapeHtml(latest && latest.time || '')+'</span>'+
-    '<span class="messageItemType">Control ('+messages.length+')</span>';
-  thread.onclick=()=>{
-    selectedMessageIndex=messages.length ? messages.length-1 : -1;
-    markMessagesRead();
-    renderMessageView();
+function incidentUnits(inc){
+  return (Array.isArray(inc?.assignedUnits)?inc.assignedUnits:
+          Array.isArray(inc?.assignedAppliances)?inc.assignedAppliances:
+          Array.isArray(inc?.appliances)?inc.appliances:[])
+          .map(x=>typeof x==='string'?x:(x?.callsign||x?.unit||'')).filter(Boolean);
+}
+function incidentRolesText(inc){
+  const roles=inc?.assignedRoles||inc?.applianceRoles||{};
+  if(roles && typeof roles==='object' && Object.keys(roles).length){
+    return Object.entries(roles).map(([cs,r])=>`${cs}:${typeof r==='string'?r:(r?.role||r?.name||'')}`).join(', ');
+  }
+  return inc?.roles||'—';
+}
+function incidentMessageKey(inc){ return `INCIDENT:${String(inc?.incidentNumber||inc?.id||'')}`; }
+function incidentToDispatchMessage(inc){
+  return {
+    kind:'incident', sender:'CONTROL',
+    time:String(inc?.time||inc?.dispatchedAt||inc?.createdAt||''),
+    text:`INCIDENT ${turnoutIncidentNo(inc)} · ${inc?.type||inc?.title||'Incident'}`,
+    incident:inc, incidentKey:incidentMessageKey(inc),
+    direction:'control_to_mdt', conversation:'CONTROL'
   };
-  messageList.appendChild(thread);
-  renderMessageView();
-  const top=document.getElementById('topMessagesTab');
-  if(top) top.textContent='Messages ('+messages.length+')';
+}
+function upsertIncidentMessage(inc){
+  if(!inc)return;
+  const key=incidentMessageKey(inc);
+  const idx=messages.findIndex(m=>m?.kind==='incident'&&m?.incidentKey===key);
+  const item=incidentToDispatchMessage(inc);
+  if(idx>=0)messages[idx]=item;
+  else{
+    messages.push(item);
+    selectedMessageIndex=messages.length-1;
+    unreadMessageIndexes.add(messages.length-1);
+  }
+  renderMessages();
+}
+function showIncidentDispatchMessage(m){
+  const inc=m?.incident||{};
+  const units=incidentUnits(inc);
+  const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))},${Math.round(Number(inc.y))}`:'—');
+  const received=inc.time||inc.dispatchedAt||inc.createdAt||m.time||'—';
+  const details=inc.description||inc.details||inc.notes||'';
+  const talkgroup=inc.talkgroup||inc.talkGroup||'—';
+  const standby=!!(inc.isStandby||inc.isStandbyMove);
+
+  messageView.innerHTML=`
+    <div class="cf33DispatchMessage">
+      <div class="cf33MsgTop">
+        <div><span>Date / Time Received</span><strong>${escapeHtml(String(received))}</strong></div>
+        <div><span>Incident</span><strong>${escapeHtml(turnoutIncidentNo(inc))}</strong></div>
+        <div><span>Map Reference</span><strong>${escapeHtml(mapRef)}</strong></div>
+      </div>
+      <div class="cf33MsgBody">
+        <div class="cf33MsgRow"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="cf33MsgRow"><span>Address:</span><b>${escapeHtml(inc.address||inc.location||'—')}</b></div>
+        ${inc.postal?`<div class="cf33MsgRow"><span>Postal:</span><b>${escapeHtml(String(inc.postal))}</b></div>`:''}
+        <div class="cf33MsgRow"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
+        <div class="cf33MsgRow"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards||'—')}</b></div>
+        ${standby?`<div class="cf33MsgRow cf33Standby"><span>Standby:</span><b>${escapeHtml(inc.standbySourceStation||'Home Station')} → ${escapeHtml(inc.standbyDestination||inc.address||'Standby Station')}</b></div>`:''}
+        <div class="cf33MsgFurther">${escapeHtml(details||'No further information.')}</div>
+        <div class="cf33MsgRow"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="cf33MsgRow"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
+        <div class="cf33MsgRow"><span>Roles</span><b>${escapeHtml(incidentRolesText(inc))}</b></div>
+      </div>
+      <div class="cf33MsgAck" id="cf33MsgAck">Awaiting acknowledgement</div>
+      <div class="cf33MsgActions">
+        <button id="dispatchAckBtn">ACKNOWLEDGE</button>
+        ${inc.x!=null&&inc.y!=null?'<button id="dispatchRouteBtn">SET ROUTE</button>':''}
+      </div>
+    </div>`;
+
+  const ack=document.getElementById('dispatchAckBtn');
+  if(ack)ack.onclick=()=>{
+    nui('ackIncident',{id:inc.id});
+    ack.textContent='ACKNOWLEDGED'; ack.disabled=true;
+    const bar=document.getElementById('cf33MsgAck');
+    if(bar)bar.textContent=`Acknowledged by ${callsignBox?.textContent||'appliance'}`;
+  };
+  const route=document.getElementById('dispatchRouteBtn');
+  if(route)route.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
 }
 
+function renderMessages(){
+  if(!messageList||!messageView)return;
+  messageList.innerHTML='';
+  if(!messages.length){
+    const empty=document.createElement('div');
+    empty.className='referenceMessageEmpty';
+    empty.textContent='No messages';
+    messageList.appendChild(empty);
+  }else{
+    messages.forEach((m,i)=>{
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='referenceMessageItem'+(i===selectedMessageIndex?' selected':'');
+      const isIncident=m?.kind==='incident';
+      const title=isIncident?`INC ${turnoutIncidentNo(m.incident)} · ${m.incident?.type||'Incident'}`:(m.sender||'CONTROL');
+      b.innerHTML=`<span class="messageTick">${unreadMessageIndexes.has(i)?'●':'✓✓'}</span>
+        <span class="messageTime">${escapeHtml(m.time||'')}</span>
+        <span class="messageItemType">${escapeHtml(title)}</span>`;
+      b.onclick=()=>{selectedMessageIndex=i;unreadMessageIndexes.delete(i);renderMessages();};
+      messageList.appendChild(b);
+    });
+  }
+  if(selectedMessageIndex<0&&messages.length)selectedMessageIndex=messages.length-1;
+  renderMessageView();
+  const top=document.getElementById('topMessagesTab');
+  if(top)top.textContent='Messages ('+messages.length+')';
+}
 function renderMessageView(){
-  if(!messageView) return;
+  if(!messageView)return;
   messageView.innerHTML='';
   if(!messages.length){
     const empty=document.createElement('div');
@@ -54,24 +142,25 @@ function renderMessageView(){
     messageView.appendChild(empty);
     return;
   }
+  const idx=(selectedMessageIndex>=0&&selectedMessageIndex<messages.length)?selectedMessageIndex:messages.length-1;
+  const selectedMessage=messages[idx];
+  if(selectedMessage?.kind==='incident'){
+    showIncidentDispatchMessage(selectedMessage);
+    return;
+  }
   messages.forEach((m,i)=>{
     const row=document.createElement('div');
-    const mine=String(m.sender||'').toUpperCase()===String(callsignBox && callsignBox.textContent || '').toUpperCase();
+    const mine=String(m.sender||'').toUpperCase()===String(callsignBox&&callsignBox.textContent||'').toUpperCase();
     row.className='chatMessage '+(mine?'crew':'control')+(i===selectedMessageIndex?' selectedMessage':'');
-    row.dataset.index=i;
-    row.onclick=()=>{selectedMessageIndex=i; markMessagesRead(); renderMessageView();};
-    const head=document.createElement('div'); head.className='chatHeader';
-    const sender=document.createElement('span'); sender.textContent=m.sender||'CONTROL';
-    const time=document.createElement('span'); time.textContent=m.time||'';
-    head.appendChild(sender); head.appendChild(time);
-    const body=document.createElement('div'); body.className='chatText'; body.textContent=m.text||'';
-    row.appendChild(head); row.appendChild(body); messageView.appendChild(row);
+    row.onclick=()=>{selectedMessageIndex=i;markMessagesRead();renderMessageView();};
+    const head=document.createElement('div');head.className='chatHeader';
+    const sender=document.createElement('span');sender.textContent=m.sender||'CONTROL';
+    const time=document.createElement('span');time.textContent=m.time||'';
+    head.appendChild(sender);head.appendChild(time);
+    const body=document.createElement('div');body.className='chatText';body.textContent=m.text||'';
+    row.appendChild(head);row.appendChild(body);messageView.appendChild(row);
   });
-  const selected=messageView.querySelector('.selectedMessage');
-  if(selected) selected.scrollIntoView({block:'nearest'});
-  else messageView.scrollTop=messageView.scrollHeight;
 }
-
 function playMessagePing(){
   if(messageAlarmMuted) return;
   const p=document.getElementById('ping');
@@ -559,6 +648,56 @@ applyMap();
 
   let styleIndex=0, follow=false;
   let gps={x:0,y:0,z:0,heading:0,speed:0,ready:false};
+
+/* v2.9: authoritative MDT NUI ingress */
+window.addEventListener('message',function(e){
+  const d=e.data||{};
+  if(d.type==='open'){body.style.display='block';return;}
+  if(d.type==='close'){body.style.display='none';return;}
+  if(d.type==='setCallsign'){
+    const cs=String(d.callsign||'UNSET').trim().toUpperCase();
+    callsignBox.textContent=cs||'UNSET';
+    updateAgencyDisplay();
+    return;
+  }
+  if(d.type==='setStatus'){
+    currentStatus=d.status||currentStatus;
+    if(liveStatus)liveStatus.textContent=currentStatus;
+    buildStatuses();
+    return;
+  }
+  if(d.type==='loadIncidents'){
+    incidents=Array.isArray(d.incidents)?d.incidents:[];
+    incidents.forEach(upsertIncidentMessage);
+    renderIncidents();
+    return;
+  }
+  if(d.type==='incident'&&d.item){
+    const incoming=d.item;
+    const idx=incidents.findIndex(x=>String(x.id)===String(incoming.id));
+    if(idx>=0)incidents[idx]={...incidents[idx],...incoming};
+    else incidents.push(incoming);
+    upsertIncidentMessage(incoming);
+    renderIncidents();
+    switchTab('messages');
+    return;
+  }
+  if(d.type==='alert'){
+    const a=document.getElementById('alert');
+    if(a){try{a.pause();a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{});}catch(_){}}
+    return;
+  }
+  if(d.type==='mobilising'){
+    if(mobilisingOverlay){
+      mobilisingOverlay.hidden=false;
+      mobilisingOverlay.style.display='flex';
+      setTimeout(()=>{mobilisingOverlay.hidden=true;mobilisingOverlay.style.display='none';},4500);
+    }
+    switchTab('messages');
+    return;
+  }
+});
+
   let activeIncident=null;
 
   const styles=['assets/gta_map.jpg'];
