@@ -21,6 +21,8 @@ function allConfiguredCallsigns(){
 
 let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{},stations:{},eventLog:[]};
 let controlView="overview",selectedIncidentId=null;
+const pending999Conversions=new Set();
+const pending999Dismissals=new Set();
 
 const incidentDrafts=new Map();
 
@@ -454,19 +456,40 @@ function renderCalls(){
      <div class="callHead"><div><span class="panelKicker">INCOMING 999</span><strong>CALL #${idv}</strong></div><span class="callPriority">${priority}</span></div>
      <div class="callFacts"><div><span>LOCATION</span><b>${location}</b></div><div><span>POSTAL</span><b>${postal||"—"}</b></div><div><span>CALLER</span><b>${caller}</b></div><div><span>CONTACT</span><b>${phone||"—"}</b></div></div>
      <div class="callNarrative">${description}</div>
-     <div class="callActions"><button class="secondary" data-dismiss-call="${idv}">DISMISS</button><button class="primary" data-call="${idv}">CREATE INCIDENT</button></div>
+     <div class="callActions">
+       <button class="secondary" data-dismiss-call="${idv}" ${pending999Dismissals.has(String(idv))?"disabled":""}>${pending999Dismissals.has(String(idv))?"DISMISSING...":"DISMISS"}</button>
+       <button class="primary" data-call="${idv}" ${pending999Conversions.has(String(idv))?"disabled":""}>${pending999Conversions.has(String(idv))?"CREATING...":"CREATE INCIDENT"}</button>
+     </div>
    </article>`;
  }).join(""):empty("999 queue clear");
  document.querySelectorAll("[data-call]").forEach(b=>b.onclick=async()=>{
+   const callId=String(b.dataset.call||"");
+   if(pending999Conversions.has(callId))return;
+   pending999Conversions.add(callId);
    b.disabled=true;b.textContent="CREATING...";
-   try{await command("createIncidentFrom999",{callId:b.dataset.call});setControlView("incidents");setTimeout(()=>load().catch(()=>{}),500)}
-   catch(err){console.error(err);alert("Unable to create incident from this 999 call. The call has been left in the queue.")}
-   finally{b.disabled=false;b.textContent="CREATE INCIDENT"}
+   try{
+     await command("createIncidentFrom999",{callId});
+     setControlView("incidents");
+     setTimeout(()=>load().catch(()=>{}),300);
+   }catch(err){
+     console.error(err);
+     if(err?.status!==409) alert("Unable to create incident from this 999 call. The call has been left in the queue.");
+     pending999Conversions.delete(callId);
+   }
  });
  document.querySelectorAll("[data-dismiss-call]").forEach(b=>b.onclick=async()=>{
-   if(!confirm(`Dismiss 999 call #${b.dataset.dismissCall}?`))return;
-   try{await command("dismiss999Call",{id:b.dataset.dismissCall,callId:b.dataset.dismissCall,reason:"Dismissed by Web Control"});setTimeout(()=>load().catch(()=>{}),300)}
-   catch(err){console.error(err);alert("Unable to dismiss the call.")}
+   const callId=String(b.dataset.dismissCall||"");
+   if(pending999Dismissals.has(callId))return;
+   if(!confirm(`Dismiss 999 call #${callId}?`))return;
+   pending999Dismissals.add(callId);
+   b.disabled=true;b.textContent="DISMISSING...";
+   try{
+     await command("dismiss999Call",{id:callId,callId,reason:"Dismissed by Web Control"});
+     setTimeout(()=>load().catch(()=>{}),200);
+   }catch(err){
+     console.error(err);alert("Unable to dismiss the call.");
+     pending999Dismissals.delete(callId);
+   }
  });
 }
 function renderMessages(){

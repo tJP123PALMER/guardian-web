@@ -13,6 +13,79 @@ app.use(express.json({ limit: "4mb" }));
 
 const clients = new Set();
 const commands = new Map();
+const suppressed999 = new Map();
+const recentCommandKeys = new Map();
+
+function cleanText(v){
+  return String(v ?? "").trim().replace(/\s+/g," ").toUpperCase();
+}
+
+function call999Key(call={}){
+  const explicit = cleanText(call.id || call.callId || call.uuid || "");
+  if(explicit) return `ID:${explicit}`;
+
+  // Exact-content fallback for malformed/legacy calls that arrive without IDs.
+  // Deliberately includes as much call metadata as possible to avoid merging
+  // unrelated calls that merely share a location.
+  return "FP:" + [
+    cleanText(call.type),
+    cleanText(call.priority),
+    cleanText(call.location || call.address),
+    cleanText(call.postal || call.postcode),
+    cleanText(call.caller || call.name),
+    cleanText(call.phone || call.telephone),
+    cleanText(call.description || call.details || call.message),
+    cleanText(call.time || call.createdAt || call.timestamp)
+  ].join("|");
+}
+
+function dedupe999Calls(list){
+  const result=[];
+  const seen=new Set();
+
+  for(const raw of Array.isArray(list) ? list : []){
+    if(!raw || typeof raw !== "object") continue;
+    const key=call999Key(raw);
+    if(seen.has(key)) continue;
+    seen.add(key);
+
+    const explicit=cleanText(raw.id || raw.callId || raw.uuid || "");
+    if(explicit){
+      const until=suppressed999.get(explicit);
+      if(until && until>Date.now()) continue;
+      if(until && until<=Date.now()) suppressed999.delete(explicit);
+    }
+
+    result.push(raw);
+  }
+
+  return result;
+}
+
+function suppress999(callId, ttlMs=30000){
+  const key=cleanText(callId);
+  if(key) suppressed999.set(key, Date.now()+ttlMs);
+}
+
+function commandFingerprint(action,data={}){
+  // Prevent accidental browser double-clicks/retries while still allowing
+  // legitimate repeated operational actions after a short window.
+  return `${action}:${JSON.stringify(data)}`;
+}
+
+function recentlyQueued(action,data,windowMs=1200){
+  const key=commandFingerprint(action,data);
+  const last=recentCommandKeys.get(key) || 0;
+  recentCommandKeys.set(key,Date.now());
+
+  // opportunistic cleanup
+  if(recentCommandKeys.size>250){
+    const cutoff=Date.now()-10000;
+    for(const [k,t] of recentCommandKeys) if(t<cutoff) recentCommandKeys.delete(k);
+  }
+
+  return Date.now()-last < windowMs;
+}
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -93,6 +166,12 @@ function rebuildStations(){
 }
 
 setInterval(()=>{
+  const cutoff=Date.now()-10*60*1000;
+  for(const [commandId,c] of commands){
+    const created=Date.parse(c.createdAt||0);
+    if(c.acknowledged && created && created<cutoff) commands.delete(commandId);
+  }
+
   const hb = state.lastHeartbeat ? Date.parse(state.lastHeartbeat) : 0;
   const shouldBeConnected = hb && (Date.now() - hb < 15000);
   if(state.connected !== !!shouldBeConnected){
@@ -105,10 +184,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.3 Dispatch Upgrade"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.3.2 Stable Dispatch"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.3 Dispatch Upgrade",
+  version:"Guardian Operations v2.3.2 Stable Dispatch",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -143,7 +222,7 @@ app.post("/api/fivem/state",auth,(req,res)=>{
 
   state.units = normalizeUnits(body.units ?? state.units);
   if(Array.isArray(body.incidents)) state.incidents = body.incidents;
-  if(Array.isArray(body.calls999)) state.calls999 = body.calls999;
+  if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
   if(Array.isArray(body.messages)) state.messages = body.messages;
   if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
   if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
@@ -205,8 +284,22 @@ app.post("/api/command",(req,res)=>{
   if(action==="createIncidentFrom999"){
     const call=find999(data.callId);
     if(!call) return res.status(404).json({ok:false,error:"999 call no longer exists"});
+
+    const sourceId=String(call.id ?? data.callId ?? "");
+    const existing=(state.incidents||[]).find(i=>String(i.source999Id||"")===sourceId);
+    if(existing){
+      suppress999(sourceId);
+      state.calls999=state.calls999.filter(c=>String(c.id)!==sourceId);
+      touch();
+      return res.json({ok:true,alreadyConverted:true,incident:existing});
+    }
+
+    if(recentlyQueued("createIncidentFrom999",{callId:sourceId},5000)){
+      return res.status(409).json({ok:false,error:"This 999 call is already being converted"});
+    }
+
     const incidentData={
-      source999Id:call.id,
+      source999Id:sourceId,
       type:call.type||"999 EMERGENCY",
       priority:call.priority||"Immediate",
       address:call.address||call.location||"",
@@ -220,13 +313,80 @@ app.post("/api/command",(req,res)=>{
       enableTurnout:false,
       enablePager:false
     };
+
+    // Remove immediately so browser rerenders cannot offer the same call twice.
+    suppress999(sourceId);
+    state.calls999=state.calls999.filter(c=>String(c.id)!==sourceId);
+    touch();
+
     const create=queueCommand("createIncident",incidentData);
-    const dismiss=queueCommand("dismiss999Call",{id:call.id,callId:call.id,reason:"Converted to incident"});
-    pushEvent("999Converted",{callId:call.id,createCommandId:create.id});
+    const dismiss=queueCommand("dismiss999Call",{id:sourceId,callId:sourceId,reason:"Converted to incident"});
+    pushEvent("999Converted",{callId:sourceId,createCommandId:create.id});
     return res.json({ok:true,command:create,dismissCommand:dismiss,converted:incidentData});
   }
 
   if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
+
+  if(action==="dismiss999Call"){
+    const callId=String(data.id ?? data.callId ?? "");
+    if(callId){
+      suppress999(callId);
+      state.calls999=state.calls999.filter(c=>String(c.id)!==callId);
+      pushEvent("999Dismissed",{callId,reason:data.reason||"Dismissed"});
+      touch();
+    }
+  }
+
+  if(!["webBookOn","webBookOff","webMdtStatus","dismiss999Call"].includes(action)
+     && recentlyQueued(action,data)){
+    return res.status(409).json({ok:false,error:"Duplicate command ignored"});
+  }
+
+  // Web MDT session actions are mirrored immediately so the browser does not
+  // have to wait for the next FiveM poll/heartbeat. The FiveM bridge also
+  // persists/merges these bookings into subsequent snapshots.
+  if(action==="webBookOn"){
+    const cs=String(data.callsign||"").trim().toUpperCase();
+    if(!cs) return res.status(400).json({ok:false,error:"Callsign required"});
+    state.bookings ||= {};
+    state.units ||= {};
+    state.bookings[cs]={
+      callsign:cs,
+      webBooked:true,
+      bookedAt:now(),
+      status:String(data.status||"Home Station")
+    };
+    state.units[cs]={
+      ...(state.units[cs]||{}),
+      callsign:cs,
+      status:String(data.status||state.units[cs]?.status||"Home Station"),
+      webBooked:true,
+      webOnly:!state.units[cs]?.source
+    };
+    rebuildStations();
+    pushEvent("webBookOn",{callsign:cs,status:state.units[cs].status});
+    touch();
+  }else if(action==="webBookOff"){
+    const cs=String(data.callsign||"").trim().toUpperCase();
+    state.bookings ||= {};
+    state.units ||= {};
+    delete state.bookings[cs];
+    const unit=state.units[cs];
+    if(unit?.webOnly || !unit?.source) delete state.units[cs];
+    else if(unit){ unit.webBooked=false; unit.webOnly=false; }
+    rebuildStations();
+    pushEvent("webBookOff",{callsign:cs});
+    touch();
+  }else if(action==="webMdtStatus"){
+    const cs=String(data.callsign||"").trim().toUpperCase();
+    if(cs && state.units?.[cs]){
+      state.units[cs]={...state.units[cs],status:String(data.status||state.units[cs].status||"Home Station")};
+      if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
+      pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
+      touch();
+    }
+  }
+
   const command=queueCommand(action,data);
   res.json({ok:true,command});
 });
@@ -244,7 +404,7 @@ app.post("/api/fivem/commands/:id/ack",auth,(req,res)=>{
 app.get("/api/operational/units",(_req,res)=>res.json({ok:true,units:state.units,tracking:state.tracking,bookings:state.bookings}));
 app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state.stations,callSignStations:state.callSignStations,applianceSkills:state.applianceSkills}));
 app.get("/api/operational/incidents",(_req,res)=>res.json({ok:true,incidents:state.incidents}));
-app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:state.calls999}));
+app.get("/api/operational/999",(_req,res)=>res.json({ok:true,calls999:dedupe999Calls(state.calls999)}));
 app.get("/api/operational/events",(_req,res)=>res.json({ok:true,events:state.eventLog}));
 app.get("/api/operational/cover",(_req,res)=>{
   const stations={};
@@ -267,4 +427,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.3 Dispatch Upgrade running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.3.2 Stable Dispatch running on port ${PORT}`));
