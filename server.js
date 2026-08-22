@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5 Standby-as-Incident"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5.1.1 Turnout + Incident Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.5 Standby-as-Incident",
+  version:"Guardian Operations v2.5.1.1 Turnout + Incident Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -272,7 +272,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","cancelStandbyMove","returnStandbyMove","ackStandbyMove"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","ackStandbyMove"
 ]);
 
 function queueCommand(action,data={}){
@@ -403,32 +403,21 @@ app.post("/api/command",(req,res)=>{
       state:"sent",status:"Standby Move Sent",sentAt:now()
     };
     state.standbyMoves.unshift(move);
-
-    // Create a special incident and feed it through the normal dispatch pipeline.
-    const standbyIncident=makeStandbyIncident(move);
-    state.standbyIncidents ||= [];
-    state.standbyIncidents.unshift(standbyIncident);
-    state.incidents ||= [];
-    state.incidents.unshift(standbyIncident);
-
     pushEvent("standbyMoveCreated",move);
-    pushEvent("incidentCreated",standbyIncident);
     touch();
 
-    const createCommand=queueCommand("createIncident",standbyIncident);
-    const assignCommand=queueCommand("assignAppliance",{
-      incidentId:standbyIncident.id,
-      id:standbyIncident.id,
-      callsign,
-      appliance:callsign,
-      standby:true,
+    const command=queueCommand("createStandbyIncident",{
       standbyMoveId:move.id,
+      callsign,
+      sourceStation:move.sourceStation,
+      destination,
+      note:move.note,
       enableMDT:true,
       enableTurnout:true,
       enablePager:false
     });
 
-    return res.json({ok:true,move,standbyIncident,command:createCommand,assignCommand});
+    return res.json({ok:true,move,command});
   }
 
   if(action==="cancelStandbyMove" || action==="returnStandbyMove"){
@@ -594,4 +583,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5 Standby-as-Incident running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));

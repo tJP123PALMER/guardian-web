@@ -12,6 +12,7 @@
     JSON.parse(sessionStorage.getItem("guardianDeliveredMobilisations") || "[]")
   );
   let knownAssignments = new Set();
+  const pendingStandbyIncidents = new Map();
   let stateInitialised = false;
   let lastStatusSentAt = 0;
   let optimisticStatus = "";
@@ -36,14 +37,26 @@
   }
 
   function incidentAssignments(inc) {
-    const list = Array.isArray(inc?.assignedUnits) ? inc.assignedUnits : [];
+    const list = Array.isArray(inc?.assignedUnits) ? inc.assignedUnits :
+                 Array.isArray(inc?.assignedAppliances) ? inc.assignedAppliances :
+                 Array.isArray(inc?.appliances) ? inc.appliances : [];
     return list.map(assignmentCallsign).filter(Boolean);
   }
 
   function assignedIncidents() {
     const cs = upper(callsign);
     if (!cs) return [];
-    return (state.incidents || []).filter(inc => incidentAssignments(inc).includes(cs));
+
+    for (const inc of (state.incidents || [])) {
+      if (inc?.standbyMoveId && pendingStandbyIncidents.has(String(inc.standbyMoveId))) {
+        pendingStandbyIncidents.delete(String(inc.standbyMoveId));
+      }
+    }
+
+    const authoritative=(state.incidents || []).filter(inc => incidentAssignments(inc).includes(cs));
+    const pending=[...pendingStandbyIncidents.values()].filter(inc=>incidentAssignments(inc).includes(cs));
+    const ids=new Set(authoritative.map(i=>String(i.id)));
+    return [...authoritative,...pending.filter(i=>!ids.has(String(i.id)))];
   }
 
   function incidentKey(inc, cs = callsign) {
@@ -340,18 +353,26 @@
       if(!callsign || upper(move.callsign)!==upper(callsign)) return;
       const fake={
         id:`STANDBY:${move.id}`,
-        type:"STANDBY MOVE",
+        type:"STANDBY COVER",
+        title:`Standby - ${move.destination||"Cover"}`,
         priority:"Standby",
         address:move.destination||"",
+        location:move.destination||"",
         postal:"",
         caller:"CONTROL",
+        description:move.note||"Proceed to standby station and acknowledge Control.",
         notes:move.note||"Proceed to standby station and acknowledge Control.",
         details:move.note||"",
         assignedUnits:[upper(move.callsign)],
+        assignedAppliances:[upper(move.callsign)],
         playAlert:true,
         standbyMoveId:move.id,
+        standbySourceStation:move.sourceStation||"",
+        standbyDestination:move.destination||"",
+        isStandby:true,
         isStandbyMove:true
       };
+      pendingStandbyIncidents.set(String(move.id),fake);
       post({type:"incident",item:fake});
       post({type:"setCallsign",callsign:upper(callsign)});
       post({type:"alert"});

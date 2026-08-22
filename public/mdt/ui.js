@@ -151,7 +151,7 @@ function renderIncidents(){
   incidentTabs.innerHTML='';
   if(!incidents.length){ incidentDetail.innerHTML='<h3>Mobile Available</h3><p>No active incidents.</p>'; return; }
   incidents.forEach((inc,i)=>{
-    const b=document.createElement('button'); b.className='incident'; b.textContent=`#${inc.id} ${inc.type||'Incident'}`;
+    const b=document.createElement('button'); b.className='incident'; b.textContent=`#${inc.id} ${(inc.isStandby||inc.isStandbyMove)?'STANDBY · ':''}${inc.type||'Incident'}`;
     b.onclick=()=>{document.querySelectorAll('.incident').forEach(x=>x.classList.remove('activeIncident'));b.classList.add('activeIncident');showIncident(i);};
     incidentTabs.appendChild(b);
   });
@@ -159,8 +159,51 @@ function renderIncidents(){
 }
 function showIncident(i){
   const inc=incidents[i]; if(!inc)return;
-  incidentDetail.innerHTML=`<h3>Selected Event Details</h3><p><strong>Incident:</strong><br>${escapeHtml(inc.type||'')}</p><p><strong>Postal:</strong><br>${escapeHtml(inc.postal||'None')}</p><p><strong>Address:</strong><br>${escapeHtml(inc.address||'')}</p><p><strong>Details:</strong><br>${escapeHtml(inc.description||'')}</p><button id="ackBtn">ACKNOWLEDGE</button><button id="clearBtn">CLEAR INCIDENT</button>`;
+  const units=(Array.isArray(inc.assignedUnits)?inc.assignedUnits:
+               Array.isArray(inc.assignedAppliances)?inc.assignedAppliances:
+               Array.isArray(inc.appliances)?inc.appliances:[])
+               .map(x=>typeof x==='string'?x:(x?.callsign||x?.unit||'')).filter(Boolean);
+  const roles=inc.assignedRoles&&typeof inc.assignedRoles==='object'
+    ? Object.entries(inc.assignedRoles).map(([k,v])=>`${k}: ${typeof v==='string'?v:(v?.role||v?.name||'')}`).filter(Boolean).join(', ')
+    : (inc.roles||'');
+  const further=inc.description||inc.details||inc.notes||'No further information.';
+  const risk=inc.specialRisk||inc.hazards||'None notified';
+  const talkgroup=inc.talkgroup||inc.talkGroup||'Not assigned';
+  const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))}, ${Math.round(Number(inc.y))}`:'—');
+  const stationArea=inc.stationArea||inc.standbyDestination||inc.address||'—';
+  const standby=!!(inc.isStandby||inc.isStandbyMove);
+
+  incidentDetail.innerHTML=`
+    <div class="turnoutSlip ${standby?'standbySlip':''}">
+      <div class="turnoutHeader">
+        <div><span>GUARDIAN TURNOUT</span><strong>${standby?'STANDBY COVER':'INCIDENT'}</strong></div>
+        <div class="turnoutNumber">INC NO ${escapeHtml(String(inc.id??'—'))}</div>
+      </div>
+      <div class="turnoutGrid">
+        <div class="turnoutWide"><label>TO ATTEND</label><strong>${escapeHtml(units.join(', ')||callsignBox.textContent||'—')}</strong></div>
+        <div class="turnoutWide"><label>ADDRESS</label><strong>${escapeHtml(inc.address||inc.location||'—')}</strong></div>
+        <div><label>POSTAL</label><span>${escapeHtml(inc.postal||'—')}</span></div>
+        <div><label>STATION AREA</label><span>${escapeHtml(stationArea)}</span></div>
+        <div><label>MAP REF</label><span>${escapeHtml(mapRef)}</span></div>
+        <div><label>PRIORITY</label><span>${escapeHtml(inc.priority||'—')}</span></div>
+        <div class="turnoutWide"><label>TYPE</label><strong>${escapeHtml(inc.type||inc.title||'Incident')}</strong></div>
+        <div class="turnoutWide"><label>SPECIAL RISK / HAZARDS</label><span>${escapeHtml(String(risk))}</span></div>
+        <div><label>CALLER</label><span>${escapeHtml(inc.caller||'—')}</span></div>
+        <div><label>TIME</label><span>${escapeHtml(inc.time||inc.dispatchedAt||'—')}</span></div>
+        <div><label>TALKGROUP</label><span>${escapeHtml(talkgroup)}</span></div>
+        <div><label>ROLES</label><span>${escapeHtml(roles||'Not assigned')}</span></div>
+        ${standby?`<div class="turnoutWide standbyRoute"><label>STANDBY MOVE</label><strong>${escapeHtml(inc.standbySourceStation||'Home Station')} → ${escapeHtml(inc.standbyDestination||inc.address||'Standby Station')}</strong></div>`:''}
+        <div class="turnoutWide"><label>FURTHER INFORMATION</label><div class="turnoutInfo">${escapeHtml(further)}</div></div>
+        <div class="turnoutWide"><label>ASSIGNED</label><span>${escapeHtml(units.join(', ')||'—')}</span></div>
+      </div>
+      <div class="turnoutActions">
+        <button id="ackBtn">ACKNOWLEDGE</button>
+        ${inc.x!=null&&inc.y!=null?'<button id="routeBtn">SET ROUTE</button>':''}
+        <button id="clearBtn">CLEAR FROM MDT</button>
+      </div>
+    </div>`;
   document.getElementById('ackBtn').onclick=()=>{nui('ackIncident',{id:inc.id});const b=document.getElementById('ackBtn');b.textContent='ACKNOWLEDGED';b.disabled=true;b.classList.add('acked');};
+  const routeBtn=document.getElementById('routeBtn'); if(routeBtn)routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
   document.getElementById('clearBtn').onclick=()=>{incidents.splice(i,1);renderIncidents();};
 }
 
