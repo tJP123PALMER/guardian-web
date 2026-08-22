@@ -205,6 +205,12 @@
     lastStatusPosted="";
     updateBookUi();
     post({type:"setStatus",status:"OFF RUN",preserveSelection:false});
+    post({type:"loadIncidents",incidents:[]});
+
+    // Keep the selected appliance available in the dropdown, but this browser
+    // is now definitively NOT booked on.
+    await loadState().catch(()=>{});
+    updateBookUi();
   }
 
   function updatePicker() {

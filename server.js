@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9 Message-First MDT"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.1 Callsign Sync Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.9 Message-First MDT",
+  version:"Guardian Operations v2.9.1 Callsign Sync Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -520,9 +520,18 @@ app.post("/api/command",(req,res)=>{
     state.bookings ||= {};
     state.units ||= {};
     delete state.bookings[cs];
+
     const unit=state.units[cs];
-    if(unit?.webOnly || !unit?.source) delete state.units[cs];
-    else if(unit){ unit.webBooked=false; unit.webOnly=false; }
+    if(unit){
+      // A web-only unit must disappear immediately from Control. If a real
+      // FiveM source exists, retain the real unit but strip browser session flags.
+      if(unit.webOnly===true || !unit.source){
+        delete state.units[cs];
+      }else{
+        state.units[cs]={...unit,webBooked:false,webOnly:false};
+      }
+    }
+
     rebuildStations();
     pushEvent("webBookOff",{callsign:cs});
     touch();
@@ -596,4 +605,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9 Message-First MDT running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9.1 Callsign Sync Fix running on port ${PORT}`));
