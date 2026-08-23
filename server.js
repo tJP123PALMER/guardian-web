@@ -733,7 +733,18 @@ app.post("/api/command",(req,res)=>{
     }
   }
 
-  if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
+  
+  if(action==="updateIncident"){
+    if(data.additionalDetails!=null && data.details==null) data.details=data.additionalDetails;
+    if(data.details!=null) data.notes=data.details;
+    const standbyType=String(data.type||"").trim().toUpperCase()==="STANDBY DUTIES";
+    data.isStandby=standbyType;
+    data.dispatchMode=standbyType?"STANDBY":"INCIDENT";
+    data.category=standbyType?"standby":"incident";
+    if(!standbyType) data.standbyDestination="";
+  }
+
+if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
 
   if(action==="dismiss999Call"){
     const callId=String(data.id ?? data.callId ?? "");

@@ -71,6 +71,7 @@ function incidentDraft(inc){
     mapRef:String(inc.mapRef||""),
     talkgroup:String(inc.talkgroup||""),
     specialRisk:String(inc.specialRisk||""),
+    standbyDestination:String(inc.standbyDestination||""),
     dirty:false,
     saving:false,
     saveStartedAt:0,
@@ -106,7 +107,8 @@ function incidentStateMatchesDraft(inc,d){
     && norm(inc.resources)===norm(d.resources)
     && norm(inc.mapRef)===norm(d.mapRef)
     && norm(inc.talkgroup)===norm(d.talkgroup)
-    && norm(inc.specialRisk)===norm(d.specialRisk);
+    && norm(inc.specialRisk)===norm(d.specialRisk)
+    && norm(inc.standbyDestination)===norm(d.standbyDestination);
 }
 
 function reconcileIncidentDrafts(){
@@ -239,7 +241,15 @@ function renderIncidentDetail(){
  const pager=prefs.pager??(inc.sendPager===true);
 
  const candidates=units.filter(u=>!assigned.includes(u.callsign)&&!assignedToOther(u.callsign,inc.id));
- const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","OTHER"].filter(Boolean))];
+ const standbyStations=Object.keys(state.stations||{}).sort();
+ const standbyDetailsText=station=>{
+   const destination=String(station||"").trim();
+   return destination
+     ? `Proceed to ${destination} for standby duties.\nMaintain availability for immediate mobilisation.\nAwait further instructions from Control.`
+     : `Proceed to the nominated station for standby duties.\nMaintain availability for immediate mobilisation.\nAwait further instructions from Control.`;
+ };
+
+ const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","STANDBY DUTIES","OTHER"].filter(Boolean))];
  const priorityOptions=[...new Set([draft.priority,"Immediate","Prompt","Non Emergency"].filter(Boolean))];
  const sceneOptions=[...new Set([draft.sceneStatus,"","Being Attended","Under Control","Making Pumps","Rescue Underway","Evacuation","All Clear"])];
  const timeline=Array.isArray(inc.timeline)?inc.timeline:[];
@@ -264,6 +274,12 @@ function renderIncidentDetail(){
        <div class="incidentEditGrid">
          <label>Incident Type
            <select id="editIncidentType">${typeOptions.map(v=>`<option ${v===draft.type?"selected":""}>${esc(v)}</option>`).join("")}</select>
+         </label>
+         <label>Standby Station
+           <select id="editStandbyStation" ${upper(draft.type)==="STANDBY DUTIES"?"":"disabled"}>
+             <option value="">Select station...</option>
+             ${standbyStations.map(st=>`<option value="${esc(st)}" ${String(draft.standbyDestination)===String(st)?"selected":""}>${esc(st)}</option>`).join("")}
+           </select>
          </label>
          <label>Priority
            <select id="editIncidentPriority">${priorityOptions.map(v=>`<option ${v===draft.priority?"selected":""}>${esc(v)}</option>`).join("")}</select>
@@ -392,7 +408,7 @@ function renderIncidentDetail(){
 
  // Keep every editable field as a local draft while heartbeats arrive.
  const draftBindings={
-   editIncidentType:"type",editIncidentPriority:"priority",editIncidentAddress:"address",
+   editIncidentType:"type",editStandbyStation:"standbyDestination",editIncidentPriority:"priority",editIncidentAddress:"address",
    editIncidentPostal:"postal",editMapRef:"mapRef",editTalkgroup:"talkgroup",editIncidentCaller:"caller",editSceneStatus:"sceneStatus",
    editCasualties:"casualties",editDetails:"details",editHazards:"hazards",editSpecialRisk:"specialRisk",editResources:"resources"
  };
@@ -401,6 +417,54 @@ function renderIncidentDetail(){
    input.addEventListener("input",()=>setIncidentDraftField(inc.id,field,field==="casualties"?Number(input.value||0):input.value));
    input.addEventListener("change",()=>setIncidentDraftField(inc.id,field,field==="casualties"?Number(input.value||0):input.value));
  });
+
+ const typeSelect=$("editIncidentType");
+ const stationSelect=$("editStandbyStation");
+ const detailsBox=$("editDetails");
+ const addressBox=$("editIncidentAddress");
+
+ const applyStandbyMode=()=>{
+   const isStandby=upper(typeSelect?.value)==="STANDBY DUTIES";
+   if(stationSelect) stationSelect.disabled=!isStandby;
+
+   if(isStandby && detailsBox){
+     const existing=String(detailsBox.value||"").trim();
+     if(!existing || existing==="No further information."){
+       const text=standbyDetailsText(stationSelect?.value||"");
+       detailsBox.value=text;
+       setIncidentDraftField(inc.id,"details",text);
+     }
+   }
+ };
+
+ typeSelect?.addEventListener("change",()=>{
+   applyStandbyMode();
+   if(upper(typeSelect.value)!=="STANDBY DUTIES"){
+     setIncidentDraftField(inc.id,"standbyDestination","");
+     if(stationSelect) stationSelect.value="";
+   }
+ });
+
+ stationSelect?.addEventListener("change",()=>{
+   const d=incidentDraft(inc);
+   const previous=String(d.standbyDestination||"");
+   const station=String(stationSelect.value||"");
+   setIncidentDraftField(inc.id,"standbyDestination",station);
+
+   if(upper(typeSelect?.value)==="STANDBY DUTIES"){
+     if(addressBox && (!String(addressBox.value||"").trim() || String(addressBox.value||"").trim()===previous)){
+       addressBox.value=station;
+       setIncidentDraftField(inc.id,"address",station);
+     }
+     if(detailsBox){
+       const text=standbyDetailsText(station);
+       detailsBox.value=text;
+       setIncidentDraftField(inc.id,"details",text);
+     }
+   }
+ });
+
+ applyStandbyMode();
 
  const savePrefs=()=>localStorage.setItem(prefsKey,JSON.stringify({
    mdt:$("prefMDT")?.checked===true,
@@ -428,8 +492,12 @@ function renderIncidentDetail(){
      await command("updateIncidentDetails",{
        incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,
        caller:d.caller,sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),
-       details:d.details,hazards:d.hazards,resources:d.resources,
-       mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
+       details:d.details,notes:d.details,hazards:d.hazards,resources:d.resources,
+       mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk,
+       standbyDestination:d.standbyDestination,
+       dispatchMode:upper(d.type)==="STANDBY DUTIES"?"STANDBY":"INCIDENT",
+       category:upper(d.type)==="STANDBY DUTIES"?"standby":"incident",
+       isStandby:upper(d.type)==="STANDBY DUTIES"
      });
      hint.textContent="Sent — waiting for FiveM confirmation…";
 
@@ -478,8 +546,12 @@ function renderIncidentDetail(){
    const d=incidentDraft(inc);
    await command("updateIncidentDetails",{
      incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,caller:d.caller,
-     sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),details:d.details,hazards:d.hazards,resources:d.resources,
-     mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
+     sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),details:d.details,notes:d.details,hazards:d.hazards,resources:d.resources,
+     mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk,
+     standbyDestination:d.standbyDestination,
+     dispatchMode:upper(d.type)==="STANDBY DUTIES"?"STANDBY":"INCIDENT",
+     category:upper(d.type)==="STANDBY DUTIES"?"standby":"incident",
+     isStandby:upper(d.type)==="STANDBY DUTIES"
    });
    const role=el.querySelector(`.mobiliseRole[data-role-cs="${CSS.escape(cs)}"]`)?.value||"Pump";
    await command("assignAppliance",{
@@ -740,21 +812,8 @@ function renderMdt(){
  $("mdtAck")&&($("mdtAck").onclick=()=>command("webMdtAck",{callsign:mdtCallsign,incidentId:inc.id}));
 }
 
-function applyCreateIncidentCategory(){
- const mode=String($("fJobCategory")?.value||"INCIDENT").toUpperCase();
- const label=$("fTypeLabel");
- const input=$("fType");
 
- if(label) label.textContent=mode==="STANDBY"?"Standby duty type":"Incident type";
-
- if(input){
-   input.placeholder=mode==="STANDBY"
-     ?"e.g. Standby cover / Strategic standby / Relief standby"
-     :"e.g. Dwelling fire";
- }
-}
-
-function openModal(){ $("incidentModal").classList.remove("hidden");applyCreateIncidentCategory() } function closeModal(){ $("incidentModal").classList.add("hidden") }
+function openModal(){ $("incidentModal").classList.remove("hidden") } function closeModal(){ $("incidentModal").classList.add("hidden") }
 document.addEventListener("click",e=>{
  const v=e.target.closest("[data-view]");if(v)setControlView(v.dataset.view);
  const j=e.target.closest("[data-jump]");if(j)setControlView(j.dataset.jump);
@@ -765,18 +824,13 @@ document.addEventListener("click",e=>{
  }
  const mv=e.target.closest("[data-mdtview]");if(mv)setMdtView(mv.dataset.mdtview);
 });
-$("openCreate").onclick=$("openCreate2").onclick=openModal;$("fJobCategory").onchange=applyCreateIncidentCategory;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
+$("openCreate").onclick=$("openCreate2").onclick=openModal;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
 $("createIncident").onclick=async()=>{
- const dispatchMode=String($("fJobCategory")?.value||"INCIDENT").toUpperCase();
- const isStandby=dispatchMode==="STANDBY";
  await command("createIncident",{
-   dispatchMode,
-   category:isStandby?"standby":"incident",
-   isStandby,
-   type:$("fType").value.trim()||(isStandby?"STANDBY DUTIES":"INCIDENT"),
+   type:$("fType").value.trim()||"INCIDENT",
    address:$("fAddress").value,
    postal:$("fPostal").value,
-   priority:isStandby&&$("fPriority").value==="Immediate"?"Standby":$("fPriority").value,
+   priority:$("fPriority").value,
    caller:$("fCaller").value,
    notes:$("fNotes").value,
    details:$("fNotes").value,

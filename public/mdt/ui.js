@@ -140,12 +140,32 @@ function upsertIncidentMessage(inc){
   }
   renderMessages();
 }
+
+function applyIncidentUpdate(incoming){
+  if(!incoming)return;
+  const id=String(incoming.id||"");
+  if(!id)return;
+
+  const idx=incidents.findIndex(x=>String(x?.id||"")===id);
+  if(idx>=0) incidents[idx]={...incidents[idx],...incoming};
+  else incidents.push(incoming);
+
+  const msgIdx=messages.findIndex(m=>m?.kind==='incident' && String(m?.incident?.id||"")===id);
+  if(msgIdx>=0){
+    messages[msgIdx]={...messages[msgIdx],incident:{...messages[msgIdx].incident,...incoming}};
+  }
+
+  renderMessages();
+  renderIncidents();
+  updateStatusHeader();
+}
+
 function showIncidentDispatchMessage(m){
   const inc=m?.incident||{};
   const units=incidentUnits(inc);
   const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))},${Math.round(Number(inc.y))}`:'—');
   const received=inc.time||inc.dispatchedAt||inc.createdAt||m.time||'—';
-  const details=inc.description||inc.details||inc.notes||'';
+  const details=inc.details||inc.notes||inc.additionalDetails||inc.furtherInfo||inc.description||'';
   const talkgroup=inc.talkgroup||inc.talkGroup||'—';
   const standby=!!(inc.isStandby||inc.isStandbyMove);
   const incidentNo=turnoutIncidentNo(inc);
@@ -810,8 +830,17 @@ window.addEventListener('message',function(e){
   }
   if(d.type==='loadIncidents'){
     incidents=Array.isArray(d.incidents)?d.incidents:[];
+    for(const inc of incidents){
+      const idx=messages.findIndex(m=>m?.kind==='incident' && String(m?.incident?.id||"")===String(inc.id||""));
+      if(idx>=0) messages[idx]={...messages[idx],incident:{...messages[idx].incident,...inc}};
+    }
+    renderMessages();
     renderIncidents();
     updateStatusHeader();
+    return;
+  }
+  if(d.type==='incidentUpdate'&&d.item){
+    applyIncidentUpdate(d.item);
     return;
   }
   if(d.type==='incident'&&d.item){
