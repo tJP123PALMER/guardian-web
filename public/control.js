@@ -528,6 +528,27 @@ function renderIncidentDetail(){
    }finally{btn.disabled=false;btn.textContent="CREATE RESOURCE REQUEST";}
  };
 }
+
+function currentOpenIncidentForUnit(cs){
+ const key=upper(cs);
+ const list=Array.isArray(state.incidents)?state.incidents:[];
+ for(let i=list.length-1;i>=0;i--){
+   const inc=list[i]||{};
+   if(upper(inc.status)==="CLOSED")continue;
+   if(assignedUnits(inc).includes(key))return inc;
+ }
+ return null;
+}
+function displayIncidentNumber(inc){
+ if(!inc)return "";
+ const raw=String(inc.incidentNumber||inc.id||"");
+ const match=raw.match(/(\d{5})(?!.*\d)/);
+ return match?match[1]:raw;
+}
+function incidentRelatedStatus(status){
+ return /MOBILE TO INCIDENT|IN ATTENDANCE|AVAILABLE AT INCIDENT|ON SCENE|INCIDENT/i.test(String(status||""));
+}
+
 function renderUnits(){
  const configured=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
  $("unitTable").innerHTML=`<div class="tableHead applianceBoardHead"><div>CALLSIGN</div><div>HOME STATION</div><div>CURRENT COVER / LOCATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+
@@ -537,12 +558,23 @@ function renderUnits(){
    const current=move?(move.destination||"Standby"):(state.units?.[cs]?home:"—");
    const live=!!state.units?.[cs];
    const status=currentStatus(cs);
+   const inc=currentOpenIncidentForUnit(cs);
+   const incNo=displayIncidentNumber(inc);
+   const ack=inc?incidentAckInfo(inc,cs):{acked:false,time:""};
+
    return `<div class="tableRow applianceBoardRow">
      <div><strong>${esc(cs)}</strong>${move?'<span class="standbyFlag">STANDBY</span>':""}</div>
      <div>${esc(home)}</div>
      <div>${move?`<strong>${esc(current)}</strong><small class="standbySub">${esc(move.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
      <div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div>
-     <div><span class="status ${statusClass(status)}">${esc(status)}</span>${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}</div>
+     <div>
+       <div class="boardStatusLine">
+         <span class="status ${statusClass(status)}">${esc(status)}</span>
+         ${inc&&incNo&&incidentRelatedStatus(status)?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
+         ${inc&&incidentRelatedStatus(status)?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
+       </div>
+       ${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
+     </div>
      <div>${live?"SIGNED ON":"OFF RUN"}</div>
    </div>`;
  }).join("");

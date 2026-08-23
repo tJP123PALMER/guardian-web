@@ -113,3 +113,10 @@
 .incidentLiveSummaryUnit b{font-size:9px;padding:2px 5px;border-radius:3px}
 .incidentLiveSummaryUnit .ackOk{color:#91e0b6;background:rgba(34,153,92,.14)}
 .incidentLiveSummaryUnit .ackWaiting{color:#e8bf62;background:rgba(202,151,39,.12)}
+
+/* Appliance Board: operational incident context */
+.boardStatusLine{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.incidentNoTag{display:inline-flex;padding:3px 6px;border-radius:4px;background:rgba(42,132,194,.15);border:1px solid rgba(42,132,194,.35);color:#8bc8f0;font-size:9px;font-weight:900;letter-spacing:.05em}
+.boardAckTag{display:inline-flex;padding:3px 6px;border-radius:4px;font-size:8px;font-weight:900;letter-spacing:.05em}
+.boardAckTag.acked{background:rgba(33,151,88,.15);border:1px solid rgba(33,151,88,.35);color:#8fe0b3}
+.boardAckTag.waiting{background:rgba(203,150,34,.12);border:1px solid rgba(203,150,34,.32);color:#e6bd5f}

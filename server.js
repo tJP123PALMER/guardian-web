@@ -135,6 +135,63 @@ function pushEvent(kind,payload={}){
   return event;
 }
 
+
+function normaliseIncidentLive(inc){
+  if(!inc || typeof inc!=="object") return inc;
+  inc.assignedUnits = Array.isArray(inc.assignedUnits)
+    ? inc.assignedUnits
+    : Array.isArray(inc.assignedAppliances) ? inc.assignedAppliances
+    : Array.isArray(inc.appliances) ? inc.appliances : [];
+  inc.applianceStatuses = inc.applianceStatuses && typeof inc.applianceStatuses==="object" ? inc.applianceStatuses : {};
+  inc.acknowledgedBy = inc.acknowledgedBy && typeof inc.acknowledgedBy==="object" ? inc.acknowledgedBy : {};
+  inc.acknowledgedAt = inc.acknowledgedAt && typeof inc.acknowledgedAt==="object" ? inc.acknowledgedAt : {};
+  inc.timeline = Array.isArray(inc.timeline) ? inc.timeline : [];
+  return inc;
+}
+function sameIncidentIdentity(a,b){
+  if(!a||!b)return false;
+  if(String(a.id||"") && String(a.id||"")===String(b.id||"")) return true;
+  if(a.standbyMoveId && b.standbyMoveId && String(a.standbyMoveId)===String(b.standbyMoveId)) return true;
+  return false;
+}
+function timelineHas(inc,text){
+  return (inc.timeline||[]).some(e=>String(e?.text||"")===String(text||""));
+}
+function mergeIncidentLive(previous,incoming){
+  const old=normaliseIncidentLive(previous?{...previous}: {});
+  const next=normaliseIncidentLive({...old,...incoming});
+
+  // Preserve richer nested state if an older FiveM snapshot omits it.
+  next.acknowledgedBy={...(old.acknowledgedBy||{}),...(incoming?.acknowledgedBy||{})};
+  next.acknowledgedAt={...(old.acknowledgedAt||{}),...(incoming?.acknowledgedAt||{})};
+  next.applianceStatuses={...(old.applianceStatuses||{}),...(incoming?.applianceStatuses||{})};
+  next.timeline=Array.isArray(incoming?.timeline)&&incoming.timeline.length
+    ? incoming.timeline.slice()
+    : (old.timeline||[]).slice();
+
+  // Web-side safety net: derive ACK/status audit entries from state changes.
+  const assigned=next.assignedUnits||[];
+  for(const rawCs of assigned){
+    const cs=String(typeof rawCs==="string"?rawCs:(rawCs?.callsign||rawCs?.unit||"")).toUpperCase();
+    if(!cs)continue;
+
+    const wasAck=!!old.acknowledgedBy?.[cs];
+    const isAck=!!next.acknowledgedBy?.[cs];
+    if(isAck&&!wasAck){
+      const text=`${cs} acknowledged incident`;
+      if(!timelineHas(next,text)) next.timeline.push({time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),text,callsign:cs});
+    }
+
+    const oldStatus=String(old.applianceStatuses?.[cs]||"");
+    const newStatus=String(next.applianceStatuses?.[cs]||"");
+    if(newStatus && oldStatus && oldStatus.toUpperCase()!==newStatus.toUpperCase()){
+      const text=`${cs} status changed to ${newStatus}`;
+      if(!timelineHas(next,text)) next.timeline.push({time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text,callsign:cs});
+    }
+  }
+  return next;
+}
+
 function touch(){
   state.updatedAt = now();
   broadcast("state", state);
@@ -224,13 +281,26 @@ app.post("/api/fivem/state",auth,(req,res)=>{
 
   state.units = normalizeUnits(body.units ?? state.units);
   if(Array.isArray(body.incidents)){
-    const liveIncidents=body.incidents;
-    const activeStandbys=(state.standbyIncidents||[]).filter(i=>String(i.status||"").toUpperCase()!=="CLOSED");
-    const liveIds=new Set(liveIncidents.map(i=>String(i.id)));
-    state.incidents=[
-      ...liveIncidents,
-      ...activeStandbys.filter(i=>!liveIds.has(String(i.id)))
-    ];
+    const previous=state.incidents||[];
+    const liveIncidents=body.incidents.map(raw=>{
+      const incoming=normaliseIncidentLive(raw);
+      const old=previous.find(x=>sameIncidentIdentity(x,incoming));
+      return mergeIncidentLive(old,incoming);
+    });
+
+    // Browser-created standby placeholder exists immediately in Control.
+    // The authoritative FiveM standby (same standbyMoveId) replaces it.
+    const activeStandbys=(state.standbyIncidents||[])
+      .filter(i=>String(i.status||"").toUpperCase()!=="CLOSED")
+      .map(normaliseIncidentLive);
+
+    const merged=[...liveIncidents];
+    for(const standby of activeStandbys){
+      if(!merged.some(i=>sameIncidentIdentity(i,standby))){
+        merged.push(standby);
+      }
+    }
+    state.incidents=merged;
   }
   if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
   if(Array.isArray(body.messages)) state.messages = body.messages;
@@ -405,6 +475,24 @@ app.post("/api/command",(req,res)=>{
       state:"sent",status:"Standby Move Sent",sentAt:now()
     };
     state.standbyMoves.unshift(move);
+
+    // Put standby into Control > Incidents immediately. FiveM replaces this
+    // placeholder with its authoritative 5-digit incident via standbyMoveId.
+    let standbyIncident=activeStandbyIncident(move.id);
+    if(!standbyIncident){
+      standbyIncident=normaliseIncidentLive(makeStandbyIncident(move));
+      standbyIncident.timeline=[
+        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:"Incident created"},
+        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:`${callsign} requested for standby cover at ${destination}`,callsign}
+      ];
+      standbyIncident.assignedUnits=[callsign];
+      standbyIncident.assignedRoles={[callsign]:move.role||"Pump"};
+      state.standbyIncidents.unshift(standbyIncident);
+    }
+    if(!state.incidents.some(i=>sameIncidentIdentity(i,standbyIncident))){
+      state.incidents.unshift(standbyIncident);
+    }
+
     pushEvent("standbyMoveCreated",move);
     touch();
 
