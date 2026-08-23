@@ -186,10 +186,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.4 Web MDT Sync"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5.1.1 Turnout + Incident Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.9.2 MDT Browser Fix",
+  version:"Guardian Operations v2.5.1.1 Turnout + Incident Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -234,9 +234,9 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   }
   if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
   if(Array.isArray(body.messages)) state.messages = body.messages;
-  if(Array.isArray(body.callsigns) && body.callsigns.length) state.callsigns = body.callsigns;
-  if(body.callSignStations && typeof body.callSignStations === "object" && Object.keys(body.callSignStations).length) state.callSignStations = body.callSignStations;
-  if(body.applianceSkills && typeof body.applianceSkills === "object" && Object.keys(body.applianceSkills).length) state.applianceSkills = body.applianceSkills;
+  if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
+  if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
+  if(body.applianceSkills && typeof body.applianceSkills === "object") state.applianceSkills = body.applianceSkills;
   if(body.bookings && typeof body.bookings === "object") state.bookings = body.bookings;
 
   state.connected = true;
@@ -282,10 +282,6 @@ function queueCommand(action,data={}){
   return command;
 }
 
-
-function fiveDigitIncidentNumber(){
-  return Math.floor(10000 + Math.random()*90000);
-}
 
 function activeStandbyIncident(moveId){
   return (state.standbyIncidents||[]).find(i=>String(i.standbyMoveId||"")===String(moveId||"") && String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
@@ -404,7 +400,6 @@ app.post("/api/command",(req,res)=>{
       id:id(),type:"standby_move",callsign,
       sourceStation:state.callSignStations?.[callsign]||u.station||"Unknown",
       destination,note:String(data.note||data.reason||""),
-      incidentNumber:fiveDigitIncidentNumber(),
       postal:String(data.postal||""),mapRef:String(data.mapRef||""),talkgroup:String(data.talkgroup||"FLAB-OPS1"),role:String(data.role||"Pump"),
       specialRisk:String(data.specialRisk||""),furtherInfo:String(data.furtherInfo||""),
       state:"sent",status:"Standby Move Sent",sentAt:now()
@@ -415,7 +410,6 @@ app.post("/api/command",(req,res)=>{
 
     const command=queueCommand("createStandbyIncident",{
       standbyMoveId:move.id,
-      incidentNumber:move.incidentNumber,
       callsign,
       sourceStation:move.sourceStation,
       destination,note:move.note,postal:move.postal,mapRef:move.mapRef,talkgroup:move.talkgroup,role:move.role,
@@ -520,18 +514,9 @@ app.post("/api/command",(req,res)=>{
     state.bookings ||= {};
     state.units ||= {};
     delete state.bookings[cs];
-
     const unit=state.units[cs];
-    if(unit){
-      // A web-only unit must disappear immediately from Control. If a real
-      // FiveM source exists, retain the real unit but strip browser session flags.
-      if(unit.webOnly===true || !unit.source){
-        delete state.units[cs];
-      }else{
-        state.units[cs]={...unit,webBooked:false,webOnly:false};
-      }
-    }
-
+    if(unit?.webOnly || !unit?.source) delete state.units[cs];
+    else if(unit){ unit.webBooked=false; unit.webOnly=false; }
     rebuildStations();
     pushEvent("webBookOff",{callsign:cs});
     touch();
@@ -605,4 +590,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.9.2 MDT Browser Fix running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));

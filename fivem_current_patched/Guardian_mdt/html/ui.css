@@ -433,3 +433,26 @@
 .incident-nav-title{font-weight:700;font-size:13px;margin-bottom:6px}
 .incident-nav-panel>div:not(.incident-nav-title){font-size:12px;line-height:1.45}
 #incidentNavGo{margin-top:7px;width:100%;border:0;padding:6px;background:#18a84b;color:#fff;font-weight:700;cursor:pointer}
+
+/* Guardian v2.5.1 turnout-style incident record */
+.turnoutSlip{font-family:Arial,sans-serif;color:#071b34}
+.turnoutHeader{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#d8e2eb;border:1px solid #4b79a4;border-bottom:3px solid #176fd1}
+.turnoutHeader span{display:block;font-size:10px;letter-spacing:.18em;color:#335b7d}
+.turnoutHeader strong{font-size:18px}
+.turnoutNumber{font-weight:800;font-family:monospace}
+.turnoutGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-left:1px solid #8aa1b4;border-top:1px solid #8aa1b4}
+.turnoutGrid>div{padding:9px 10px;border-right:1px solid #8aa1b4;border-bottom:1px solid #8aa1b4;background:#f4f6f7;min-height:48px}
+.turnoutGrid label{display:block;font-size:9px;font-weight:800;letter-spacing:.12em;color:#4d6a82;margin-bottom:4px}
+.turnoutWide{grid-column:1/-1}
+.turnoutInfo{white-space:pre-wrap;line-height:1.4;font-family:monospace}
+.turnoutActions{display:flex;gap:8px;padding-top:12px}
+.turnoutActions button{padding:10px 14px}
+.standbySlip .turnoutHeader{border-bottom-color:#e4a917}
+.standbyRoute{background:#fff4cd!important;border-left:4px solid #e4a917}
+@media(max-width:900px){.turnoutGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* v2.6 turnout scrolling */
+#incidentDetail{overflow-y:auto!important;overscroll-behavior:contain;padding-bottom:90px}
+.turnoutSlip{min-height:min-content;padding-bottom:6px}
+.turnoutActions{position:sticky;bottom:0;z-index:50;background:rgba(245,246,247,.98);border-top:2px solid #2d5f97;padding:10px 0 8px;margin-top:12px;box-shadow:0 -5px 12px rgba(0,0,0,.10)}
+.turnoutActions button{min-height:44px}

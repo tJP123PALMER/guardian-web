@@ -164,6 +164,22 @@ RegisterNetEvent('dispatch:statusUpdate', function(status, callsign)
         end
     end
 
+    local finalStatus = string.upper(tostring(status or ''))
+    if finalStatus == 'HOME STATION' or finalStatus == 'MOBILE AND AVAILABLE' then
+        for _, inc in ipairs(incidentHistory) do
+            if inc.status ~= 'CLOSED' and inc.isStandby == true then
+                for _, assigned in ipairs(inc.assignedUnits or {}) do
+                    if string.upper(tostring(assigned)) == callsign then
+                        inc.status = 'CLOSED'
+                        inc.sceneStatus = 'STANDBY COMPLETED'
+                        inc.closedAt = os.date('%H:%M:%S')
+                        AddIncidentTimeline(inc, callsign .. ' returned from standby and is available', callsign)
+                    end
+                end
+            end
+        end
+    end
+
     BroadcastUnitBoard()
     BroadcastOngoingIncidents()
 end)
@@ -195,7 +211,7 @@ end)
 local function IsApplianceAssignedToOpenIncident(callsign, exceptIncidentId)
     callsign = string.upper(tostring(callsign or ''))
     for _, other in ipairs(incidentHistory) do
-        if other.status ~= 'CLOSED' and tonumber(other.id) ~= tonumber(exceptIncidentId) then
+        if other.status ~= 'CLOSED' and other.isStandby ~= true and tonumber(other.id) ~= tonumber(exceptIncidentId) then
             for _, assigned in ipairs(other.assignedUnits or {}) do
                 if string.upper(tostring(assigned)) == callsign then
                     return true, other.id
@@ -288,7 +304,24 @@ RegisterNetEvent('control:assignAppliance', function(data)
             local newlyAssigned = false
 
             if assign and not exists then
-                -- A pump can only belong to one open incident at a time.
+                if inc.isStandby ~= true then
+                    for _, other in ipairs(incidentHistory) do
+                        if other.status ~= 'CLOSED' and other.isStandby == true then
+                            for n = #(other.assignedUnits or {}), 1, -1 do
+                                if string.upper(tostring(other.assignedUnits[n])) == callsign then
+                                    table.remove(other.assignedUnits, n)
+                                    other.status = 'CLOSED'
+                                    other.sceneStatus = 'SUPERSEDED BY INCIDENT'
+                                    other.closedAt = os.date('%H:%M:%S')
+                                    other.supersededByIncident = inc.id
+                                    AddIncidentTimeline(other, callsign .. ' released from standby for incident #' .. tostring(inc.id), callsign)
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- A pump can only belong to one open non-standby incident at a time.
                 -- The UI filters these out, but enforce it server-side too.
                 local alreadyBusy, busyIncident = IsApplianceAssignedToOpenIncident(callsign, inc.id)
                 if alreadyBusy then
@@ -298,6 +331,8 @@ RegisterNetEvent('control:assignAppliance', function(data)
                     return
                 end
                 inc.assignedUnits[#inc.assignedUnits+1] = callsign
+                inc.assignedRoles = inc.assignedRoles or {}
+                inc.assignedRoles[callsign] = tostring(data.role or inc.assignedRoles[callsign] or 'Pump')
                 inc.applianceStatuses = inc.applianceStatuses or {}
                 inc.applianceStatuses[callsign] = 'MOBILISED TO THIS INCIDENT'
                 AddIncidentTimeline(inc, callsign .. ' mobilised to incident', callsign)
@@ -330,17 +365,31 @@ RegisterNetEvent('control:assignAppliance', function(data)
                     TriggerClientEvent('dispatch:newIncident', target, {
                         id = inc.id,
                         type = inc.type,
+                        title = inc.title,
+                        category = inc.category,
+                        isStandby = inc.isStandby == true,
+                        standbyMoveId = inc.standbyMoveId,
+                        standbySourceStation = inc.standbySourceStation,
+                        standbyDestination = inc.standbyDestination,
+                        stationArea = inc.stationArea or inc.standbyDestination,
                         address = inc.address,
+                        location = inc.address,
                         postal = inc.postal,
                         priority = inc.priority,
                         caller = inc.caller,
                         description = inc.notes,
+                        details = inc.notes,
+                        notes = inc.notes,
+                        hazards = inc.hazards,
+                        specialRisk = inc.specialRisk,
+                        mapRef = inc.mapRef,
+                        talkgroup = inc.talkgroup,
+                        assignedUnits = inc.assignedUnits,
+                        assignedRoles = inc.assignedRoles,
+                        time = inc.time,
                         x = inc.x,
                         y = inc.y,
                         z = inc.z,
-                        -- The target callsign is deliberately included so the
-                        -- receiving MDT can independently reject any incident
-                        -- not addressed to the signed-on appliance.
                         targetCallsign = callsign,
                         playAlert = inc.sendMDT ~= false
                     })
@@ -354,9 +403,14 @@ RegisterNetEvent('control:assignAppliance', function(data)
                 end
 
                 if inc.sendTurnout == true then
-                    TriggerEvent("MPS-TurnoutSystem:Server:TurnoutCallsigns", {callsign}, string.format(
-                        "%s\n%s\n%s", inc.type or '', inc.address or '', inc.notes or ''
-                    ))
+                    local role = (inc.assignedRoles and inc.assignedRoles[callsign]) or 'Pump'
+                    local turnoutText = string.format(
+                        "INC NO: %s\nTO ATTEND: %s\nADDRESS: %s\nPOSTAL: %s\nMAP REF: %s\nTYPE: %s\nPRIORITY: %s\nSPECIAL RISK: %s\nFURTHER INFO: %s\nTALKGROUP: %s\nROLE: %s",
+                        tostring(inc.id or ''), callsign, tostring(inc.address or ''), tostring(inc.postal or ''),
+                        tostring(inc.mapRef or ''), tostring(inc.type or ''), tostring(inc.priority or ''),
+                        tostring(inc.specialRisk or inc.hazards or ''), tostring(inc.notes or inc.details or ''),
+                        tostring(inc.talkgroup or ''), tostring(role))
+                    TriggerEvent("MPS-TurnoutSystem:Server:TurnoutCallsigns", {callsign}, turnoutText)
                 end
 
                 if inc.sendPager == true then
@@ -402,6 +456,9 @@ RegisterNetEvent('control:updateIncidentDetails', function(data)
             inc.details = tostring(data.details or '')
             inc.hazards = tostring(data.hazards or '')
             inc.resources = tostring(data.resources or '')
+            inc.mapRef = tostring(data.mapRef or inc.mapRef or '')
+            inc.talkgroup = tostring(data.talkgroup or inc.talkgroup or '')
+            inc.specialRisk = tostring(data.specialRisk or inc.specialRisk or '')
             inc.sceneStatus = tostring(data.sceneStatus or '')
             inc.casualties = tonumber(data.casualties) or 0
 
@@ -773,7 +830,60 @@ local function CreateIncidentFromData(data, source999CallId)
     return inc
 end
 
-RegisterNetEvent('control:createIncidentFrom999', function(data)
+
+RegisterNetEvent('control:createStandbyIncident', function(data)
+    data = data or {}
+    local callsign = string.upper(tostring(data.callsign or ''))
+    local destination = tostring(data.destination or data.station or '')
+    if callsign == '' or destination == '' then
+        print('^1[Guardian Control] Standby incident rejected: callsign/destination missing.^7')
+        return
+    end
+
+    local inc = CreateIncidentFromData({
+        type = 'STANDBY COVER',
+        address = destination,
+        postal = data.postal or '',
+        priority = 'Standby',
+        caller = 'CONTROL',
+        notes = (data.furtherInfo and tostring(data.furtherInfo) ~= '' and data.furtherInfo) or data.note or ('Proceed to ' .. destination .. ' for standby cover.'),
+        enableMDT = data.enableMDT ~= false,
+        enableTurnout = data.enableTurnout ~= false,
+        enablePager = data.enablePager == true
+    })
+
+    inc.title = 'Standby - ' .. destination
+    inc.category = 'standby'
+    inc.isStandby = true
+    inc.standbyMoveId = data.standbyMoveId
+    inc.standbySourceStation = data.sourceStation or ''
+    inc.standbyDestination = destination
+    inc.stationArea = destination
+    inc.sceneStatus = 'STANDBY MOVE SENT'
+    inc.talkgroup = data.talkgroup or 'FLAB-OPS1'
+    inc.mapRef = data.mapRef or ''
+    inc.specialRisk = data.specialRisk or ''
+    inc.assignedRoles = inc.assignedRoles or {}
+
+    AddIncidentTimeline(inc, callsign .. ' requested for standby cover at ' .. destination, callsign)
+    BroadcastOngoingIncidents()
+
+    TriggerEvent('control:assignAppliance', {
+        incidentId = inc.id,
+        callsign = callsign,
+        assign = true,
+        enableMDT = data.enableMDT ~= false,
+        enableTurnout = data.enableTurnout ~= false,
+        enablePager = data.enablePager == true,
+        standby = true,standbyMoveId = data.standbyMoveId,role = data.role or 'Pump'
+    })
+
+    print(('[Guardian Control] Standby incident #%s created for %s -> %s'):format(
+        tostring(inc.id), callsign, destination
+    ))
+end)
+
+RegisterNetEvent('control:returnStandbyMove', function(data)\n    data = data or {}\n    local moveId = tostring(data.id or data.moveId or '')\n    local callsign = string.upper(tostring(data.callsign or ''))\n    for _, inc in ipairs(incidentHistory) do\n        if inc.status ~= 'CLOSED' and inc.isStandby == true and (tostring(inc.standbyMoveId or '') == moveId or (callsign ~= '' and tableContains(inc.assignedUnits or {}, callsign))) then\n            local cs = callsign\n            if cs == '' then cs = string.upper(tostring((inc.assignedUnits or {})[1] or '')) end\n            inc.sceneStatus = 'RETURN TO HOME STATION'\n            inc.applianceStatuses = inc.applianceStatuses or {}\n            inc.applianceStatuses[cs] = 'Return to Home Station'\n            AddIncidentTimeline(inc, 'Control instructed ' .. cs .. ' to return to home station', cs)\n            local unit = activeUnits[cs]\n            local target = unit and unit.source\n            if target then\n                TriggerClientEvent('dispatch:newIncident', target, {\n                    id=inc.id,type='RETURN HOME',title='Return to Home Station',category='standby',isStandby=true,\n                    standbyMoveId=inc.standbyMoveId,standbySourceStation=inc.standbySourceStation,standbyDestination=inc.standbyDestination,\n                    stationArea=inc.standbyDestination,address=inc.standbySourceStation or 'Home Station',postal=inc.postal,priority='Standby',caller='CONTROL',\n                    description='Return to your home station. Standby cover is no longer required.',details='Return to your home station. Standby cover is no longer required.',\n                    mapRef=inc.mapRef,talkgroup=inc.talkgroup,assignedUnits={cs},assignedRoles=inc.assignedRoles,targetCallsign=cs,playAlert=true,returnHome=true\n                })\n            end\n            BroadcastOngoingIncidents()\n            return\n        end\n    end\nend)\n\nRegisterNetEvent('control:createIncidentFrom999', function(data)
     data = data or {}
     local callId = tonumber(data.callId)
     if not callId then return end

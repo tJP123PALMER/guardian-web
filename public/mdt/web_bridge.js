@@ -184,11 +184,8 @@
       status:"Home Station",webOnly:true,webBooked:true
     }};
     updateBookUi();
-    forceVisibleCallsign();
-    post({type:"setCallsign",callsign:upper(callsign)});
     syncStatus(true);
     await command("webBookOn",{callsign,status:"Home Station"});
-    await loadState().catch(()=>{});
   }
 
   async function bookOff() {
@@ -206,12 +203,6 @@
     lastStatusPosted="";
     updateBookUi();
     post({type:"setStatus",status:"OFF RUN",preserveSelection:false});
-    post({type:"loadIncidents",incidents:[]});
-
-    // Keep the selected appliance available in the dropdown, but this browser
-    // is now definitively NOT booked on.
-    await loadState().catch(()=>{});
-    updateBookUi();
   }
 
   function updatePicker() {
@@ -317,37 +308,7 @@
     }
   }
 
-  function ensureBookedCallsign(){
-    const current=upper(callsign), units=unitMap(), bookings=state.bookings||{};
-
-    const isBookedCs = cs => {
-      const u=units[cs], b=bookings[cs];
-      return !!b || u?.webBooked===true || b?.webBooked===true;
-    };
-
-    if(current && isBookedCs(current)) return;
-
-    const booked=[...new Set([
-      ...Object.keys(bookings).map(upper),
-      ...Object.entries(units).filter(([,u])=>u?.webBooked===true).map(([cs])=>upper(cs))
-    ])].filter(Boolean);
-
-    if(booked.length===1){
-      callsign=booked[0];
-      localStorage.setItem("guardianExactMdtCallsign",callsign);
-    }
-  }
-
-  function forceVisibleCallsign(){
-    const el=document.getElementById("callsignBox");
-    if(el) el.textContent=upper(callsign)||"UNSET";
-    const agencyCs=document.getElementById("agencyCallsign");
-    if(agencyCs) agencyCs.textContent=upper(callsign)||"UNSET";
-  }
-
   function syncStateToMdt(force = false) {
-    ensureBookedCallsign();
-    forceVisibleCallsign();
     updatePicker();
     updateBookUi();
     post({ type:"setCallsign", callsign:callsign || "UNSET" });
@@ -391,7 +352,7 @@
       const move=p;
       if(!callsign || upper(move.callsign)!==upper(callsign)) return;
       const fake={
-        id:String(move.incidentNumber||"00000"),
+        id:`STANDBY:${move.id}`,
         type:"STANDBY COVER",
         title:`Standby - ${move.destination||"Cover"}`,
         priority:"Standby",
@@ -406,7 +367,6 @@
         assignedAppliances:[upper(move.callsign)],
         playAlert:true,
         standbyMoveId:move.id,
-        incidentNumber:move.incidentNumber,
         standbySourceStation:move.sourceStation||"",
         standbyDestination:move.destination||"",
         isStandby:true,

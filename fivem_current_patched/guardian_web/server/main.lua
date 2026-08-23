@@ -110,7 +110,9 @@ CreateThread(function()
                     commandCursor[cmd.id] = true
                     local data = cmd.data or {}
 
-                    if cmd.action == "createIncident" then
+                    if cmd.action == "createStandbyIncident" then
+                        TriggerEvent("control:createStandbyIncident", data)
+                    elseif cmd.action == "createIncident" then
                         TriggerEvent("control:createIncident", data)
                     elseif cmd.action == "updateIncident" or cmd.action == "updateIncidentDetails" then
                         TriggerEvent("control:updateIncidentDetails", data)
@@ -144,18 +146,18 @@ CreateThread(function()
                                 status = tostring(data.status or "Home Station"),
                                 bookedAt = os.time()
                             }
-                            pcall(function()
-                                exports["Guardian_control"]:GuardianWebBookOn(cs, webBookings[cs].status)
-                            end)
+                            -- Optional integration with newer Guardian_control builds.
+                            TriggerEvent("control:webBookOn", {
+                                callsign = cs,
+                                status = webBookings[cs].status
+                            })
                             SetTimeout(50, publish)
                         end
                     elseif cmd.action == "webBookOff" then
                         local cs = upper(data.callsign)
                         if cs ~= "" then
                             webBookings[cs] = nil
-                            pcall(function()
-                                exports["Guardian_control"]:GuardianWebBookOff(cs)
-                            end)
+                            TriggerEvent("control:webBookOff", { callsign = cs })
                             SetTimeout(50, publish)
                         end
                     elseif cmd.action == "webMdtStatus" then
@@ -164,32 +166,23 @@ CreateThread(function()
                             if webBookings[cs] then
                                 webBookings[cs].status = tostring(data.status or webBookings[cs].status or "Home Station")
                             end
-                            pcall(function()
-                                exports["Guardian_control"]:GuardianWebSetUnitStatus(cs, tostring(data.status or "Home Station"))
-                            end)
+                            TriggerEvent("control:webMdtStatus", {
+                                callsign = cs,
+                                status = tostring(data.status or "Home Station")
+                            })
+                            -- Also publish a status event for older Control builds that
+                            -- already listen to dispatch:statusUpdate.
+                            TriggerEvent("dispatch:statusUpdate", tostring(data.status or "Home Station"), cs)
                             SetTimeout(50, publish)
                         end
                     elseif cmd.action == "webMdtAck" then
                         TriggerEvent("control:webMdtAck", data)
-                    elseif cmd.action == "standbyMove" then
-                        local cs = upper(data.callsign)
-                        local snap = getSnapshot()
-                        local target = snap.units and snap.units[cs] and tonumber(snap.units[cs].source)
-                        if target then
-                            TriggerClientEvent("guardian:standbyMove", target, data)
-                        end
-                    elseif cmd.action == "cancelStandbyMove" then
-                        local cs = upper(data.callsign)
-                        local snap = getSnapshot()
-                        local target = snap.units and snap.units[cs] and tonumber(snap.units[cs].source)
-                        if target then TriggerClientEvent("guardian:standbyCancelled", target, data) end
                     elseif cmd.action == "returnStandbyMove" then
-                        local cs = upper(data.callsign)
-                        local snap = getSnapshot()
-                        local target = snap.units and snap.units[cs] and tonumber(snap.units[cs].source)
-                        if target then TriggerClientEvent("guardian:standbyReturn", target, data) end
+                        TriggerEvent("control:returnStandbyMove", data)
+                    elseif cmd.action == "cancelStandbyMove" then
+                        TriggerEvent("control:cancelStandbyMove", data)
                     elseif cmd.action == "ackStandbyMove" then
-                        -- Browser/in-game ACK is reflected on the web state.
+                        TriggerEvent("control:ackStandbyMove", data)
                     elseif cmd.action == "requestStatus" then
                         TriggerEvent("control:requestStatus", data)
                     elseif cmd.action == "setSceneStatus" then
@@ -203,4 +196,4 @@ CreateThread(function()
     end
 end)
 
-print("^2[Guardian Web]^7 v2.4.1 bridge started - standby/book-off fixed.")
+print("^2[Guardian Web]^7 Live Operations v2.3.1 bridge started (web booking enabled).")
