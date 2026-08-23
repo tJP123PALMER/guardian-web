@@ -1,4 +1,19 @@
-let selectedStatus=null,currentStatus='Home Station',incidents=[],messages=[],mapScale=.65,mapX=-420,mapY=-250,dragging=false,dragStartX=0,dragStartY=0;const statuses=["Mobile to Incident","In Attendance at Incident","Available At Incident","Mobile And Available","Home Station","Available Home Address","Available Pager","Available Telephone","Mobile to Standby Station","Available Standby Station"];const body=document.body,statusesDiv=document.getElementById('statuses'),incidentTabs=document.getElementById('incidentTabs'),incidentDetail=document.getElementById('incidentDetail'),messageList=document.getElementById('messageList'),messageView=document.getElementById('messageView'),msgBox=document.getElementById('msgBox'),liveStatus=document.getElementById('liveStatus'),callsignBox=document.getElementById('callsignBox'),sendStatusBtn=document.getElementById('sendStatus'),mobilisingOverlay=document.getElementById('mobilisingOverlay');let currentAgency='LAB';const agencyNames=['FLAB','FRS','SFR','NFR'];function nui(name,data){return fetch(`https://${GetParentResourceName()}/${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data||{})}).catch(()=>{});}function closeMDT(){nui('close');body.style.display='none'}function switchTab(name){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));const t={status:'Request Status from Control',incidents:'This Incident',messages:'Messages',map:'SatNav',browser:'Browser',agency:'Agency Login','update-history':'Update History'};document.getElementById('pageTitle').textContent=t[name]||'Guardian MDT';if(name==='map')showSatnavMainMenu()}document.querySelectorAll('[data-tab]').forEach(x=>x.addEventListener('click',()=>switchTab(x.dataset.tab)));document.getElementById('closeBtn').onclick=closeMDT;document.getElementById('closeBottom').onclick=closeMDT;document.getElementById('satnavBtn').onclick=()=>{switchTab('map');showSatnavMainMenu()};document.getElementById('liveStatus').onclick=()=>switchTab('status');document.getElementById('browserBtn').onclick=()=>switchTab('browser');document.getElementById('radioStatusBtn').onclick=()=>switchTab('agency');document.getElementById('agencyBackBtn').onclick=()=>switchTab('status');document.getElementById('loginAgencyBtn').onclick=()=>openAgencyChoices();const testAlertsBtn=document.getElementById('testAlertsBtn');if(testAlertsBtn){testAlertsBtn.onclick=()=>{const a=document.getElementById('alert');if(a){a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{})}}};function showSatnavMainMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=false;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavAdminMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=false;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMapMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=false;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMessagesMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=false}const mapMenuBtn=document.querySelector('#satnavMainMenu .spanBoth');if(mapMenuBtn)mapMenuBtn.onclick=showSatnavMapMenu;const adminMenuBtn=document.getElementById('adminMenuBtn');if(adminMenuBtn)adminMenuBtn.onclick=showSatnavAdminMenu;const messagesMenuBtn=document.getElementById('messagesMenuBtn');if(messagesMenuBtn)messagesMenuBtn.onclick=showSatnavMessagesMenu;const satnavMessagesBack=document.getElementById('satnavMessagesBack');if(satnavMessagesBack)satnavMessagesBack.onclick=showSatnavMainMenu;const textMessagesBtn=document.getElementById('textMessagesBtn');if(textMessagesBtn)textMessagesBtn.onclick=()=>switchTab('messages');const messageHistoryBtn=document.getElementById('messageHistoryBtn');if(messageHistoryBtn)messageHistoryBtn.onclick=()=>switchTab('messages');const statusUpdateBtn=document.getElementById('statusUpdateBtn');if(statusUpdateBtn)statusUpdateBtn.onclick=()=>switchTab('status');const mapAdminBack=document.getElementById('mapAdminBack');if(mapAdminBack)mapAdminBack.onclick=showSatnavMainMenu;const zoomOutMenu=document.getElementById('zoomOutMenu');if(zoomOutMenu)zoomOutMenu.onclick=()=>document.getElementById('zoomOut').click();const zoomInMenu=document.getElementById('zoomInMenu');if(zoomInMenu)zoomInMenu.onclick=()=>document.getElementById('zoomIn').click();const mapMenuZoomOut=document.getElementById('mapMenuZoomOut');if(mapMenuZoomOut)mapMenuZoomOut.onclick=()=>document.getElementById('zoomOut').click();const mapMenuZoomIn=document.getElementById('mapMenuZoomIn');if(mapMenuZoomIn)mapMenuZoomIn.onclick=()=>document.getElementById('zoomIn').click();const mapMenuBack=document.getElementById('mapMenuBack');if(mapMenuBack)mapMenuBack.onclick=showSatnavMainMenu;let scaleFrozen=false;const freezeScaleBtn=document.getElementById('freezeScale');if(freezeScaleBtn)freezeScaleBtn.onclick=()=>{scaleFrozen=!scaleFrozen;freezeScaleBtn.classList.toggle('mapOptionActive',scaleFrozen)};const dimMapBtn=document.getElementById('dimMap');if(dimMapBtn)dimMapBtn.onclick=()=>{document.getElementById('mapViewport').classList.toggle('mapDimmed');dimMapBtn.classList.toggle('mapOptionActive')};const gotoMapRef=document.getElementById('gotoMapRef');if(gotoMapRef)gotoMapRef.onclick=()=>{const ref=prompt('Enter map reference:');if(ref)document.getElementById('mapRefReadout').textContent=ref};const getMapRef=document.getElementById('getMapRef');if(getMapRef)getMapRef.onclick=()=>{document.getElementById('mapRefReadout').textContent='E (433751), N (386852)'};const measuringTool=document.getElementById('measuringTool');if(measuringTool)measuringTool.onclick=()=>{document.getElementById('mapViewport').classList.toggle('measuringMode');measuringTool.classList.toggle('mapOptionActive')};const printMap=document.getElementById('printMap');if(printMap)printMap.onclick=()=>window.print();const gisLayers=document.getElementById('gisLayers');if(gisLayers)gisLayers.onclick=()=>{document.getElementById('dispatchMap').classList.toggle('gisLayerHint');gisLayers.classList.toggle('mapOptionActive')};const defaultMap=document.getElementById('defaultMap');if(defaultMap)defaultMap.onclick=()=>document.getElementById('mapReset').click();const browserHome=document.getElementById('browserHome');if(browserHome)browserHome.onclick=()=>switchTab('status');const browserPrev=document.getElementById('browserPrev');if(browserPrev)browserPrev.onclick=()=>{};const browserNext=document.getElementById('browserNext');if(browserNext)browserNext.onclick=()=>{};const browserRefresh=document.getElementById('browserRefresh');if(browserRefresh)browserRefresh.onclick=()=>{const b=document.querySelector('.browserLegend');if(b)b.scrollTop=0};const browserLock=document.getElementById('browserLock');if(browserLock)browserLock.onclick=()=>{};function updateAgencyDisplay(){const cs=document.getElementById('agencyCallsign');const nm=document.getElementById('agencyName');const msg=document.getElementById('agencyMessage');if(cs)cs.textContent=callsignBox.textContent||'UNSET';if(nm)nm.textContent=currentAgency;if(msg)msg.textContent=`Logged in to ${currentAgency} as call sign ${callsignBox.textContent||'UNSET'}.`;const rf=document.getElementById('radioStatusBtn');if(rf)rf.textContent=`${currentAgency} Online`;}function openAgencyChoices(){const existing=document.getElementById('agencyChoiceOverlay');if(existing)existing.remove();const overlay=document.createElement('div');overlay.id='agencyChoiceOverlay';overlay.innerHTML=`<div class=\"agencyChoiceCard\"><div class=\"agencyChoiceTitle\">Select Agency</div><div class=\"agencyChoiceGrid\">${agencyNames.map(a=>`<button type=\"button\" data-agency=\"${a}\">${a}</button>`).join('')}</div><button type=\"button\" class=\"agencyChoiceCancel\">Cancel</button></div>`;document.body.appendChild(overlay);overlay.querySelectorAll('[data-agency]').forEach(b=>b.onclick=()=>{currentAgency=b.dataset.agency;updateAgencyDisplay();overlay.remove();switchTab('agency')});overlay.querySelector('.agencyChoiceCancel').onclick=()=>overlay.remove();}updateAgencyDisplay();function buildStatuses(){statusesDiv.innerHTML='';statuses.forEach((s,i)=>{const b=document.createElement('button');b.className='statusBtn';b.textContent=s;if(i===8)b.style.gridColumn='2';if(i===9)b.style.gridColumn='3';if(s===currentStatus)b.classList.add('current');b.onclick=()=>{document.querySelectorAll('.statusBtn').forEach(x=>x.classList.remove('pending'));b.classList.add('pending');selectedStatus=s};statusesDiv.appendChild(b)})}buildStatuses();sendStatusBtn.onclick=()=>{if(!selectedStatus)return;currentStatus=selectedStatus;document.querySelectorAll('.statusBtn').forEach(b=>b.classList.remove('sent','active','pending','current'));const b=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(b)b.classList.add('current');liveStatus.textContent=selectedStatus;selectedStatus=null;nui('sendStatus',{status:currentStatus})};
+let selectedStatus=null,currentStatus='Home Station',incidents=[],messages=[],archivedIncidents=[],mapScale=.65,mapX=-420,mapY=-250,dragging=false,dragStartX=0,dragStartY=0;const statuses=["Mobile to Incident","In Attendance at Incident","Available At Incident","Mobile And Available","Home Station","Available Home Address","Available Pager","Available Telephone","Mobile to Standby Station","Available Standby Station"];const body=document.body,statusesDiv=document.getElementById('statuses'),incidentTabs=document.getElementById('incidentTabs'),incidentDetail=document.getElementById('incidentDetail'),messageList=document.getElementById('messageList'),messageView=document.getElementById('messageView'),msgBox=document.getElementById('msgBox'),liveStatus=document.getElementById('liveStatus'),callsignBox=document.getElementById('callsignBox'),sendStatusBtn=document.getElementById('sendStatus'),mobilisingOverlay=document.getElementById('mobilisingOverlay'),viewport=document.getElementById('mapViewport'),map=document.getElementById('dispatchMap');let currentAgency='LAB';const agencyNames=['FLAB','FRS','SFR','NFR'];function nui(name,data){return fetch(`https://${GetParentResourceName()}/${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data||{})}).catch(()=>{});}function closeMDT(){nui('close');body.style.display='none'}function updateIncidentArchiveCount(){
+  const b=document.getElementById('bottomIncidentTab');
+  if(b)b.textContent=`Incident (${archivedIncidents.length})`;
+}
+function switchTab(name){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));const t={status:'Request Status from Control',incidents:'Incident',messages:'Messages',map:'SatNav',browser:'Browser',agency:'Agency Login','update-history':'Update History'};document.getElementById('pageTitle').textContent=t[name]||'Guardian MDT';if(name==='map')showSatnavMainMenu()}document.querySelectorAll('[data-tab]').forEach(x=>x.addEventListener('click',()=>switchTab(x.dataset.tab)));document.getElementById('closeBtn').onclick=closeMDT;document.getElementById('closeBottom').onclick=closeMDT;
+if(mobilisingOverlay){
+  mobilisingOverlay.onclick=(ev)=>{
+    ev.preventDefault();
+    ev.stopPropagation();
+    mobilisingOverlay.hidden=true;
+    mobilisingOverlay.style.display='none';
+    switchTab('messages');
+    selectedMessageIndex=messages.length-1;
+    renderMessages();
+  };
+}document.getElementById('satnavBtn').onclick=()=>{switchTab('map');showSatnavMainMenu()};document.getElementById('liveStatus').onclick=()=>switchTab('status');document.getElementById('browserBtn').onclick=()=>switchTab('browser');document.getElementById('radioStatusBtn').onclick=()=>switchTab('agency');document.getElementById('agencyBackBtn').onclick=()=>switchTab('status');document.getElementById('loginAgencyBtn').onclick=()=>openAgencyChoices();const testAlertsBtn=document.getElementById('testAlertsBtn');if(testAlertsBtn){testAlertsBtn.onclick=()=>{const a=document.getElementById('alert');if(a){a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{})}}};function showSatnavMainMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=false;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavAdminMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=false;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMapMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=false;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMessagesMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=false}const mapMenuBtn=document.querySelector('#satnavMainMenu .spanBoth');if(mapMenuBtn)mapMenuBtn.onclick=showSatnavMapMenu;const adminMenuBtn=document.getElementById('adminMenuBtn');if(adminMenuBtn)adminMenuBtn.onclick=showSatnavAdminMenu;const messagesMenuBtn=document.getElementById('messagesMenuBtn');if(messagesMenuBtn)messagesMenuBtn.onclick=showSatnavMessagesMenu;const satnavMessagesBack=document.getElementById('satnavMessagesBack');if(satnavMessagesBack)satnavMessagesBack.onclick=showSatnavMainMenu;const textMessagesBtn=document.getElementById('textMessagesBtn');if(textMessagesBtn)textMessagesBtn.onclick=()=>switchTab('messages');const messageHistoryBtn=document.getElementById('messageHistoryBtn');if(messageHistoryBtn)messageHistoryBtn.onclick=()=>switchTab('messages');const statusUpdateBtn=document.getElementById('statusUpdateBtn');if(statusUpdateBtn)statusUpdateBtn.onclick=()=>switchTab('status');const mapAdminBack=document.getElementById('mapAdminBack');if(mapAdminBack)mapAdminBack.onclick=showSatnavMainMenu;const zoomOutMenu=document.getElementById('zoomOutMenu');if(zoomOutMenu)zoomOutMenu.onclick=()=>document.getElementById('zoomOut').click();const zoomInMenu=document.getElementById('zoomInMenu');if(zoomInMenu)zoomInMenu.onclick=()=>document.getElementById('zoomIn').click();const mapMenuZoomOut=document.getElementById('mapMenuZoomOut');if(mapMenuZoomOut)mapMenuZoomOut.onclick=()=>document.getElementById('zoomOut').click();const mapMenuZoomIn=document.getElementById('mapMenuZoomIn');if(mapMenuZoomIn)mapMenuZoomIn.onclick=()=>document.getElementById('zoomIn').click();const mapMenuBack=document.getElementById('mapMenuBack');if(mapMenuBack)mapMenuBack.onclick=showSatnavMainMenu;let scaleFrozen=false;const freezeScaleBtn=document.getElementById('freezeScale');if(freezeScaleBtn)freezeScaleBtn.onclick=()=>{scaleFrozen=!scaleFrozen;freezeScaleBtn.classList.toggle('mapOptionActive',scaleFrozen)};const dimMapBtn=document.getElementById('dimMap');if(dimMapBtn)dimMapBtn.onclick=()=>{document.getElementById('mapViewport').classList.toggle('mapDimmed');dimMapBtn.classList.toggle('mapOptionActive')};const gotoMapRef=document.getElementById('gotoMapRef');if(gotoMapRef)gotoMapRef.onclick=()=>{const ref=prompt('Enter map reference:');if(ref)document.getElementById('mapRefReadout').textContent=ref};const getMapRef=document.getElementById('getMapRef');if(getMapRef)getMapRef.onclick=()=>{document.getElementById('mapRefReadout').textContent='E (433751), N (386852)'};const measuringTool=document.getElementById('measuringTool');if(measuringTool)measuringTool.onclick=()=>{document.getElementById('mapViewport').classList.toggle('measuringMode');measuringTool.classList.toggle('mapOptionActive')};const printMap=document.getElementById('printMap');if(printMap)printMap.onclick=()=>window.print();const gisLayers=document.getElementById('gisLayers');if(gisLayers)gisLayers.onclick=()=>{document.getElementById('dispatchMap').classList.toggle('gisLayerHint');gisLayers.classList.toggle('mapOptionActive')};const defaultMap=document.getElementById('defaultMap');if(defaultMap)defaultMap.onclick=()=>document.getElementById('mapReset').click();const browserHome=document.getElementById('browserHome');if(browserHome)browserHome.onclick=()=>switchTab('status');const browserPrev=document.getElementById('browserPrev');if(browserPrev)browserPrev.onclick=()=>{};const browserNext=document.getElementById('browserNext');if(browserNext)browserNext.onclick=()=>{};const browserRefresh=document.getElementById('browserRefresh');if(browserRefresh)browserRefresh.onclick=()=>{const b=document.querySelector('.browserLegend');if(b)b.scrollTop=0};const browserLock=document.getElementById('browserLock');if(browserLock)browserLock.onclick=()=>{};function updateAgencyDisplay(){const cs=document.getElementById('agencyCallsign');const nm=document.getElementById('agencyName');const msg=document.getElementById('agencyMessage');if(cs)cs.textContent=callsignBox.textContent||'UNSET';if(nm)nm.textContent=currentAgency;if(msg)msg.textContent=`Logged in to ${currentAgency} as call sign ${callsignBox.textContent||'UNSET'}.`;const rf=document.getElementById('radioStatusBtn');if(rf)rf.textContent=`${currentAgency} Online`;}function openAgencyChoices(){const existing=document.getElementById('agencyChoiceOverlay');if(existing)existing.remove();const overlay=document.createElement('div');overlay.id='agencyChoiceOverlay';overlay.innerHTML=`<div class=\"agencyChoiceCard\"><div class=\"agencyChoiceTitle\">Select Agency</div><div class=\"agencyChoiceGrid\">${agencyNames.map(a=>`<button type=\"button\" data-agency=\"${a}\">${a}</button>`).join('')}</div><button type=\"button\" class=\"agencyChoiceCancel\">Cancel</button></div>`;document.body.appendChild(overlay);overlay.querySelectorAll('[data-agency]').forEach(b=>b.onclick=()=>{currentAgency=b.dataset.agency;updateAgencyDisplay();overlay.remove();switchTab('agency')});overlay.querySelector('.agencyChoiceCancel').onclick=()=>overlay.remove();}updateAgencyDisplay();function buildStatuses(){statusesDiv.innerHTML='';statuses.forEach((s,i)=>{const b=document.createElement('button');b.className='statusBtn';b.textContent=s;if(i===8)b.style.gridColumn='2';if(i===9)b.style.gridColumn='3';if(s===currentStatus)b.classList.add('current');b.onclick=()=>{document.querySelectorAll('.statusBtn').forEach(x=>x.classList.remove('pending'));b.classList.add('pending');selectedStatus=s};statusesDiv.appendChild(b)})}buildStatuses();updateIncidentArchiveCount();sendStatusBtn.onclick=()=>{if(!selectedStatus)return;currentStatus=selectedStatus;document.querySelectorAll('.statusBtn').forEach(b=>b.classList.remove('sent','active','pending','current'));const b=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(b)b.classList.add('current');liveStatus.textContent=selectedStatus;selectedStatus=null;nui('sendStatus',{status:currentStatus})};
 /* Message conversation + incidents + NUI events */
 function escapeHtml(v){
   return String(v == null ? '' : v)
@@ -67,44 +82,108 @@ function showIncidentDispatchMessage(m){
   const details=inc.description||inc.details||inc.notes||'';
   const talkgroup=inc.talkgroup||inc.talkGroup||'—';
   const standby=!!(inc.isStandby||inc.isStandbyMove);
+  const incidentNo=turnoutIncidentNo(inc);
+  const callsign=(callsignBox?.textContent||units[0]||'APPLIANCE').trim();
 
   messageView.innerHTML=`
-    <div class="cf33DispatchMessage">
-      <div class="cf33MsgTop">
-        <div><span>Date / Time Received</span><strong>${escapeHtml(String(received))}</strong></div>
-        <div><span>Incident</span><strong>${escapeHtml(turnoutIncidentNo(inc))}</strong></div>
-        <div><span>Map Reference</span><strong>${escapeHtml(mapRef)}</strong></div>
+    <div class="realCf33Message">
+      <div class="realCf33Header">
+        <div class="realCf33HeadCell">
+          <span>Date / Time Received</span>
+          <strong>${escapeHtml(String(received))}</strong>
+        </div>
+        <div class="realCf33HeadCell realCf33IncidentNo">
+          <span>Incident</span>
+          <strong>${escapeHtml(incidentNo)}</strong>
+        </div>
+        <div class="realCf33HeadCell">
+          <span>Map Reference</span>
+          <strong>${escapeHtml(mapRef)}</strong>
+        </div>
       </div>
-      <div class="cf33MsgBody">
-        <div class="cf33MsgRow"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
-        <div class="cf33MsgRow"><span>Address:</span><b>${escapeHtml(inc.address||inc.location||'—')}</b></div>
-        ${inc.postal?`<div class="cf33MsgRow"><span>Postal:</span><b>${escapeHtml(String(inc.postal))}</b></div>`:''}
-        <div class="cf33MsgRow"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
-        <div class="cf33MsgRow"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards||'—')}</b></div>
-        ${standby?`<div class="cf33MsgRow cf33Standby"><span>Standby:</span><b>${escapeHtml(inc.standbySourceStation||'Home Station')} → ${escapeHtml(inc.standbyDestination||inc.address||'Standby Station')}</b></div>`:''}
-        <div class="cf33MsgFurther">${escapeHtml(details||'No further information.')}</div>
-        <div class="cf33MsgRow"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
-        <div class="cf33MsgRow"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
-        <div class="cf33MsgRow"><span>Roles</span><b>${escapeHtml(incidentRolesText(inc))}</b></div>
+
+      <div class="realCf33Scroller" id="realCf33Scroller">
+        <div class="realCf33Text">
+          <div class="realCf33Line"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+
+          <div class="realCf33AddressBlock">
+            <span>Address:</span>
+            <b>${escapeHtml(inc.address||inc.location||'—')}</b>
+            ${inc.postal?`<b>${escapeHtml(String(inc.postal))}</b>`:''}
+            ${inc.stationArea?`<b>${escapeHtml(String(inc.stationArea))}</b>`:''}
+          </div>
+
+          <div class="realCf33Line"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
+
+          ${inc.specialRisk||inc.hazards?`
+            <div class="realCf33Line"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards)}</b></div>
+          `:''}
+
+          ${standby?`
+            <div class="realCf33Standby">
+              <span>Standby Cover:</span>
+              <b>${escapeHtml(inc.standbySourceStation||'Home Station')} → ${escapeHtml(inc.standbyDestination||inc.address||'Standby Station')}</b>
+            </div>
+          `:''}
+
+          <div class="realCf33Further">${escapeHtml(details||'No further information.')}</div>
+
+          <div class="realCf33Line"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+          <div class="realCf33Line"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
+          <div class="realCf33Line"><span>Roles</span><b>${escapeHtml(incidentRolesText(inc))}</b></div>
+        </div>
       </div>
-      <div class="cf33MsgAck" id="cf33MsgAck">Awaiting acknowledgement</div>
-      <div class="cf33MsgActions">
-        <button id="dispatchAckBtn">ACKNOWLEDGE</button>
-        ${inc.x!=null&&inc.y!=null?'<button id="dispatchRouteBtn">SET ROUTE</button>':''}
+
+      <aside class="realCf33RightControls">
+        <button id="cf33PrintBtn" title="Print turnout">▣</button>
+        <button id="cf33UpBtn" title="Scroll up">⌃</button>
+        <button id="cf33DownBtn" title="Scroll down">⌄</button>
+      </aside>
+
+      <div class="realCf33AckBar" id="realCf33AckBar">
+        <button id="cf33AckBtn">ACKNOWLEDGE INCIDENT</button>
+      </div>
+
+      <div class="realCf33BottomBar">
+        <button id="removeMessageCf33">Remove Message</button>
+        <button id="alarmOffCf33">Audible Alarm Off</button>
+        <button id="lastReceivedCf33">Last Received</button>
+        <button id="firstUnreadCf33">Find First Unread</button>
+        <button id="clearReadCf33">Clear All Read</button>
+        <button id="clearMessagesCf33">Clear All Messages</button>
+        <button id="closeCf33">Close</button>
       </div>
     </div>`;
 
-  const ack=document.getElementById('dispatchAckBtn');
-  if(ack)ack.onclick=()=>{
-    nui('ackIncident',{id:inc.id});
-    ack.textContent='ACKNOWLEDGED'; ack.disabled=true;
-    const bar=document.getElementById('cf33MsgAck');
-    if(bar)bar.textContent=`Acknowledged by ${callsignBox?.textContent||'appliance'}`;
-  };
-  const route=document.getElementById('dispatchRouteBtn');
-  if(route)route.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
-}
+  const scroller=document.getElementById('realCf33Scroller');
+  document.getElementById('cf33UpBtn').onclick=()=>scroller?.scrollBy({top:-220,behavior:'smooth'});
+  document.getElementById('cf33DownBtn').onclick=()=>scroller?.scrollBy({top:220,behavior:'smooth'});
+  document.getElementById('cf33PrintBtn').onclick=()=>window.print();
 
+  const ack=document.getElementById('cf33AckBtn');
+  ack.onclick=()=>{
+    nui('ackIncident',{id:inc.id});
+    ack.textContent=`ACKNOWLEDGED BY ${callsign}`;
+    ack.classList.add('acked');
+    ack.disabled=true;
+    const bar=document.getElementById('realCf33AckBar');
+    if(bar)bar.classList.add('acked');
+  };
+
+  document.getElementById('removeMessageCf33').onclick=removeSelectedMessage;
+  document.getElementById('alarmOffCf33').onclick=()=>{
+    messageAlarmMuted=true;
+    const p=document.getElementById('ping');
+    const a=document.getElementById('alert');
+    if(p){p.pause();p.currentTime=0;}
+    if(a){a.pause();a.currentTime=0;}
+  };
+  document.getElementById('lastReceivedCf33').onclick=selectLastReceived;
+  document.getElementById('firstUnreadCf33').onclick=findFirstUnread;
+  document.getElementById('clearReadCf33').onclick=clearReadMessages;
+  document.getElementById('clearMessagesCf33').onclick=clearAllMessages;
+  document.getElementById('closeCf33').onclick=()=>switchTab('status');
+}
 function renderMessages(){
   if(!messageList||!messageView)return;
   messageList.innerHTML='';
@@ -184,11 +263,26 @@ function closeSendPanel(){
 }
 
 function removeSelectedMessage(){
-  if(!messages.length) return;
-  const idx=(selectedMessageIndex>=0 && selectedMessageIndex<messages.length) ? selectedMessageIndex : messages.length-1;
+  if(!messages.length)return;
+  const idx=(selectedMessageIndex>=0&&selectedMessageIndex<messages.length)?selectedMessageIndex:messages.length-1;
+  const selected=messages[idx];
+
+  if(selected?.kind==='incident'&&selected?.incident){
+    const inc=selected.incident;
+    if(!archivedIncidents.some(x=>String(x.id)===String(inc.id))) archivedIncidents.push(inc);
+    updateIncidentArchiveCount();
+  }
+
   messages.splice(idx,1);
-  selectedMessageIndex=Math.min(idx,messages.length-1);
+  const adjusted=new Set();
+  [...unreadMessageIndexes].forEach(n=>{
+    if(n===idx)return;
+    adjusted.add(n>idx?n-1:n);
+  });
+  unreadMessageIndexes=adjusted;
+  selectedMessageIndex=messages.length?Math.min(idx,messages.length-1):-1;
   renderMessages();
+  renderIncidents();
 }
 
 function clearReadMessages(){
@@ -243,72 +337,54 @@ function turnoutIncidentNo(inc){
 }
 function renderIncidents(){
   incidentTabs.innerHTML='';
-  if(!incidents.length){ incidentDetail.innerHTML='<h3>Mobile Available</h3><p>No active incidents.</p>'; return; }
-  incidents.forEach((inc,i)=>{
-    const b=document.createElement('button'); b.className='incident'; b.textContent=`#${turnoutIncidentNo(inc)} ${(inc.isStandby||inc.isStandbyMove)?'STANDBY · ':''}${inc.type||'Incident'}`;
-    b.onclick=()=>{document.querySelectorAll('.incident').forEach(x=>x.classList.remove('activeIncident'));b.classList.add('activeIncident');showIncident(i);};
-    incidentTabs.appendChild(b);
-  });
-  showIncident(incidents.length-1);
+  updateIncidentArchiveCount();
+  if(!archivedIncidents.length){
+    incidentDetail.innerHTML='<div class="cleanIncidentEmpty"><h3>No saved incident</h3><p>Remove a turnout from Messages to save it here.</p></div>';
+    return;
+  }
+  showArchivedIncident(archivedIncidents.length-1);
 }
 function showIncident(i){
-  const inc=incidents[i]; if(!inc)return;
-  const units=(Array.isArray(inc.assignedUnits)?inc.assignedUnits:
-               Array.isArray(inc.assignedAppliances)?inc.assignedAppliances:
-               Array.isArray(inc.appliances)?inc.appliances:[])
-               .map(x=>typeof x==='string'?x:(x?.callsign||x?.unit||'')).filter(Boolean);
-  const roles=inc.assignedRoles||inc.applianceRoles||{};
-  const roleText=Object.keys(roles).length
-    ? Object.entries(roles).map(([cs,r])=>`${cs}:${typeof r==='string'?r:(r?.role||r?.name||'')}`).join(', ')
-    : (inc.roles||'—');
+  showArchivedIncident(i);
+}
+function showArchivedIncident(i){
+  const inc=archivedIncidents[i]; if(!inc)return;
+  const units=incidentUnits(inc);
   const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))},${Math.round(Number(inc.y))}`:'—');
   const received=inc.time||inc.dispatchedAt||inc.createdAt||'—';
-  const incidentNo=typeof turnoutIncidentNo==='function'?turnoutIncidentNo(inc):String(inc.incidentNumber||inc.id||'—');
   const details=inc.description||inc.details||inc.notes||'';
   const talkgroup=inc.talkgroup||inc.talkGroup||'—';
 
   incidentDetail.innerHTML=`
-    <div class="cf33Incident">
-      <div class="cf33Header">
+    <div class="archivedCf33">
+      <div class="archivedCf33Top">
         <div><span>Date / Time Received</span><strong>${escapeHtml(String(received))}</strong></div>
-        <div><span>Incident</span><strong>${escapeHtml(incidentNo)}</strong></div>
+        <div><span>Incident</span><strong>${escapeHtml(turnoutIncidentNo(inc))}</strong></div>
         <div><span>Map Reference</span><strong>${escapeHtml(mapRef)}</strong></div>
       </div>
-      <div class="cf33Paper">
-        <div class="cf33Row"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
-        <div class="cf33Row"><span>Address:</span><b>${escapeHtml(inc.address||inc.location||'—')}</b></div>
-        ${inc.postal?`<div class="cf33Row"><span>Postal:</span><b>${escapeHtml(String(inc.postal))}</b></div>`:''}
-        <div class="cf33Row"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
-        <div class="cf33Row"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards||'—')}</b></div>
-        <div class="cf33Details">${escapeHtml(details)}</div>
-        <div class="cf33Row"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
-        <div class="cf33Row"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
-        <div class="cf33Row"><span>Roles</span><b>${escapeHtml(roleText)}</b></div>
+      <div class="archivedCf33Body">
+        <div class="archiveRow"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="archiveRow"><span>Address:</span><b>${escapeHtml(inc.address||inc.location||'—')}</b></div>
+        ${inc.postal?`<div class="archiveRow"><span>Postal:</span><b>${escapeHtml(String(inc.postal))}</b></div>`:''}
+        <div class="archiveRow"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
+        <div class="archiveRow"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards||'—')}</b></div>
+        <div class="archiveFurther">${escapeHtml(details||'No further information.')}</div>
+        <div class="archiveRow"><span>Assigned:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+        <div class="archiveRow"><span>Talkgrp:</span><b>${escapeHtml(talkgroup)}</b></div>
+        <div class="archiveRow"><span>Roles:</span><b>${escapeHtml(incidentRolesText(inc))}</b></div>
       </div>
-      <div class="cf33Side">
-        <button id="cfPrint" title="Print">▣</button>
-        ${inc.x!=null&&inc.y!=null?'<button id="routeBtn" title="Set route">⌃</button>':''}
-        <button id="cfDown" title="Scroll down">⌄</button>
-      </div>
-      <div class="cf33Ack">Incident received by ${escapeHtml(units[0]||'appliance')}</div>
-      <div class="cf33Bottom">
-        <button id="clearBtn">Remove Message</button>
-        <button type="button">Audible Alarm Off</button>
-        <button type="button">Last Received</button>
-        <button type="button">Find First Unread</button>
-        <button type="button">Clear All Read</button>
-        <button type="button">Clear All Messages</button>
-        <button id="cfClose">Close</button>
+      <div class="archiveFooter">
+        <button id="archivePrev">Previous</button>
+        <span>${i+1} / ${archivedIncidents.length}</span>
+        <button id="archiveNext">Next</button>
       </div>
     </div>`;
-
-  const routeBtn=document.getElementById('routeBtn');
-  if(routeBtn)routeBtn.onclick=()=>nui('setIncidentWaypoint',{x:inc.x,y:inc.y});
-  document.getElementById('cfDown').onclick=()=>incidentDetail.scrollBy({top:220,behavior:'smooth'});
-  document.getElementById('cfPrint').onclick=()=>window.print();
-  document.getElementById('clearBtn').onclick=()=>{incidents.splice(i,1);renderIncidents();};
-  document.getElementById('cfClose').onclick=()=>{ if(typeof closeModal==='function') closeModal(); };
+  const prev=document.getElementById('archivePrev'), next=document.getElementById('archiveNext');
+  prev.disabled=i<=0; next.disabled=i>=archivedIncidents.length-1;
+  prev.onclick=()=>showArchivedIncident(i-1);
+  next.onclick=()=>showArchivedIncident(i+1);
 }
+
 function applyMap(){ if(map) map.style.transform=`translate(${mapX}px,${mapY}px) scale(${mapScale})`; }
 const zoomIn=document.getElementById('zoomIn'); if(zoomIn) zoomIn.onclick=()=>{if(scaleFrozen)return;mapScale=Math.min(2,mapScale+.1);applyMap();};
 const zoomOut=document.getElementById('zoomOut'); if(zoomOut) zoomOut.onclick=()=>{if(scaleFrozen)return;mapScale=Math.max(.25,mapScale-.1);applyMap();};
@@ -668,7 +744,6 @@ window.addEventListener('message',function(e){
   }
   if(d.type==='loadIncidents'){
     incidents=Array.isArray(d.incidents)?d.incidents:[];
-    incidents.forEach(upsertIncidentMessage);
     renderIncidents();
     return;
   }
@@ -678,8 +753,6 @@ window.addEventListener('message',function(e){
     if(idx>=0)incidents[idx]={...incidents[idx],...incoming};
     else incidents.push(incoming);
     upsertIncidentMessage(incoming);
-    renderIncidents();
-    switchTab('messages');
     return;
   }
   if(d.type==='alert'){
@@ -691,9 +764,10 @@ window.addEventListener('message',function(e){
     if(mobilisingOverlay){
       mobilisingOverlay.hidden=false;
       mobilisingOverlay.style.display='flex';
-      setTimeout(()=>{mobilisingOverlay.hidden=true;mobilisingOverlay.style.display='none';},4500);
+    }else{
+      switchTab('incidents');
+      renderIncidents();
     }
-    switchTab('messages');
     return;
   }
 
