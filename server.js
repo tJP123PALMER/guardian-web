@@ -400,14 +400,22 @@ function makeStandbyIncident(move){
     priority:"Standby",
     location:move.destination,
     address:move.destination,
-    postal:"",
+    postal:move.postal||"",
+    mapRef:move.mapRef||"",
+    talkgroup:move.talkgroup||"FLAB-OPS1",
+    specialRisk:move.specialRisk||"",
+    hazards:move.specialRisk||"",
+    role:move.role||"Pump",
     caller:"Control",
-    details:move.note||`Proceed to ${move.destination} for standby cover.`,
-    notes:move.note||"",
+    details:move.furtherInfo||move.note||`Proceed to ${move.destination} for standby cover.`,
+    notes:move.furtherInfo||move.note||"",
+    furtherInfo:move.furtherInfo||"",
     sceneStatus:"Standby Move Sent",
     status:"ONGOING",
     appliances:[move.callsign],
+    assignedUnits:[move.callsign],
     assignedAppliances:[move.callsign],
+    assignedRoles:{[move.callsign]:move.role||"Pump"},
     applianceStatuses:{[move.callsign]:"Standby Move Sent"},
     enableMDT:true,
     enableTurnout:true,
@@ -512,7 +520,7 @@ app.post("/api/command",(req,res)=>{
       standbyIncident=normaliseIncidentLive(makeStandbyIncident(move));
       standbyIncident.timeline=[
         {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:"Incident created"},
-        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:`${callsign} requested for standby cover at ${destination}`,callsign}
+        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:`Standby incident sent to ${callsign} · ${destination}`,callsign}
       ];
       standbyIncident.assignedUnits=[callsign];
       standbyIncident.assignedRoles={[callsign]:move.role||"Pump"};

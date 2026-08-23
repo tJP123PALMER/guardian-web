@@ -126,3 +126,30 @@
 .boardStatusLine .boardAckTag{
   white-space:nowrap;
 }
+
+/* Standby editor live-refresh/focus protection */
+#standbyUnit,
+#standbyDestination,
+#standbyPostal,
+#standbyMapRef,
+#standbyTalkgroup,
+#standbyRole,
+#standbySpecialRisk,
+#standbyFurtherInfo,
+#standbyNote{
+  position:relative;
+  z-index:2;
+  pointer-events:auto !important;
+}
+
+/* ACK is audit-trail information, not mobilisation-row information */
+.turnoutPreflight .ackBadge,
+.turnoutPreflight .awaitingAck,
+.turnoutPreflight .acknowledged,
+.mobilisationPanel .ackBadge,
+.mobilisationPanel .awaitingAck,
+.mobilisationPanel .acknowledged,
+#incidentDetail .turnoutPreflight .liveAckBadge,
+#incidentDetail .mobilisationPanel .liveAckBadge{
+  display:none !important;
+}

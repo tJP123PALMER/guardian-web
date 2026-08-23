@@ -338,7 +338,7 @@ function renderIncidentDetail(){
                <strong>${esc(liveAssignedStatus(inc,cs))}</strong>
                ${incidentAckInfo(inc,cs).acked
                  ? `<span class="liveAckBadge acked">ACK${incidentAckInfo(inc,cs).time?` · ${esc(incidentAckInfo(inc,cs).time)}`:""}</span>`
-                 : `<span class="liveAckBadge waiting">AWAITING ACK</span>`}
+                 : ``}
              </div>
            </td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
@@ -678,8 +678,29 @@ function coverData(){
    return {station,list,rows,available,mobile,live:rows.filter(r=>r.live).length,level:available===0?"red":available===1?"amber":"green"};
  }).sort((a,b)=>a.station.localeCompare(b.station));
 }
-function renderCover(){
+
+function standbyEditorHasFocus(){
+ const a=document.activeElement;
+ return !!(a && [
+   "standbyUnit",
+   "standbyDestination",
+   "standbyPostal",
+   "standbyMapRef",
+   "standbyTalkgroup",
+   "standbyRole",
+   "standbySpecialRisk",
+   "standbyFurtherInfo",
+   "standbyNote"
+ ].includes(a.id));
+}
+
+function renderCover(force=false){
  const summary=$("coverSummary"),suggestions=$("coverSuggestions"); if(!summary||!suggestions)return;
+
+ // Live state refreshes must not replace the editor DOM while Control is
+ // typing or choosing a select option. Replacing it was stealing focus every
+ // couple of seconds and making values appear to last for only a moment.
+ if(!force && standbyEditorHasFocus()) return;
  const data=coverData();
  summary.innerHTML=data.length?data.map(s=>`<article class="coverCard ${s.level}"><header><div><span>STATION COVER</span><strong>${esc(s.station)}</strong></div><b>${s.available} AVAILABLE</b></header><div class="coverStats"><span>${s.live}/${s.list.length} live</span><span>${s.mobile} committed</span><span>${s.list.length} configured</span></div></article>`).join(""):empty("No station configuration received");
  const deficits=data.filter(s=>s.available===0),donors=data.filter(s=>s.available>=2),moves=[];
@@ -708,7 +729,7 @@ function renderCover(){
    const {callsign,destination}=standbyDraft;if(!callsign||!destination)return alert("Select an appliance and destination station.");
    try{await command("createStandbyMove",{...standbyDraft});Object.assign(standbyDraft,{callsign:"",destination:"",note:"Maintain cover while another appliance is committed",postal:"",mapRef:"",talkgroup:"FLAB-OPS1",role:"Pump",specialRisk:"",furtherInfo:""});await load()}catch(e){alert(e.message||"Unable to send standby move")}
  });
- document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{standbyDraft.callsign=b.dataset.suggestStandby||"";standbyDraft.destination=b.dataset.coverTarget||"";standbyDraft.note="Standby move recommended by Guardian cover board";standbyDraft.furtherInfo=`Proceed to ${standbyDraft.destination} and provide standby cover until released by Control.`;renderCover()});
+ document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{standbyDraft.callsign=b.dataset.suggestStandby||"";standbyDraft.destination=b.dataset.coverTarget||"";standbyDraft.note="Standby move recommended by Guardian cover board";standbyDraft.furtherInfo=`Proceed to ${standbyDraft.destination} and provide standby cover until released by Control.`;renderCover(true)});
  document.querySelectorAll("[data-cancel-standby]").forEach(b=>b.onclick=async()=>{try{await command("cancelStandbyMove",{id:b.dataset.cancelStandby});await load()}catch(e){alert(e.message)}});
  document.querySelectorAll("[data-return-standby]").forEach(b=>b.onclick=async()=>{try{await command("returnStandbyMove",{id:b.dataset.returnStandby});await load()}catch(e){alert(e.message)}});
 }
