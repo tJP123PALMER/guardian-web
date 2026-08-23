@@ -186,7 +186,7 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.2 MDT Browser Fix"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.9.4 Web MDT Sync"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
   version:"Guardian Operations v2.9.2 MDT Browser Fix",

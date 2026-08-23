@@ -1007,3 +1007,28 @@
 .archiveFooter button{height:100%;border:0;background:#173e64;color:#fff;cursor:pointer}
 .archiveFooter button:disabled{opacity:.35;cursor:default}
 .cleanIncidentEmpty{height:100%;box-sizing:border-box;padding:20px;background:#eef1f3;color:#173e64}
+
+/* FIX: Messages page must have one control strip only.
+   The embedded turnout card previously brought its own CF33 bottom button row,
+   which duplicated the real Messages controls underneath it. */
+#tab-messages .realCf33BottomBar{
+  display:none !important;
+}
+#tab-messages .realCf33Scroller{
+  bottom:40px !important;
+}
+#tab-messages .realCf33AckBar{
+  bottom:0 !important;
+  height:40px !important;
+  z-index:4 !important;
+}
+#tab-messages .realCf33Shell,
+#tab-messages .realCf33Incident{
+  padding-bottom:0 !important;
+  margin-bottom:0 !important;
+}
+
+/* Keep the page's one proper Messages command strip cleanly below the turnout. */
+#tab-messages{
+  overflow:hidden !important;
+}
