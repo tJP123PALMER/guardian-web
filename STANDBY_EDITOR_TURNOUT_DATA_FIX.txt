@@ -1,0 +1,28 @@
+Guardian Standby Editor + Turnout Data Fix
+
+1. Standby editor focus
+- Live Control refresh no longer destroys the standby form while an input or
+  select is focused.
+- Typing and dropdown selections remain usable instead of resetting after
+  roughly a second.
+
+2. Standby turnout data
+The immediate MDT standby card now carries the exact Control selections:
+- Postal
+- Map Ref
+- Talkgroup
+- Role
+- Special Risk
+- Further Information
+
+The later authoritative FiveM incident uses the same values, so the player does
+not see a blank/default talkgroup before the real incident reaches the MDT.
+
+3. Audit wording
+Changed:
+  '<CALLSIGN> requested for standby cover at <station>'
+to:
+  'Standby incident sent to <CALLSIGN> - <station>'
+
+Existing snapshot merge, standby dedupe, ACK/status and incident-number fixes
+are retained.

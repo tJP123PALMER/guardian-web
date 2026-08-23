@@ -1,0 +1,16 @@
+Guardian ACK + Release Fix
+
+Fixed:
+- Removed Awaiting ACK / ACK badges from Turnout Pre-Flight and assigned
+  appliance rows. ACK is audit-trail information only.
+- Web MDT standby acknowledgement now persists on the incident itself.
+- Incident Timeline gets:
+    <CALLSIGN> acknowledged incident
+- Normal web MDT ACK also persists immediately in the web incident record
+  before the next FiveM snapshot.
+- RELEASE no longer triggers standby-superseded logic.
+- RELEASE resolves temporary standby IDs to the authoritative numeric incident
+  ID whenever available.
+- RELEASE optimistically removes the appliance from the Control incident while
+  the FiveM command is processed.
+- Standby form focus/talkgroup/map-ref/further-info fixes are retained.

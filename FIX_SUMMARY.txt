@@ -1,0 +1,18 @@
+Guardian Operations persistence fix
+
+Fixed:
+- Standby appears in Control > Incidents immediately.
+- Real FiveM standby replaces the placeholder by standbyMoveId (no duplicate).
+- ACK state/timestamp retained on incident.
+- ACK appears in Incident Timeline.
+- Status changes appear in Incident Timeline.
+- Web server derives missing ACK/status audit events as a fallback when snapshots change.
+- Appliance Board shows the same Control/MDT incident number beside incident status.
+- Appliance Board also shows ACK / AWAITING ACK beside incident status.
+- Standby location remains a separate current-cover/location field.
+
+FiveM:
+Install the two server.lua files in FIVEM_ACK_SYNC_PATCH.
+
+Web:
+Deploy the package normally.
