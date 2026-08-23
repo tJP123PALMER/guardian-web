@@ -201,6 +201,27 @@ function empty(text){return `<div class="emptyState"><strong>${esc(text)}</stron
 function renderIncidentList(){
  $("incidentList").innerHTML=state.incidents.length?state.incidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
 }
+
+function incidentAckInfo(inc,cs){
+ const key=upper(cs);
+ const ackBy=inc?.acknowledgedBy;
+ const ackAt=inc?.acknowledgedAt;
+
+ if(ackBy && typeof ackBy==="object" && ackBy[key]){
+   return {acked:true,time:String((ackAt&&typeof ackAt==="object"?ackAt[key]:"")||"")};
+ }
+
+ if(typeof ackBy==="string" && upper(ackBy)===key){
+   return {acked:true,time:typeof ackAt==="string"?ackAt:""};
+ }
+
+ return {acked:false,time:""};
+}
+function liveAssignedStatus(inc,cs){
+ const key=upper(cs);
+ return String(state.units?.[key]?.status||inc?.applianceStatuses?.[key]||"Mobilised");
+}
+
 function renderIncidentDetail(){
  const el=$("incidentDetail"),inc=incidentById(selectedIncidentId);
  if(!inc){
@@ -296,13 +317,30 @@ function renderIncidentDetail(){
        <label><input id="prefPager" type="checkbox" ${pager?"checked":""}> Send to Pager</label>
      </div>
      <div class="turnoutPreflight"><strong>TURNOUT PRE-FLIGHT</strong><span>Set talkgroup, map ref, hazards and further information above. Select an appliance role before mobilisation.</span></div>
+     ${assigned.length?`<div class="incidentLiveSummary">
+       ${assigned.map(cs=>{
+         const a=incidentAckInfo(inc,cs);
+         return `<div class="incidentLiveSummaryUnit">
+           <strong>${esc(cs)}</strong>
+           <span>${esc(liveAssignedStatus(inc,cs))}</span>
+           <b class="${a.acked?"ackOk":"ackWaiting"}">${a.acked?`ACK${a.time?` ${esc(a.time)}`:""}`:"Awaiting ACK"}</b>
+         </div>`;
+       }).join("")}
+     </div>`:""}
      <table class="resourceTable">
        <thead><tr><th>CALLSIGN</th><th>STATION</th><th>STATUS</th><th>ROLE</th><th>ACTION</th></tr></thead>
        <tbody>
          ${assigned.map(cs=>`<tr>
            <td><strong>${esc(cs)}</strong></td>
            <td>${standbyStationFor(cs)?`<strong>${esc(standbyStationFor(cs))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(cs)||"—")}</small>`:esc(stationFor(cs)||"")}</td>
-           <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}</td>
+           <td>
+             <div class="liveIncidentUnitState">
+               <strong>${esc(liveAssignedStatus(inc,cs))}</strong>
+               ${incidentAckInfo(inc,cs).acked
+                 ? `<span class="liveAckBadge acked">ACK${incidentAckInfo(inc,cs).time?` · ${esc(incidentAckInfo(inc,cs).time)}`:""}</span>`
+                 : `<span class="liveAckBadge waiting">AWAITING ACK</span>`}
+             </div>
+           </td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
            <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
          </tr>`).join("")}
@@ -675,3 +713,7 @@ window.addEventListener("online",()=>load().catch?.(()=>{}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
 
 
+
+const guardianLiveIncidentRefresh=setInterval(()=>{
+  if(document.visibilityState==="visible") load().catch(()=>{});
+},2000);

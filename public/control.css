@@ -99,3 +99,17 @@
 .stationStandbyUnit{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06)}
 .stationStandbyUnit span{font-size:10px;color:#8fb3ca}
 .standbyTurnoutEditor textarea{width:100%;resize:vertical}
+
+/* Live incident appliance status / acknowledgement */
+.liveIncidentUnitState{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.liveIncidentUnitState strong{font-size:11px}
+.liveAckBadge{display:inline-flex;align-items:center;padding:3px 6px;border-radius:4px;font-size:9px;font-weight:900;letter-spacing:.05em}
+.liveAckBadge.acked{background:rgba(34,153,92,.16);border:1px solid rgba(34,153,92,.38);color:#91e0b6}
+.liveAckBadge.waiting{background:rgba(202,151,39,.12);border:1px solid rgba(202,151,39,.34);color:#e8bf62}
+.incidentLiveSummary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+.incidentLiveSummaryUnit{display:grid;grid-template-columns:auto auto auto;gap:8px;align-items:center;padding:7px 9px;border:1px solid rgba(104,155,190,.2);background:rgba(34,86,119,.12);border-radius:5px}
+.incidentLiveSummaryUnit strong{font-size:11px}
+.incidentLiveSummaryUnit span{font-size:10px;color:#95b6cb}
+.incidentLiveSummaryUnit b{font-size:9px;padding:2px 5px;border-radius:3px}
+.incidentLiveSummaryUnit .ackOk{color:#91e0b6;background:rgba(34,153,92,.14)}
+.incidentLiveSummaryUnit .ackWaiting{color:#e8bf62;background:rgba(202,151,39,.12)}

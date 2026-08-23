@@ -352,7 +352,8 @@
       const move=p;
       if(!callsign || upper(move.callsign)!==upper(callsign)) return;
       const fake={
-        id:`STANDBY:${move.id}`,
+        id:String(move.incidentNumber||`STANDBY:${move.id}`),
+        incidentNumber:move.incidentNumber||null,
         type:"STANDBY COVER",
         title:`Standby - ${move.destination||"Cover"}`,
         priority:"Standby",

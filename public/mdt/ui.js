@@ -51,7 +51,10 @@ function incidentRolesText(inc){
   }
   return inc?.roles||'—';
 }
-function incidentMessageKey(inc){ return `INCIDENT:${String(inc?.incidentNumber||inc?.id||'')}`; }
+function incidentMessageKey(inc){
+  if(inc?.standbyMoveId) return `STANDBY:${String(inc.standbyMoveId)}`;
+  return `INCIDENT:${String(inc?.incidentNumber||inc?.id||'')}`;
+}
 function incidentToDispatchMessage(inc){
   return {
     kind:'incident', sender:'CONTROL',
@@ -64,10 +67,28 @@ function incidentToDispatchMessage(inc){
 function upsertIncidentMessage(inc){
   if(!inc)return;
   const key=incidentMessageKey(inc);
-  const idx=messages.findIndex(m=>m?.kind==='incident'&&m?.incidentKey===key);
   const item=incidentToDispatchMessage(inc);
-  if(idx>=0)messages[idx]=item;
-  else{
+
+  // Clean up any old temporary/authoritative duplicate for the same standby move.
+  if(inc?.standbyMoveId){
+    const moveId=String(inc.standbyMoveId);
+    for(let i=messages.length-1;i>=0;i--){
+      const existing=messages[i];
+      if(existing?.kind!=='incident') continue;
+      const existingMove=existing?.incident?.standbyMoveId;
+      if(existingMove && String(existingMove)===moveId && existing.incidentKey!==key){
+        messages.splice(i,1);
+        unreadMessageIndexes.delete(i);
+        if(selectedMessageIndex>i) selectedMessageIndex--;
+      }
+    }
+  }
+
+  const idx=messages.findIndex(m=>m?.kind==='incident'&&m?.incidentKey===key);
+  if(idx>=0){
+    messages[idx]=item;
+    selectedMessageIndex=idx;
+  }else{
     messages.push(item);
     selectedMessageIndex=messages.length-1;
     unreadMessageIndexes.add(messages.length-1);
@@ -749,9 +770,20 @@ window.addEventListener('message',function(e){
   }
   if(d.type==='incident'&&d.item){
     const incoming=d.item;
-    const idx=incidents.findIndex(x=>String(x.id)===String(incoming.id));
-    if(idx>=0)incidents[idx]={...incidents[idx],...incoming};
-    else incidents.push(incoming);
+    const idx=incidents.findIndex(x=>
+      String(x.id)===String(incoming.id) ||
+      (incoming.standbyMoveId && x?.standbyMoveId &&
+       String(x.standbyMoveId)===String(incoming.standbyMoveId))
+    );
+
+    if(idx>=0){
+      incidents[idx]={...incidents[idx],...incoming};
+    }else{
+      incidents.push(incoming);
+    }
+
+    // One message per standbyMoveId. Authoritative numeric incident replaces
+    // the immediate temporary standby card instead of creating a duplicate.
     upsertIncidentMessage(incoming);
     return;
   }
