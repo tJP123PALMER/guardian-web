@@ -1032,3 +1032,25 @@
 #tab-messages{
   overflow:hidden !important;
 }
+
+
+/* Real turnout order:
+   To Attend -> Address -> Incident Type -> Additional Details -> Assigned/Talkgrp/Roles */
+.realCf33Additional{
+  margin:8px 0 12px;
+}
+.realCf33Additional>span{
+  display:block;
+  color:#61686e;
+  font-weight:400;
+  margin-bottom:4px;
+}
+.realCf33Additional>div{
+  white-space:pre-wrap;
+  font-weight:600;
+  line-height:1.28;
+  padding-left:0;
+}
+.realCf33Assignments{
+  margin-top:10px;
+}
