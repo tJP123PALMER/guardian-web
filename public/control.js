@@ -317,16 +317,7 @@ function renderIncidentDetail(){
        <label><input id="prefPager" type="checkbox" ${pager?"checked":""}> Send to Pager</label>
      </div>
      <div class="turnoutPreflight"><strong>TURNOUT PRE-FLIGHT</strong><span>Set talkgroup, map ref, hazards and further information above. Select an appliance role before mobilisation.</span></div>
-     ${assigned.length?`<div class="incidentLiveSummary">
-       ${assigned.map(cs=>{
-         const a=incidentAckInfo(inc,cs);
-         return `<div class="incidentLiveSummaryUnit">
-           <strong>${esc(cs)}</strong>
-           <span>${esc(liveAssignedStatus(inc,cs))}</span>
-           <b class="${a.acked?"ackOk":"ackWaiting"}">${a.acked?`ACK${a.time?` ${esc(a.time)}`:""}`:"Awaiting ACK"}</b>
-         </div>`;
-       }).join("")}
-     </div>`:""}
+     
      <table class="resourceTable">
        <thead><tr><th>CALLSIGN</th><th>STATION</th><th>STATUS</th><th>ROLE</th><th>ACTION</th></tr></thead>
        <tbody>
@@ -336,9 +327,6 @@ function renderIncidentDetail(){
            <td>
              <div class="liveIncidentUnitState">
                <strong>${esc(liveAssignedStatus(inc,cs))}</strong>
-               ${incidentAckInfo(inc,cs).acked
-                 ? `<span class="liveAckBadge acked">ACK${incidentAckInfo(inc,cs).time?` · ${esc(incidentAckInfo(inc,cs).time)}`:""}</span>`
-                 : ``}
              </div>
            </td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>

@@ -477,9 +477,16 @@
       await command("webMdtMessage", { callsign, message:data.message });
     } else if (name === "ackIncident") {
       if(String(data.id||"").startsWith("STANDBY:")){
-        await command("ackStandbyMove",{callsign,moveId:String(data.id).slice(8)});
+        await command("ackStandbyMove",{
+          callsign,
+          moveId:String(data.id).slice(8),
+          incidentId:data.id
+        });
       }else{
-        await command("webMdtAck", { callsign, incidentId:data.id });
+        await command("webMdtAck", {
+          callsign,
+          incidentId:data.id
+        });
       }
     } else if (name === "setIncidentWaypoint") {
       console.info("[Guardian Web MDT] waypoint selected", data);

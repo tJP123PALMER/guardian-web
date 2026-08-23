@@ -153,3 +153,12 @@
 #incidentDetail .mobilisationPanel .liveAckBadge{
   display:none !important;
 }
+
+/* ACK is shown in Incident Timeline only */
+.incidentLiveSummary .ackOk,
+.incidentLiveSummary .ackWaiting,
+.incidentLiveSummaryUnit .ackOk,
+.incidentLiveSummaryUnit .ackWaiting,
+.incidentOpsCard .liveAckBadge{
+  display:none !important;
+}
