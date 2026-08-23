@@ -739,7 +739,22 @@ function renderMdt(){
  document.querySelectorAll("[data-mdtincident]").forEach(b=>b.onclick=()=>{selectedMdtIncidentId=b.dataset.mdtincident;renderMdt()});
  $("mdtAck")&&($("mdtAck").onclick=()=>command("webMdtAck",{callsign:mdtCallsign,incidentId:inc.id}));
 }
-function openModal(){ $("incidentModal").classList.remove("hidden") } function closeModal(){ $("incidentModal").classList.add("hidden") }
+
+function applyCreateIncidentCategory(){
+ const mode=String($("fJobCategory")?.value||"INCIDENT").toUpperCase();
+ const label=$("fTypeLabel");
+ const input=$("fType");
+
+ if(label) label.textContent=mode==="STANDBY"?"Standby duty type":"Incident type";
+
+ if(input){
+   input.placeholder=mode==="STANDBY"
+     ?"e.g. Standby cover / Strategic standby / Relief standby"
+     :"e.g. Dwelling fire";
+ }
+}
+
+function openModal(){ $("incidentModal").classList.remove("hidden");applyCreateIncidentCategory() } function closeModal(){ $("incidentModal").classList.add("hidden") }
 document.addEventListener("click",e=>{
  const v=e.target.closest("[data-view]");if(v)setControlView(v.dataset.view);
  const j=e.target.closest("[data-jump]");if(j)setControlView(j.dataset.jump);
@@ -750,8 +765,27 @@ document.addEventListener("click",e=>{
  }
  const mv=e.target.closest("[data-mdtview]");if(mv)setMdtView(mv.dataset.mdtview);
 });
-$("openCreate").onclick=$("openCreate2").onclick=openModal;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
-$("createIncident").onclick=async()=>{await command("createIncident",{type:$("fType").value,address:$("fAddress").value,postal:$("fPostal").value,priority:$("fPriority").value,caller:$("fCaller").value,notes:$("fNotes").value,enableMDT:$("fMDT").checked,enableTurnout:$("fTurnout").checked,enablePager:$("fPager").checked});closeModal()};
+$("openCreate").onclick=$("openCreate2").onclick=openModal;$("fJobCategory").onchange=applyCreateIncidentCategory;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
+$("createIncident").onclick=async()=>{
+ const dispatchMode=String($("fJobCategory")?.value||"INCIDENT").toUpperCase();
+ const isStandby=dispatchMode==="STANDBY";
+ await command("createIncident",{
+   dispatchMode,
+   category:isStandby?"standby":"incident",
+   isStandby,
+   type:$("fType").value.trim()||(isStandby?"STANDBY DUTIES":"INCIDENT"),
+   address:$("fAddress").value,
+   postal:$("fPostal").value,
+   priority:isStandby&&$("fPriority").value==="Immediate"?"Standby":$("fPriority").value,
+   caller:$("fCaller").value,
+   notes:$("fNotes").value,
+   details:$("fNotes").value,
+   enableMDT:$("fMDT").checked,
+   enableTurnout:$("fTurnout").checked,
+   enablePager:$("fPager").checked
+ });
+ closeModal()
+};
 $("sendMessage").onclick=async()=>{if(!$("messageText").value.trim())return;await command("sendMessage",{target:$("messageTarget").value,message:$("messageText").value.trim()});$("messageText").value=""};
 $("mdtCallsign").onchange=()=>{mdtCallsign=upper($("mdtCallsign").value);localStorage.setItem("guardianMdtCallsign",mdtCallsign);selectedMdtIncidentId=null;renderMdt()};
 $("sendStatus").onclick=()=>{if(!mdtCallsign)return alert("Select your callsign first.");if(!selectedStatus)return alert("Select a status first.");command("webMdtStatus",{callsign:mdtCallsign,status:selectedStatus})};

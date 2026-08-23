@@ -137,7 +137,13 @@
   <div class="modalCard">
     <header><div><span class="eyebrow">CREATE INCIDENT</span><h2>New Incident</h2></div><button id="closeModal">×</button></header>
     <div class="formGrid">
-      <label>Incident type<input id="fType" placeholder="e.g. Dwelling fire"></label>
+      <label>Job category
+        <select id="fJobCategory">
+          <option value="INCIDENT" selected>Incident</option>
+          <option value="STANDBY">Standby Duties</option>
+        </select>
+      </label>
+      <label><span id="fTypeLabel">Incident type</span><input id="fType" placeholder="e.g. Dwelling fire"></label>
       <label>Priority<select id="fPriority"><option>Immediate</option><option>Urgent</option><option>Routine</option></select></label>
       <label>Address<input id="fAddress"></label>
       <label>Postal<input id="fPostal"></label>

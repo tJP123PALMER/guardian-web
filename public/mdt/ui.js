@@ -145,24 +145,11 @@ function showIncidentDispatchMessage(m){
   const units=incidentUnits(inc);
   const mapRef=inc.mapRef||((inc.x!=null&&inc.y!=null)?`${Math.round(Number(inc.x))},${Math.round(Number(inc.y))}`:'—');
   const received=inc.time||inc.dispatchedAt||inc.createdAt||m.time||'—';
+  const details=inc.description||inc.details||inc.notes||'';
   const talkgroup=inc.talkgroup||inc.talkGroup||'—';
   const standby=!!(inc.isStandby||inc.isStandbyMove);
   const incidentNo=turnoutIncidentNo(inc);
   const callsign=(callsignBox?.textContent||units[0]||'APPLIANCE').trim();
-
-  const incidentType=inc.type||inc.title||'Incident';
-
-  // Additional Details belongs directly under Incident Type.
-  // Prefer explicit further/additional information, then normal incident details.
-  const additionalDetails=
-    inc.additionalDetails||
-    inc.furtherInfo||
-    inc.description||
-    inc.details||
-    inc.notes||
-    '';
-
-  const specialRisk=inc.specialRisk||inc.hazards||'';
 
   messageView.innerHTML=`
     <div class="realCf33Message">
@@ -183,34 +170,19 @@ function showIncidentDispatchMessage(m){
 
       <div class="realCf33Scroller" id="realCf33Scroller">
         <div class="realCf33Text">
-
-          <div class="realCf33Line">
-            <span>To Attend:</span>
-            <b>${escapeHtml(units.join(', ')||'—')}</b>
-          </div>
+          <div class="realCf33Line"><span>To Attend:</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
 
           <div class="realCf33AddressBlock">
             <span>Address:</span>
             <b>${escapeHtml(inc.address||inc.location||'—')}</b>
-            ${inc.stationArea?`<b>${escapeHtml(String(inc.stationArea))}</b>`:''}
             ${inc.postal?`<b>${escapeHtml(String(inc.postal))}</b>`:''}
+            ${inc.stationArea?`<b>${escapeHtml(String(inc.stationArea))}</b>`:''}
           </div>
 
-          <div class="realCf33Line">
-            <span>Incident Type:</span>
-            <b>${escapeHtml(incidentType)}</b>
-          </div>
+          <div class="realCf33Line"><span>Type:</span><b>${escapeHtml(inc.type||inc.title||'Incident')}</b></div>
 
-          <div class="realCf33Additional">
-            <span>Additional Details:</span>
-            <div>${escapeHtml(additionalDetails||'No further information.')}</div>
-          </div>
-
-          ${specialRisk?`
-            <div class="realCf33Line">
-              <span>Special Risk:</span>
-              <b>${escapeHtml(specialRisk)}</b>
-            </div>
+          ${inc.specialRisk||inc.hazards?`
+            <div class="realCf33Line"><span>Special Risk:</span><b>${escapeHtml(inc.specialRisk||inc.hazards)}</b></div>
           `:''}
 
           ${standby?`
@@ -220,21 +192,11 @@ function showIncidentDispatchMessage(m){
             </div>
           `:''}
 
-          <div class="realCf33Assignments">
-            <div class="realCf33Line">
-              <span>Assigned</span>
-              <b>${escapeHtml(units.join(', ')||'—')}</b>
-            </div>
-            <div class="realCf33Line">
-              <span>Talkgrp</span>
-              <b>${escapeHtml(talkgroup)}</b>
-            </div>
-            <div class="realCf33Line">
-              <span>Roles</span>
-              <b>${escapeHtml(incidentRolesText(inc))}</b>
-            </div>
-          </div>
+          <div class="realCf33Further">${escapeHtml(details||'No further information.')}</div>
 
+          <div class="realCf33Line"><span>Assigned</span><b>${escapeHtml(units.join(', ')||'—')}</b></div>
+          <div class="realCf33Line"><span>Talkgrp</span><b>${escapeHtml(talkgroup)}</b></div>
+          <div class="realCf33Line"><span>Roles</span><b>${escapeHtml(incidentRolesText(inc))}</b></div>
         </div>
       </div>
 
@@ -287,7 +249,6 @@ function showIncidentDispatchMessage(m){
   document.getElementById('clearReadCf33').onclick=clearReadMessages;
   document.getElementById('clearMessagesCf33').onclick=clearAllMessages;
   document.getElementById('closeCf33').onclick=()=>switchTab('status');
-
 }
 function renderMessages(){
   if(!messageList||!messageView)return;

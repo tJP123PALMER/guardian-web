@@ -1,0 +1,40 @@
+GUARDIAN INCIDENT / STANDBY DUTIES DROPDOWN
+
+This update RETAINS the latest Game -> Web status sync fix.
+
+NEW IN CONTROL > CREATE INCIDENT
+A Job category dropdown now offers:
+  - Incident
+  - Standby Duties
+
+The existing type field remains underneath:
+  Incident       -> "Incident type"
+  Standby Duties -> "Standby duty type"
+
+Examples of standby duty type:
+  Standby Cover
+  Strategic Standby
+  Relief Standby
+
+Standby Duties created here are REAL incidents:
+- they get the same 5-digit incident number system
+- they appear in Control > Incidents
+- they can have appliances assigned normally
+- they use the same MDT/turnout path
+- they are tagged isStandby=true / category=standby
+
+This does NOT remove the dedicated Standby & Station Cover page. That remains
+available for automatic/recommended station-cover moves.
+
+INSTALL:
+WEB:
+  Copy the web root over GuardianWebClean as normal, excluding FIVEM folders.
+
+FIVEM:
+  Replace:
+    fivem_current_patched/Guardian_control
+    fivem_current_patched/Guardian_mdt
+    fivem_current_patched/guardian_web
+  Keep your existing guardian_web/shared/config.lua.
+
+No old duplicate ACK patch folders should be used.
