@@ -120,3 +120,9 @@
 .boardAckTag{display:inline-flex;padding:3px 6px;border-radius:4px;font-size:8px;font-weight:900;letter-spacing:.05em}
 .boardAckTag.acked{background:rgba(33,151,88,.15);border:1px solid rgba(33,151,88,.35);color:#8fe0b3}
 .boardAckTag.waiting{background:rgba(203,150,34,.12);border:1px solid rgba(203,150,34,.32);color:#e6bd5f}
+
+/* Keep incident context clearly visible beside operational status */
+.boardStatusLine .incidentNoTag,
+.boardStatusLine .boardAckTag{
+  white-space:nowrap;
+}

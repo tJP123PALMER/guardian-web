@@ -531,11 +531,20 @@ function renderIncidentDetail(){
 
 function currentOpenIncidentForUnit(cs){
  const key=upper(cs);
- const list=Array.isArray(state.incidents)?state.incidents:[];
+ const primary=Array.isArray(state.incidents)?state.incidents:[];
+ const standby=Array.isArray(state.standbyIncidents)?state.standbyIncidents:[];
+ const list=[...primary,...standby];
+
  for(let i=list.length-1;i>=0;i--){
    const inc=list[i]||{};
    if(upper(inc.status)==="CLOSED")continue;
    if(assignedUnits(inc).includes(key))return inc;
+ }
+
+ // Last fallback: active standby move can point us back to its incident.
+ const move=activeStandbyMove(key);
+ if(move){
+   return list.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===String(move.id))||null;
  }
  return null;
 }
@@ -570,8 +579,8 @@ function renderUnits(){
      <div>
        <div class="boardStatusLine">
          <span class="status ${statusClass(status)}">${esc(status)}</span>
-         ${inc&&incNo&&incidentRelatedStatus(status)?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
-         ${inc&&incidentRelatedStatus(status)?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
+         ${inc&&incNo?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
+         ${inc?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
        </div>
        ${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
      </div>

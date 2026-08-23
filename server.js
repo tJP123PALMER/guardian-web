@@ -159,17 +159,27 @@ function timelineHas(inc,text){
 }
 function mergeIncidentLive(previous,incoming){
   const old=normaliseIncidentLive(previous?{...previous}: {});
-  const next=normaliseIncidentLive({...old,...incoming});
+  const fresh=normaliseIncidentLive(incoming?{...incoming}: {});
+  const next=normaliseIncidentLive({...old,...fresh});
 
-  // Preserve richer nested state if an older FiveM snapshot omits it.
-  next.acknowledgedBy={...(old.acknowledgedBy||{}),...(incoming?.acknowledgedBy||{})};
-  next.acknowledgedAt={...(old.acknowledgedAt||{}),...(incoming?.acknowledgedAt||{})};
-  next.applianceStatuses={...(old.applianceStatuses||{}),...(incoming?.applianceStatuses||{})};
-  next.timeline=Array.isArray(incoming?.timeline)&&incoming.timeline.length
-    ? incoming.timeline.slice()
-    : (old.timeline||[]).slice();
+  // Merge maps without allowing an empty server snapshot to wipe richer local state.
+  next.acknowledgedBy={...(old.acknowledgedBy||{}),...(fresh.acknowledgedBy||{})};
+  next.acknowledgedAt={...(old.acknowledgedAt||{}),...(fresh.acknowledgedAt||{})};
+  next.applianceStatuses={...(old.applianceStatuses||{}),...(fresh.applianceStatuses||{})};
 
-  // Web-side safety net: derive ACK/status audit entries from state changes.
+  // Merge timelines by event identity instead of replacing the old timeline.
+  const mergedTimeline=[];
+  const seen=new Set();
+  for(const e of [...(old.timeline||[]),...(fresh.timeline||[])]){
+    if(!e)continue;
+    const key=[String(e.time||""),String(e.text||""),String(e.callsign||e.unit||"")].join("|");
+    if(seen.has(key))continue;
+    seen.add(key);
+    mergedTimeline.push(e);
+  }
+  next.timeline=mergedTimeline;
+
+  // Safety net: derive ACK/status audit events from state changes.
   const assigned=next.assignedUnits||[];
   for(const rawCs of assigned){
     const cs=String(typeof rawCs==="string"?rawCs:(rawCs?.callsign||rawCs?.unit||"")).toUpperCase();
@@ -179,16 +189,31 @@ function mergeIncidentLive(previous,incoming){
     const isAck=!!next.acknowledgedBy?.[cs];
     if(isAck&&!wasAck){
       const text=`${cs} acknowledged incident`;
-      if(!timelineHas(next,text)) next.timeline.push({time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),text,callsign:cs});
+      if(!timelineHas(next,text)){
+        next.timeline.push({
+          time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),
+          text,
+          callsign:cs
+        });
+      }
     }
 
     const oldStatus=String(old.applianceStatuses?.[cs]||"");
     const newStatus=String(next.applianceStatuses?.[cs]||"");
     if(newStatus && oldStatus && oldStatus.toUpperCase()!==newStatus.toUpperCase()){
       const text=`${cs} status changed to ${newStatus}`;
-      if(!timelineHas(next,text)) next.timeline.push({time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text,callsign:cs});
+      if(!timelineHas(next,text)){
+        next.timeline.push({
+          time:new Date().toLocaleTimeString("en-GB",{hour12:false}),
+          text,
+          callsign:cs
+        });
+      }
     }
   }
+
+  // Sort oldest -> newest so Control's renderer remains predictable.
+  next.timeline.sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
   return next;
 }
 
@@ -292,13 +317,17 @@ app.post("/api/fivem/state",auth,(req,res)=>{
     // The authoritative FiveM standby (same standbyMoveId) replaces it.
     const activeStandbys=(state.standbyIncidents||[])
       .filter(i=>String(i.status||"").toUpperCase()!=="CLOSED")
-      .map(normaliseIncidentLive);
+      .map(raw=>{
+        const standby=normaliseIncidentLive(raw);
+        const old=previous.find(x=>sameIncidentIdentity(x,standby));
+        return mergeIncidentLive(old,standby);
+      });
 
     const merged=[...liveIncidents];
     for(const standby of activeStandbys){
-      if(!merged.some(i=>sameIncidentIdentity(i,standby))){
-        merged.push(standby);
-      }
+      const idx=merged.findIndex(i=>sameIncidentIdentity(i,standby));
+      if(idx>=0) merged[idx]=mergeIncidentLive(merged[idx],standby);
+      else merged.push(standby);
     }
     state.incidents=merged;
   }
