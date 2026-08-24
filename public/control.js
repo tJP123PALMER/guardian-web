@@ -206,15 +206,12 @@ async function loadControlPostals(){
  ]).filter(([code,p])=>code&&Number.isFinite(p.x)&&Number.isFinite(p.y)));
  return controlPostalIndex;
 }
-const CONTROL_MAP_AFFINE_X=[47.48127100591509,0.011389940634945021,0.000686672786416113];
-const CONTROL_MAP_AFFINE_Y=[62.71226671589643,0.0003632826339144083,-0.006955825367379487];
+const CONTROL_MAP_IMAGE_BOUNDS={minX:-3427.0898437500,maxX:3751.1640625000,minY:-3779.6020520333,maxY:6990.4082043770};
 function controlMapPoint(x,y){
- const X=Number(x),Y=Number(y);
- const px=CONTROL_MAP_AFFINE_X[0]+CONTROL_MAP_AFFINE_X[1]*X+CONTROL_MAP_AFFINE_X[2]*Y;
- const py=CONTROL_MAP_AFFINE_Y[0]+CONTROL_MAP_AFFINE_Y[1]*X+CONTROL_MAP_AFFINE_Y[2]*Y;
+ const X=Number(x),Y=Number(y),b=CONTROL_MAP_IMAGE_BOUNDS;
  return {
-   x:Math.max(0,Math.min(100,px)),
-   y:Math.max(0,Math.min(100,py))
+   x:((X-b.minX)/(b.maxX-b.minX))*100,
+   y:((b.maxY-Y)/(b.maxY-b.minY))*100
  };
 }
 function controlPostalDistance(a,b,index){
