@@ -290,7 +290,7 @@
 
     // Never let the 2-second heartbeat erase a button the user has just
     // selected/sent. Give FiveM time to acknowledge the web command.
-    if (optimisticStatus && Date.now() - lastStatusSentAt < 6000) {
+    if (optimisticStatus && Date.now() - lastStatusSentAt < 2500) {
       if (force || lastStatusPosted !== optimisticStatus) {
         post({ type:"setStatus", status:optimisticStatus, preserveSelection:true });
         lastStatusPosted = optimisticStatus;
@@ -349,45 +349,10 @@
     const target = upper(p.callsign || p.target || "");
 
     if (evt.kind === "standbyMoveCreated") {
-      const move=p;
-      if(!callsign || upper(move.callsign)!==upper(callsign)) return;
-      const fake={
-        id:String(move.incidentNumber||`STANDBY:${move.id}`),
-        incidentNumber:move.incidentNumber||null,
-        type:"STANDBY COVER",
-        title:`Standby - ${move.destination||"Cover"}`,
-        priority:"Standby",
-        address:move.destination||"",
-        location:move.destination||"",
-        postal:move.postal||"",
-        mapRef:move.mapRef||"",
-        talkgroup:move.talkgroup||"FLAB-OPS1",
-        specialRisk:move.specialRisk||"",
-        hazards:move.specialRisk||"",
-        caller:"CONTROL",
-        description:move.furtherInfo||move.note||"Proceed to standby station and acknowledge Control.",
-        notes:move.furtherInfo||move.note||"Proceed to standby station and acknowledge Control.",
-        details:move.furtherInfo||move.note||"",
-        furtherInfo:move.furtherInfo||"",
-        role:move.role||"Pump",
-        assignedUnits:[upper(move.callsign)],
-        assignedAppliances:[upper(move.callsign)],
-        assignedRoles:{[upper(move.callsign)]:move.role||"Pump"},
-        playAlert:true,
-        standbyMoveId:move.id,
-        standbySourceStation:move.sourceStation||"",
-        standbyDestination:move.destination||"",
-        isStandby:true,
-        isStandbyMove:true
-      };
-      pendingStandbyIncidents.set(String(move.id),fake);
-      post({type:"incident",item:fake});
-      post({type:"setCallsign",callsign:upper(callsign)});
-      post({type:"alert"});
-      post({type:"open"});
-      post({type:"mobilising"});
+      loadState().catch(() => {});
       return;
     }
+
 
     if (evt.kind === "mdtMobilise") {
       if (!callsign || target !== upper(callsign)) return;

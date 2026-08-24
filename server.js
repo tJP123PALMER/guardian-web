@@ -197,62 +197,46 @@ function mergeIncidentLive(previous,incoming){
   const fresh=normaliseIncidentLive(incoming?{...incoming}: {});
   const next=normaliseIncidentLive({...old,...fresh});
 
-  // Merge maps without allowing an empty server snapshot to wipe richer local state.
   next.acknowledgedBy={...(old.acknowledgedBy||{}),...(fresh.acknowledgedBy||{})};
   next.acknowledgedAt={...(old.acknowledgedAt||{}),...(fresh.acknowledgedAt||{})};
-  next.applianceStatuses={...(old.applianceStatuses||{}),...(fresh.applianceStatuses||{})};
 
-  // Merge timelines by event identity instead of replacing the old timeline.
+  next.applianceStatuses=(fresh.applianceStatuses && Object.keys(fresh.applianceStatuses).length)
+    ? {...fresh.applianceStatuses}
+    : {...(old.applianceStatuses||{})};
+
   const mergedTimeline=[];
   const seen=new Set();
+
   for(const e of [...(old.timeline||[]),...(fresh.timeline||[])]){
     if(!e)continue;
-    const eventText=String(e.text||"");
-    const eventUnit=String(e.callsign||e.unit||"");
-    const isMirrorAudit=/ acknowledged incident$| status changed to /i.test(eventText);
-    const key=isMirrorAudit
-      ? ["mirror",eventText,eventUnit].join("|")
-      : [String(e.time||""),eventText,eventUnit].join("|");
+
+    const explicit=String(e.id||e.eventId||"");
+    const key=explicit
+      ? `ID:${explicit}`
+      : `LEGACY:${String(e.time||"")}|${String(e.text||"")}|${String(e.callsign||e.unit||"")}`;
+
     if(seen.has(key))continue;
     seen.add(key);
     mergedTimeline.push(e);
   }
-  next.timeline=mergedTimeline;
 
-  // Safety net: derive ACK/status audit events from state changes.
-  const assigned=next.assignedUnits||[];
-  for(const rawCs of assigned){
+  for(const rawCs of next.assignedUnits||[]){
     const cs=String(typeof rawCs==="string"?rawCs:(rawCs?.callsign||rawCs?.unit||"")).toUpperCase();
     if(!cs)continue;
 
-    const wasAck=!!old.acknowledgedBy?.[cs];
-    const isAck=!!next.acknowledgedBy?.[cs];
-    if(isAck&&!wasAck){
-      const text=`${cs} acknowledged incident`;
-      if(!timelineHas(next,text)){
-        next.timeline.push({
-          time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),
-          text,
-          callsign:cs
-        });
-      }
-    }
-
-    const oldStatus=String(old.applianceStatuses?.[cs]||"");
-    const newStatus=String(next.applianceStatuses?.[cs]||"");
-    if(newStatus && oldStatus && oldStatus.toUpperCase()!==newStatus.toUpperCase()){
-      const text=`${cs} status changed to ${newStatus}`;
-      if(!timelineHas(next,text)){
-        next.timeline.push({
-          time:new Date().toLocaleTimeString("en-GB",{hour12:false}),
-          text,
-          callsign:cs
-        });
-      }
+    if(next.acknowledgedBy?.[cs] && !next.timeline.some(e=>
+      String(e?.text||"").toUpperCase()===`${cs} ACKNOWLEDGED INCIDENT`
+    )){
+      next.timeline.push({
+        id:`ACK:${next.id}:${cs}`,
+        eventId:`ACK:${next.id}:${cs}`,
+        time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),
+        text:`${cs} acknowledged incident`,
+        callsign:cs
+      });
     }
   }
 
-  // Sort oldest -> newest so Control's renderer remains predictable.
   next.timeline.sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
   return next;
 }
@@ -308,10 +292,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5.1.1 Turnout + Incident Fix"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.7.0 Production Sync"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.5.1.1 Turnout + Incident Fix",
+  version:"Guardian Operations v2.7.0 Production Sync",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -344,7 +328,31 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   const hadIncidents = new Map((state.incidents||[]).map(i=>[String(i.id), i]));
   const hadCalls = new Set((state.calls999||[]).map(c=>String(c.id)));
 
-  state.units = normalizeUnits(body.units ?? state.units);
+  if(body.units && typeof body.units==="object"){
+    const authoritative=normalizeUnits(body.units);
+    const merged={};
+
+    for(const [cs,incomingRaw] of Object.entries(authoritative)){
+      const incoming=(incomingRaw && typeof incomingRaw==="object")
+        ? {...incomingRaw}
+        : {status:incomingRaw};
+
+      merged[cs]={
+        ...(state.units?.[cs]||{}),
+        ...incoming,
+        webStatusPending:false,
+        webStatusPendingAt:null
+      };
+    }
+
+    for(const [cs,current] of Object.entries(state.units||{})){
+      if(!(cs in merged) && current?.webOnly===true && current?.webBooked===true){
+        merged[cs]=current;
+      }
+    }
+
+    state.units=merged;
+  }
   if(Array.isArray(body.incidents)){
     const previous=state.incidents||[];
     const liveIncidents=body.incidents.map(raw=>{
@@ -626,23 +634,7 @@ app.post("/api/command",(req,res)=>{
     };
     state.standbyMoves.unshift(move);
 
-    // Put standby into Control > Incidents immediately. FiveM replaces this
-    // placeholder with its authoritative 5-digit incident via standbyMoveId.
-    let standbyIncident=activeStandbyIncident(move.id);
-    if(!standbyIncident){
-      standbyIncident=normaliseIncidentLive(makeStandbyIncident(move));
-      standbyIncident.timeline=[
-        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:"Incident created"},
-        {time:new Date().toLocaleTimeString("en-GB",{hour12:false}),text:`Standby incident sent to ${callsign} · ${destination}`,callsign}
-      ];
-      standbyIncident.assignedUnits=[callsign];
-      standbyIncident.assignedRoles={[callsign]:move.role||"Pump"};
-      state.standbyIncidents.unshift(standbyIncident);
-    }
-    if(!state.incidents.some(i=>sameIncidentIdentity(i,standbyIncident))){
-      state.incidents.unshift(standbyIncident);
-    }
-
+    // Guardian_control creates the authoritative numeric standby incident.
     pushEvent("standbyMoveCreated",move);
     touch();
 
@@ -888,103 +880,23 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
     touch();
   }else if(action==="webMdtStatus"){
     const cs=String(data.callsign||"").trim().toUpperCase();
-    if(cs && state.units?.[cs]){
-      state.units[cs]={...state.units[cs],status:String(data.status||state.units[cs].status||"Home Station")};
-      const move=activeStandby(cs);
-      if(move){
-        const st=String(data.status||state.units[cs].status||"");
-        move.status=st;
-        if(/mobile to standby/i.test(st)) move.state="mobile";
-        if(/available standby/i.test(st)) move.state="available";
-        const standbyIncident=activeStandbyIncident(move.id);
-        if(standbyIncident){
-          standbyIncident.sceneStatus=st;
-          standbyIncident.applianceStatuses ||= {};
-          standbyIncident.applianceStatuses[cs]=st;
-        }
+    const requested=String(data.status||"").trim();
+
+    if(cs && requested){
+      state.units ||= {};
+      state.units[cs]={
+        ...(state.units[cs]||{}),
+        callsign:cs,
+        status:requested,
+        webStatusPending:true,
+        webStatusPendingAt:Date.now()
+      };
+
+      if(state.bookings?.[cs]){
+        state.bookings[cs]={...state.bookings[cs],status:requested};
       }
-      // Apply the status to the live incident immediately. This is important for
-      // integrated STANDBY DUTIES, which intentionally has no separate standbyMove.
-      for(const inc of state.incidents||[]){
-        if(String(inc.status||"").toUpperCase()==="CLOSED") continue;
-        const assigned=(inc.assignedUnits||inc.assignedAppliances||[])
-          .map(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).toUpperCase());
-        if(!assigned.includes(cs)) continue;
-        inc.applianceStatuses ||= {};
-        const previous=String(inc.applianceStatuses[cs]||"");
-        const nextStatus=String(data.status||state.units[cs].status||"");
-        inc.applianceStatuses[cs]=nextStatus;
-        if(nextStatus && previous.toUpperCase()!==nextStatus.toUpperCase()){
-          addLocalIncidentTimeline(
-            inc,
-            `${cs} status changed to ${nextStatus}`,
-            cs,
-            undefined,
-            {allowRepeat:true}
-          );
-        }
-        if(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES"){
-          inc.sceneStatus=nextStatus;
-        }
-      }
-      if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
-      const finalStatus=String(state.units[cs].status||"").toLowerCase();
-      if(finalStatus==="home station" || finalStatus==="mobile and available"){
-        for(const inc of state.incidents||[]){
-          if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
 
-          const assigned=(inc.assignedUnits||[])
-            .map(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase());
-
-          if(!assigned.includes(cs))continue;
-
-          inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>
-            String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
-          );
-
-          if(Array.isArray(inc.assignedAppliances)){
-            inc.assignedAppliances=inc.assignedAppliances.filter(x=>
-              String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
-            );
-          }
-
-          if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
-          if(inc.assignedRoles) delete inc.assignedRoles[cs];
-
-          addLocalIncidentTimeline(
-            inc,
-            `${cs} released from incident - ${state.units[cs].status}`,
-            cs
-          );
-
-          if((inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES")
-             && (inc.assignedUnits||[]).length===0){
-            inc.status="CLOSED";
-            inc.sceneStatus="STANDBY COMPLETED";
-            inc.closedAt=now();
-          }
-        }
-
-        const move=activeStandby(cs);
-        if(move){
-          move.state="completed";move.status="Standby Completed";move.completedAt=now();
-          closeStandbyIncident(move,"Returned from standby");pushEvent("standbyMoveCompleted",move);
-        }
-        for(const inc of state.incidents||[]){
-          if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
-          if(!(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES"))continue;
-          if(!(inc.assignedUnits||[]).map(x=>String(x).toUpperCase()).includes(cs))continue;
-          inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>String(x).toUpperCase()!==cs);
-          if(inc.assignedAppliances) inc.assignedAppliances=inc.assignedAppliances.filter(x=>String(x).toUpperCase()!==cs);
-          if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
-          if(inc.assignedRoles) delete inc.assignedRoles[cs];
-          addLocalIncidentTimeline(inc,`${cs} returned home and cleared standby duties`,cs);
-          if((inc.assignedUnits||[]).length===0){
-            inc.status="CLOSED";inc.sceneStatus="STANDBY COMPLETED";inc.closedAt=now();
-          }
-        }
-      }
-      pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
+      pushEvent("webMdtStatusRequested",{callsign:cs,status:requested});
       touch();
     }
   }
@@ -1031,4 +943,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7.0 Production Sync running on port ${PORT}`));

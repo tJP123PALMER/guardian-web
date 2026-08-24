@@ -225,6 +225,35 @@ function liveAssignedStatus(inc,cs){
 }
 
 
+
+function timelineSortKey(e,index){
+ const t=String(e?.time||"");
+ const parts=t.split(":").map(Number);
+ return ((parts[0]||0)*3600+(parts[1]||0)*60+(parts[2]||0))*1000+index;
+}
+function cleanTimelineEvents(events){
+ const rows=Array.isArray(events)?events:[];
+ const seen=new Set();
+ const out=[];
+
+ rows.forEach((e,index)=>{
+   const text=String(e?.text||"").trim();
+   if(!text || /^Incident details updated$/i.test(text))return;
+
+   const explicit=String(e?.id||e?.eventId||"");
+   const key=explicit
+     ? `ID:${explicit}`
+     : `LEGACY:${String(e?.time||"")}|${text}|${upper(e?.callsign||"")}`;
+
+   if(seen.has(key))return;
+   seen.add(key);
+   out.push({...e,__sort:timelineSortKey(e,index)});
+ });
+
+ out.sort((a,b)=>a.__sort-b.__sort);
+ return out;
+}
+
 function timelineEventClass(text){
  const t=upper(text||"");
  if(t.includes("ACKNOWLEDGED"))return "ack";
@@ -274,8 +303,7 @@ function renderIncidentDetail(){
  const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","STANDBY DUTIES","OTHER"].filter(Boolean))];
  const priorityOptions=[...new Set([draft.priority,"Immediate","Prompt","Non Emergency"].filter(Boolean))];
  const sceneOptions=[...new Set([draft.sceneStatus,"","Being Attended","Under Control","Making Pumps","Rescue Underway","Evacuation","All Clear"])];
- const timeline=(Array.isArray(inc.timeline)?inc.timeline:[])
-   .filter(e=>timelineEventLabel(e?.text));
+ const timeline=cleanTimelineEvents(Array.isArray(inc.timeline)?inc.timeline:[]).filter(e=>timelineEventLabel(e?.text));
  const crews=inc.applianceCrew||{}, members=inc.crewMembers||{};
 
  el.innerHTML=`<div class="incidentDetailContent commandRecord">
