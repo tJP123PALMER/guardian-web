@@ -406,7 +406,7 @@ async function renderControlMap(){
      <div class="nearestList">${nearest.length?nearest.map((s,i)=>`
        <div class="nearestRow">
          <b>${i+1}</b><strong>${esc(s.name)}</strong><span>${formatMapDistance(s.distance)}</span>
-       </div>`).join(""):`<small>Postal not found in Guardian postal data.</small>`}</div>
+       </div>`).join(""):`<small>Postal not found in Guardian postal data. Check the entered postal.</small>`}</div>
      <button class="primary mapOpenQueue">OPEN 999 QUEUE</button>
    </div>`;
    selection.querySelector(".mapOpenQueue")?.addEventListener("click",()=>setControlView("calls"));
