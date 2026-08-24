@@ -446,22 +446,33 @@ function find999(callId){
 
 
 function resolveIncidentForCommand(incidentId, standbyMoveId){
-  const all=[
-    ...(Array.isArray(state.incidents)?state.incidents:[]),
-    ...(Array.isArray(state.standbyIncidents)?state.standbyIncidents:[])
-  ];
+  const normal=Array.isArray(state.incidents)?state.incidents:[];
+  const standby=Array.isArray(state.standbyIncidents)?state.standbyIncidents:[];
+  const requested=String(incidentId||"");
 
-  let inc=all.find(i=>String(i?.id||"")===String(incidentId||""));
-  if(!inc && standbyMoveId){
-    inc=all.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===String(standbyMoveId));
+  // 1. Real/numeric incident ID always wins.
+  let inc=normal.find(i=>String(i?.id||"")===requested);
+  if(inc) return inc;
+
+  // 2. Resolve via standbyMoveId into the real incident first.
+  const moveId=String(standbyMoveId || (requested.startsWith("STBY-") ? "" : "") || "");
+  if(moveId){
+    inc=normal.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===moveId);
+    if(inc) return inc;
   }
 
-  if(!inc && String(incidentId||"").startsWith("STANDBY:")){
-    const moveId=String(incidentId).slice(8);
-    inc=all.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===moveId);
+  // 3. Legacy STBY-* records are allowed only as a lookup bridge. If one is
+  // found, translate it to the real incident sharing its standbyMoveId.
+  if(requested.startsWith("STBY-")){
+    const legacy=standby.find(i=>String(i?.id||"")===requested);
+    if(legacy?.standbyMoveId){
+      inc=normal.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===String(legacy.standbyMoveId));
+      if(inc) return inc;
+    }
   }
 
-  return inc||null;
+  // 4. Last resort: exact legacy object only for old historical data.
+  return standby.find(i=>String(i?.id||"")===requested) || null;
 }
 
 function addLocalIncidentTimeline(inc,text,callsign,time){
@@ -663,16 +674,21 @@ app.post("/api/command",(req,res)=>{
   if(action==="webMdtAck"){
     const cs=String(data.callsign||"").trim().toUpperCase();
     const requestedId=data.incidentId||data.id;
-    const inc=resolveIncidentForCommand(requestedId,data.standbyMoveId);
+
+    let legacyStandbyMoveId=data.standbyMoveId;
+    if(!legacyStandbyMoveId && String(requestedId||"").startsWith("STBY-")){
+      const legacy=(state.standbyIncidents||[]).find(i=>String(i?.id||"")===String(requestedId));
+      legacyStandbyMoveId=legacy?.standbyMoveId;
+    }
+
+    const inc=resolveIncidentForCommand(requestedId,legacyStandbyMoveId);
 
     if(inc){
       persistLocalIncidentAck(inc,cs);
 
-      // Send the authoritative numeric ID to FiveM whenever one exists.
-      const authoritative=String(inc.id||requestedId||"");
-      if(/^\d+$/.test(authoritative)){
-        data.incidentId=authoritative;
-      }
+      // ALWAYS send the real authoritative incident ID to FiveM.
+      data.incidentId=String(inc.id||requestedId||"");
+      if(inc.standbyMoveId) data.standbyMoveId=inc.standbyMoveId;
 
       pushEvent("incidentAcknowledged",{
         incidentId:inc.id,
@@ -683,7 +699,6 @@ app.post("/api/command",(req,res)=>{
       touch();
     }
   }
-
   // Emergency incident mobilisation automatically supersedes standby.
   if(action==="assignAppliance" && data.assign !== false && !data.standby){
     const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();

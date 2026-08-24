@@ -83,6 +83,23 @@ function markMessagesRead(){
 }
 
 
+
+function canonicalIncidentId(inc){
+  if(!inc)return "";
+  const id=String(inc.id||"");
+  if(!id.startsWith("STBY-"))return id;
+
+  if(inc.standbyMoveId){
+    const real=incidents.find(x=>
+      !String(x?.id||"").startsWith("STBY-") &&
+      x?.standbyMoveId &&
+      String(x.standbyMoveId)===String(inc.standbyMoveId)
+    );
+    if(real)return String(real.id||"");
+  }
+  return id;
+}
+
 function incidentUnits(inc){
   return (Array.isArray(inc?.assignedUnits)?inc.assignedUnits:
           Array.isArray(inc?.assignedAppliances)?inc.assignedAppliances:
@@ -256,7 +273,7 @@ function showIncidentDispatchMessage(m){
     if(ackBar)ackBar.classList.add('acked');
   }
   ack.onclick=()=>{
-    nui('ackIncident',{id:inc.id});
+    nui('ackIncident',{id:canonicalIncidentId(inc),standbyMoveId:inc.standbyMoveId||null});
     ack.textContent=`ACKNOWLEDGED BY ${callsign}`;
     ack.classList.add('acked');
     ack.disabled=true;
