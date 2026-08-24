@@ -227,3 +227,9 @@
 .controlMapViewport.isPanning{cursor:grabbing;user-select:none}
 .controlMapCanvas{transform-origin:top left}
 .controlMapCanvas .controlMapImage{pointer-events:none;user-select:none;-webkit-user-drag:none}
+
+.mapMarker{touch-action:none}.mapCallMarker{cursor:grab}.mapCallMarker.isDragging,.mapIncidentMarker.isDragging{cursor:grabbing;z-index:30;animation:none;transform:translate(-50%,-50%) scale(1.15)}
+.mapCallMarker.mapAdjusted{outline:3px solid #ffd43b;outline-offset:2px}
+.mapIncidentMarker{min-width:48px;height:34px;padding:0 9px;border-radius:17px;background:#1769aa;border:3px solid #fff;color:#fff;cursor:grab}
+.mapIncidentMarker span{font-size:9px;white-space:nowrap}.mapIncidentMarker.mapAdjusted{outline:3px solid #ffd43b;outline-offset:2px}
+.mapPositionState{margin:10px 0;padding:8px;border:1px solid #315265;border-radius:5px;background:#0b2432;color:#8dbbd2;font-size:10px;font-weight:800}.mapPositionState.adjusted{border-color:#8b7520;color:#f1d95e}

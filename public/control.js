@@ -229,6 +229,36 @@ function formatMapDistance(d){
  if(!Number.isFinite(d))return "—";
  return d<1000?`${Math.round(d)} m`:`${(d/1000).toFixed(2)} km`;
 }
+
+function controlMapItemPoint(item,index){
+ if(Number.isFinite(Number(item?.mapXPercent))&&Number.isFinite(Number(item?.mapYPercent))){
+   return {x:Number(item.mapXPercent),y:Number(item.mapYPercent),adjusted:item.mapAdjusted===true};
+ }
+ const postal=String(item?.postal||item?.postcode||"").trim();
+ const p=index.get(postal);
+ return p?{...controlMapPoint(p.x,p.y),adjusted:false}:null;
+}
+function dragMapMarker(marker,{onDrop,onSelect}={}){
+ let dragging=false,moved=false,pid=null;
+ marker.addEventListener("pointerdown",e=>{
+   if(e.button!==0)return;e.preventDefault();e.stopPropagation();
+   dragging=true;moved=false;pid=e.pointerId;marker.classList.add("isDragging");marker.setPointerCapture?.(pid);
+ });
+ marker.addEventListener("pointermove",e=>{
+   if(!dragging)return;const canvas=$("controlMapCanvas");if(!canvas)return;
+   const r=canvas.getBoundingClientRect();
+   const x=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100));
+   const y=Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100));
+   marker.style.left=`${x}%`;marker.style.top=`${y}%`;marker.dataset.dragX=x;marker.dataset.dragY=y;moved=true;
+ });
+ const finish=async e=>{
+   if(!dragging)return;dragging=false;marker.classList.remove("isDragging");
+   try{marker.releasePointerCapture?.(pid)}catch(_){}
+   if(moved){const x=Number(marker.dataset.dragX),y=Number(marker.dataset.dragY);marker.classList.add("mapAdjusted");if(onDrop)await onDrop(x,y);}
+   else if(onSelect)onSelect();
+ };
+ marker.addEventListener("pointerup",finish);marker.addEventListener("pointercancel",finish);
+}
 function mapStationUnits(stationName){
  return liveUnits().filter(u=>{
    const cs=upper(u.callsign||"");
@@ -353,17 +383,20 @@ async function renderControlMap(){
      <span>FS</span></button>`;
  }).join("");
 
- const calls=(state.calls999||[]).filter(c=>String(c.postal||c.postcode||"").trim());
+ const calls=(state.calls999||[]).filter(c=>String(c.postal||c.postcode||"").trim()||Number.isFinite(Number(c.mapXPercent)));
  const callMarkers=calls.map(c=>{
    const postal=String(c.postal||c.postcode||"").trim();
-   const p=index.get(postal);if(!p)return "";
-   const pt=controlMapPoint(p.x,p.y);
-   return `<button class="mapMarker mapCallMarker" style="left:${pt.x}%;top:${pt.y}%"
-     data-map-call="${esc(String(c.id||""))}" title="999 · ${esc(c.type||"Emergency")} · Postal ${esc(postal)}">
-     <span>999</span></button>`;
+   const pt=controlMapItemPoint(c,index);if(!pt)return "";
+   return `<button class="mapMarker mapCallMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-call="${esc(String(c.id||""))}" title="999 · Postal ${esc(postal)} · Drag to exact location"><span>999</span></button>`;
  }).join("");
-
- overlay.innerHTML=stationMarkers+callMarkers;
+ const incidents=(state.incidents||[]).filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+ const incidentMarkers=incidents.map(inc=>{
+   const pt=controlMapItemPoint(inc,index);if(!pt)return "";
+   return `<button class="mapMarker mapIncidentMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-incident="${esc(String(inc.id||""))}" title="INC #${esc(String(inc.id||""))} · Drag to refine"><span>INC ${esc(String(inc.id||""))}</span></button>`;
+ }).join("");
+ overlay.innerHTML=stationMarkers+callMarkers+incidentMarkers;
 
  list.innerHTML=calls.length?calls.map(c=>{
    const postal=String(c.postal||c.postcode||"").trim();
@@ -409,8 +442,19 @@ async function renderControlMap(){
    selection.querySelector(".mapOpenQueue")?.addEventListener("click",()=>setControlView("calls"));
  };
 
+ const showIncident=id=>{
+   const inc=(state.incidents||[]).find(x=>String(x.id||"")===String(id||""));if(!inc)return;
+   selection.innerHTML=`<div class="mapDetail"><span class="panelKicker">LIVE INCIDENT</span><h3>INC #${esc(String(inc.id||""))}</h3><p>${esc(inc.type||"Incident")}</p><p><strong>Postal</strong><br>${esc(inc.postal||"—")}</p><div class="mapPositionState ${inc.mapAdjusted?"adjusted":""}">${inc.mapAdjusted?"CONTROL POSITION SAVED":"POSTAL ESTIMATE · DRAG BLUE MARKER TO REFINE"}</div></div>`;
+ };
  overlay.querySelectorAll("[data-map-station]").forEach(b=>b.onclick=()=>showStation(b.dataset.mapStation));
- overlay.querySelectorAll("[data-map-call]").forEach(b=>b.onclick=()=>showCall(b.dataset.mapCall));
+ overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{
+   onSelect:()=>showCall(b.dataset.mapCall),
+   onDrop:async(x,y)=>{const callId=String(b.dataset.mapCall||"");const c=(state.calls999||[]).find(v=>String(v.id||"")===callId);if(c)Object.assign(c,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("set999MapPosition",{callId,mapXPercent:x,mapYPercent:y});showCall(callId);}
+ }));
+ overlay.querySelectorAll("[data-map-incident]").forEach(b=>dragMapMarker(b,{
+   onSelect:()=>showIncident(b.dataset.mapIncident),
+   onDrop:async(x,y)=>{const incidentId=String(b.dataset.mapIncident||"");const inc=(state.incidents||[]).find(v=>String(v.id||"")===incidentId);if(inc)Object.assign(inc,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("setIncidentMapPosition",{incidentId,mapXPercent:x,mapYPercent:y});showIncident(incidentId);}
+ }));
  list.querySelectorAll("[data-map-call]").forEach(b=>b.onclick=()=>showCall(b.dataset.mapCall));
 }
 

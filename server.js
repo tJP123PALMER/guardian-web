@@ -125,6 +125,8 @@ function removeUnitFromOtherIncidents(callsign,newIncidentId){
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
+const manualMapPositions={calls:new Map(),incidents:new Map()};
+
 let state = {
   connected: false,
   lastHeartbeat: null,
@@ -377,9 +379,21 @@ app.post("/api/fivem/state",auth,(req,res)=>{
       if(idx>=0) merged[idx]=mergeIncidentLive(merged[idx],standby);
       else merged.push(standby);
     }
-    state.incidents=merged;
+    state.incidents=merged.map(inc=>{
+      const iid=String(inc?.id||"");
+      const sid=String(inc?.source999Id||inc?.source999CallId||"");
+      const manual=manualMapPositions.incidents.get(iid)||(sid?manualMapPositions.calls.get(sid):null);
+      if(!manual)return inc;
+      if(iid)manualMapPositions.incidents.set(iid,{...manual});
+      return {...inc,...manual,mapAdjusted:true};
+    });
   }
-  if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
+  if(Array.isArray(body.calls999)){
+    state.calls999=dedupe999Calls(body.calls999).map(call=>{
+      const manual=manualMapPositions.calls.get(String(call?.id||""));
+      return manual?{...call,...manual}:call;
+    });
+  }
   if(Array.isArray(body.messages)) state.messages = body.messages;
   if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
   if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
@@ -419,7 +433,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition"
 ]);
 
 function queueCommand(action,data={}){
@@ -565,6 +579,28 @@ app.post("/api/command",(req,res)=>{
   const data=req.body?.data||{};
   action=aliases[action]||action;
 
+  if(action==="set999MapPosition"){
+    const callId=String(data.callId||data.id||"");
+    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
+    if(!callId||!Number.isFinite(x)||!Number.isFinite(y)) return res.status(400).json({ok:false,error:"Valid call and map position required"});
+    const pos={mapXPercent:Math.max(0,Math.min(100,x)),mapYPercent:Math.max(0,Math.min(100,y)),mapAdjusted:true,mapAdjustedAt:now(),mapAdjustedBy:"CONTROL"};
+    manualMapPositions.calls.set(callId,pos);
+    const call=find999(callId);if(call)Object.assign(call,pos);
+    touch();
+    return res.json({ok:true,position:pos});
+  }
+
+  if(action==="setIncidentMapPosition"){
+    const incidentId=String(data.incidentId||data.id||"");
+    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
+    if(!incidentId||!Number.isFinite(x)||!Number.isFinite(y)) return res.status(400).json({ok:false,error:"Valid incident and map position required"});
+    const pos={mapXPercent:Math.max(0,Math.min(100,x)),mapYPercent:Math.max(0,Math.min(100,y)),mapAdjusted:true,mapAdjustedAt:now(),mapAdjustedBy:"CONTROL"};
+    manualMapPositions.incidents.set(incidentId,pos);
+    const inc=(state.incidents||[]).find(i=>String(i.id||"")===incidentId);if(inc)Object.assign(inc,pos);
+    touch();
+    return res.json({ok:true,position:pos});
+  }
+
   if(action==="createIncidentFrom999"){
     const call=find999(data.callId);
     if(!call) return res.status(404).json({ok:false,error:"999 call no longer exists"});
@@ -593,6 +629,11 @@ app.post("/api/command",(req,res)=>{
       phone:call.phone||call.telephone||"",
       notes:call.description||call.details||call.message||"",
       details:call.description||call.details||call.message||"",
+      mapXPercent:Number.isFinite(Number(call.mapXPercent))?Number(call.mapXPercent):undefined,
+      mapYPercent:Number.isFinite(Number(call.mapYPercent))?Number(call.mapYPercent):undefined,
+      mapAdjusted:call.mapAdjusted===true,
+      mapAdjustedAt:call.mapAdjustedAt,
+      mapAdjustedBy:call.mapAdjustedBy,
       enableMDT:true,
       enableTurnout:false,
       enablePager:false
@@ -620,7 +661,8 @@ app.post("/api/command",(req,res)=>{
 
     const u=state.units?.[callsign]||{};
     const st=String(u.status||"").toLowerCase();
-    if(u.incidentId || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
+    const canReceiveStandbyWhileReturning=/mobile and available|available at incident|return to home station/.test(st);
+    if((u.incidentId && !canReceiveStandbyWhileReturning) || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
       return res.status(409).json({ok:false,error:`${callsign} is committed or unavailable`});
     if(activeStandby(callsign)) return res.status(409).json({ok:false,error:`${callsign} already has an active standby move`});
 
