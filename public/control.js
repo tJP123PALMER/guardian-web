@@ -224,6 +224,24 @@ function liveAssignedStatus(inc,cs){
  return String(state.units?.[key]?.status||inc?.applianceStatuses?.[key]||"Mobilised");
 }
 
+
+function timelineEventClass(text){
+ const t=upper(text||"");
+ if(t.includes("ACKNOWLEDGED"))return "ack";
+ if(t.includes("STATUS CHANGED TO"))return "status";
+ if(t.includes("MOBILISED")||t.includes("REMOBILISED"))return "mobilise";
+ if(t.includes("RELEASED")||t.includes("RETURNED HOME"))return "release";
+ if(t.includes("CLOSED")||t.includes("COMPLETED"))return "closed";
+ if(t.includes("STANDBY"))return "standby";
+ if(t.includes("CREATED"))return "created";
+ return "update";
+}
+function timelineEventLabel(text){
+ const t=String(text||"");
+ if(/^Incident details updated$/i.test(t))return "";
+ return t;
+}
+
 function renderIncidentDetail(){
  const el=$("incidentDetail"),inc=incidentById(selectedIncidentId);
  if(!inc){
@@ -240,7 +258,11 @@ function renderIncidentDetail(){
  const turnout=prefs.turnout??(inc.sendTurnout===true);
  const pager=prefs.pager??(inc.sendPager===true);
 
- const candidates=units.filter(u=>!assigned.includes(u.callsign)&&!assignedToOther(u.callsign,inc.id));
+ const candidates=units.filter(u=>
+   !assigned.includes(u.callsign) &&
+   (!assignedToOther(u.callsign,inc.id) ||
+    ["AVAILABLE AT INCIDENT","MOBILE TO INCIDENT"].includes(upper(u.status)))
+ );
  const standbyStations=Object.keys(state.stations||{}).sort();
  const standbyDetailsText=station=>{
    const destination=String(station||"").trim();
@@ -252,7 +274,8 @@ function renderIncidentDetail(){
  const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","STANDBY DUTIES","OTHER"].filter(Boolean))];
  const priorityOptions=[...new Set([draft.priority,"Immediate","Prompt","Non Emergency"].filter(Boolean))];
  const sceneOptions=[...new Set([draft.sceneStatus,"","Being Attended","Under Control","Making Pumps","Rescue Underway","Evacuation","All Clear"])];
- const timeline=Array.isArray(inc.timeline)?inc.timeline:[];
+ const timeline=(Array.isArray(inc.timeline)?inc.timeline:[])
+   .filter(e=>timelineEventLabel(e?.text));
  const crews=inc.applianceCrew||{}, members=inc.crewMembers||{};
 
  el.innerHTML=`<div class="incidentDetailContent commandRecord">
@@ -353,7 +376,10 @@ function renderIncidentDetail(){
          ${candidates.map(u=>`<tr>
            <td><strong>${esc(u.callsign)}</strong></td>
            <td>${standbyStationFor(u.callsign)?`<strong>${esc(standbyStationFor(u.callsign))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(u.callsign)||"—")}</small>`:esc(stationFor(u.callsign)||"")}</td>
-           <td>${esc(u.status||"AVAILABLE")}${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
+           <td>${esc(u.status||"AVAILABLE")}
+             ${["AVAILABLE AT INCIDENT","MOBILE TO INCIDENT"].includes(upper(u.status))
+               ? `<small class="standbySub">CAN BE REMOBILISED</small>`:""}
+             ${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
            <td><select class="mobiliseRole" data-role-cs="${esc(u.callsign)}">${["Pump","Pump Commander","Incident Commander","Sector Commander","Safety Officer","Water","Aerial","Rescue","Command","Other"].map(r=>`<option>${esc(r)}</option>`).join("")}</select></td>
            <td><button data-mobilise="${esc(u.callsign)}">MOBILISE</button></td>
          </tr>`).join("")}

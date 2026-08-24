@@ -87,6 +87,41 @@ function recentlyQueued(action,data,windowMs=1200){
   return Date.now()-last < windowMs;
 }
 
+
+function canOverrideIncidentAssignment(callsign){
+  const cs=String(callsign||"").trim().toUpperCase();
+  const st=String(state.units?.[cs]?.status||"").trim().toUpperCase();
+  return st==="AVAILABLE AT INCIDENT" || st==="MOBILE TO INCIDENT";
+}
+
+function removeUnitFromOtherIncidents(callsign,newIncidentId){
+  const cs=String(callsign||"").trim().toUpperCase();
+
+  for(const inc of state.incidents||[]){
+    if(String(inc.id||"")===String(newIncidentId||""))continue;
+    if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
+
+    const assigned=(inc.assignedUnits||[]).map(x=>String(x).trim().toUpperCase());
+    if(!assigned.includes(cs))continue;
+
+    inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>String(x).trim().toUpperCase()!==cs);
+    if(inc.assignedAppliances){
+      inc.assignedAppliances=inc.assignedAppliances.filter(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs);
+    }
+    if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
+    if(inc.assignedRoles) delete inc.assignedRoles[cs];
+
+    addLocalIncidentTimeline(inc,`${cs} remobilised to incident #${newIncidentId}`,cs);
+
+    if(inc.isStandby && (inc.assignedUnits||[]).length===0){
+      inc.status="CLOSED";
+      inc.sceneStatus="SUPERSEDED BY INCIDENT";
+      inc.closedAt=now();
+      inc.supersededByIncident=newIncidentId;
+    }
+  }
+}
+
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
@@ -475,20 +510,28 @@ function resolveIncidentForCommand(incidentId, standbyMoveId){
   return standby.find(i=>String(i?.id||"")===requested) || null;
 }
 
-function addLocalIncidentTimeline(inc,text,callsign,time){
+function addLocalIncidentTimeline(inc,text,callsign,time,{allowRepeat=false}={}){
   if(!inc)return;
   inc.timeline=Array.isArray(inc.timeline)?inc.timeline:[];
   const cs=String(callsign||"").trim().toUpperCase();
   const msg=String(text||"");
-  const exists=inc.timeline.some(e=>String(e?.text||"")===msg);
-  if(!exists){
-    inc.timeline.push({
-      time:time||new Date().toLocaleTimeString("en-GB",{hour12:false}),
-      text:msg,
-      callsign:cs||undefined
-    });
+  const stamp=time||new Date().toLocaleTimeString("en-GB",{hour12:false});
+
+  const last=inc.timeline[inc.timeline.length-1];
+  if(last && String(last.text||"")===msg && String(last.callsign||"").toUpperCase()===cs){
+    if(!allowRepeat)return;
+    if(String(last.time||"")===String(stamp))return;
   }
+
+  inc.timeline.push({
+    time:stamp,
+    text:msg,
+    callsign:cs||undefined
+  });
+
+  if(inc.timeline.length>200)inc.timeline=inc.timeline.slice(-200);
 }
+
 
 function persistLocalIncidentAck(inc,callsign){
   if(!inc)return false;
@@ -699,6 +742,14 @@ app.post("/api/command",(req,res)=>{
       touch();
     }
   }
+  // A unit at either of these statuses may be remobilised to a new incident.
+  if(action==="assignAppliance" && data.assign !== false){
+    const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
+    if(canOverrideIncidentAssignment(cs)){
+      removeUnitFromOtherIncidents(cs,data.incidentId||data.id);
+    }
+  }
+
   // Emergency incident mobilisation automatically supersedes standby.
   if(action==="assignAppliance" && data.assign !== false && !data.standby){
     const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
@@ -864,7 +915,13 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
         const nextStatus=String(data.status||state.units[cs].status||"");
         inc.applianceStatuses[cs]=nextStatus;
         if(nextStatus && previous.toUpperCase()!==nextStatus.toUpperCase()){
-          addLocalIncidentTimeline(inc,`${cs} status changed to ${nextStatus}`,cs);
+          addLocalIncidentTimeline(
+            inc,
+            `${cs} status changed to ${nextStatus}`,
+            cs,
+            undefined,
+            {allowRepeat:true}
+          );
         }
         if(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES"){
           inc.sceneStatus=nextStatus;
@@ -873,6 +930,41 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
       if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
       const finalStatus=String(state.units[cs].status||"").toLowerCase();
       if(finalStatus==="home station" || finalStatus==="mobile and available"){
+        for(const inc of state.incidents||[]){
+          if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
+
+          const assigned=(inc.assignedUnits||[])
+            .map(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase());
+
+          if(!assigned.includes(cs))continue;
+
+          inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>
+            String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
+          );
+
+          if(Array.isArray(inc.assignedAppliances)){
+            inc.assignedAppliances=inc.assignedAppliances.filter(x=>
+              String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
+            );
+          }
+
+          if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
+          if(inc.assignedRoles) delete inc.assignedRoles[cs];
+
+          addLocalIncidentTimeline(
+            inc,
+            `${cs} released from incident - ${state.units[cs].status}`,
+            cs
+          );
+
+          if((inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES")
+             && (inc.assignedUnits||[]).length===0){
+            inc.status="CLOSED";
+            inc.sceneStatus="STANDBY COMPLETED";
+            inc.closedAt=now();
+          }
+        }
+
         const move=activeStandby(cs);
         if(move){
           move.state="completed";move.status="Standby Completed";move.completedAt=now();

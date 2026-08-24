@@ -162,3 +162,19 @@
 .incidentOpsCard .liveAckBadge{
   display:none !important;
 }
+
+
+/* Operational incident timeline */
+.timelineItem.status,
+.timelineEvent.status { border-left:3px solid currentColor; }
+.timelineItem.ack,
+.timelineEvent.ack { font-weight:600; }
+.timelineItem.mobilise,
+.timelineEvent.mobilise { border-left:3px solid currentColor; }
+.timelineItem.release,
+.timelineEvent.release { opacity:.9; }
+.timelineItem.closed,
+.timelineEvent.closed { opacity:.8; }
+.timelineItem.created,
+.timelineEvent.created { opacity:.9; }
+
