@@ -866,4 +866,9 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
+
+app.get("/api/fivem/ping",(req,res)=>{
+  res.json({ok:true,service:"guardian-web",bridge:"fivem"});
+});
+
 app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));
