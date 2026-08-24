@@ -247,6 +247,14 @@ function showIncidentDispatchMessage(m){
   document.getElementById('cf33PrintBtn').onclick=()=>window.print();
 
   const ack=document.getElementById('cf33AckBtn');
+  const alreadyAcked=!!(inc.acknowledgedBy && inc.acknowledgedBy[callsign]);
+  if(alreadyAcked){
+    ack.textContent=`ACKNOWLEDGED BY ${callsign}`;
+    ack.classList.add('acked');
+    ack.disabled=true;
+    const ackBar=document.getElementById('realCf33AckBar');
+    if(ackBar)ackBar.classList.add('acked');
+  }
   ack.onclick=()=>{
     nui('ackIncident',{id:inc.id});
     ack.textContent=`ACKNOWLEDGED BY ${callsign}`;

@@ -172,7 +172,12 @@ function mergeIncidentLive(previous,incoming){
   const seen=new Set();
   for(const e of [...(old.timeline||[]),...(fresh.timeline||[])]){
     if(!e)continue;
-    const key=[String(e.time||""),String(e.text||""),String(e.callsign||e.unit||"")].join("|");
+    const eventText=String(e.text||"");
+    const eventUnit=String(e.callsign||e.unit||"");
+    const isMirrorAudit=/ acknowledged incident$| status changed to /i.test(eventText);
+    const key=isMirrorAudit
+      ? ["mirror",eventText,eventUnit].join("|")
+      : [String(e.time||""),eventText,eventUnit].join("|");
     if(seen.has(key))continue;
     seen.add(key);
     mergedTimeline.push(e);
@@ -830,6 +835,24 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
           standbyIncident.sceneStatus=st;
           standbyIncident.applianceStatuses ||= {};
           standbyIncident.applianceStatuses[cs]=st;
+        }
+      }
+      // Apply the status to the live incident immediately. This is important for
+      // integrated STANDBY DUTIES, which intentionally has no separate standbyMove.
+      for(const inc of state.incidents||[]){
+        if(String(inc.status||"").toUpperCase()==="CLOSED") continue;
+        const assigned=(inc.assignedUnits||inc.assignedAppliances||[])
+          .map(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).toUpperCase());
+        if(!assigned.includes(cs)) continue;
+        inc.applianceStatuses ||= {};
+        const previous=String(inc.applianceStatuses[cs]||"");
+        const nextStatus=String(data.status||state.units[cs].status||"");
+        inc.applianceStatuses[cs]=nextStatus;
+        if(nextStatus && previous.toUpperCase()!==nextStatus.toUpperCase()){
+          addLocalIncidentTimeline(inc,`${cs} status changed to ${nextStatus}`,cs);
+        }
+        if(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES"){
+          inc.sceneStatus=nextStatus;
         }
       }
       if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
