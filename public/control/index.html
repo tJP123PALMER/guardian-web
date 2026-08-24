@@ -67,7 +67,7 @@
         <div>
           <span class="eyebrow">OPERATIONAL MAPPING</span>
           <h1>Control Map</h1>
-          <p>Fire stations and 999 calls plotted using calibrated Guardian postal coordinates.</p>
+          <p>Fire stations and 999 calls plotted using Guardian postal coordinates.</p>
         </div>
         <div class="mapLegend">
           <span><i class="legendStation"></i> Fire Station</span>
@@ -77,6 +77,12 @@
 
       <div class="controlMapLayout">
         <section class="panel controlMapPanel">
+          <div class="controlMapToolbar" aria-label="Map controls">
+            <button type="button" id="mapZoomOut" class="mapToolBtn" title="Zoom out">−</button>
+            <span id="mapZoomLabel" class="mapZoomLabel">100%</span>
+            <button type="button" id="mapZoomIn" class="mapToolBtn" title="Zoom in">+</button>
+            <button type="button" id="mapZoomReset" class="mapToolBtn mapResetBtn" title="Fit full map">FIT MAP</button>
+          </div>
           <div id="controlMapViewport" class="controlMapViewport">
             <div id="controlMapCanvas" class="controlMapCanvas">
               <img src="/control/assets/postal_map.png" class="controlMapImage" alt="Postal map">

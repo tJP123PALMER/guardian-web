@@ -4,6 +4,12 @@
 const CONTROL_MAP_STATIONS=[{"name":"Berwick Fire Station","postal":"4011"},{"name":"Coldstream Fire Station","postal":"7287"},{"name":"Crewe Toll Fire Station","postal":"7039"},{"name":"McDonald Road Fire Station","postal":"7326"},{"name":"Musselburgh Fire Station","postal":"9092"},{"name":"Sighthill Fire Station","postal":"7246"}];
 const CONTROL_MAP_WORLD={minX:-4000,maxX:4000,minY:-4000,maxY:8000};
 let controlPostalIndex=null;
+let controlMapZoom=1;
+const CONTROL_MAP_MIN_ZOOM=1;
+const CONTROL_MAP_MAX_ZOOM=5;
+const CONTROL_MAP_ZOOM_STEP=0.25;
+let controlMapPanBound=false;
+
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const upper=v=>String(v??"").trim().toUpperCase();
@@ -200,13 +206,12 @@ async function loadControlPostals(){
  ]).filter(([code,p])=>code&&Number.isFinite(p.x)&&Number.isFinite(p.y)));
  return controlPostalIndex;
 }
-const CONTROL_MAP_CAL_X=[45.04978506610879,0.0116876389358033,0.00026041660858265874,6.906342117617616e-07,6.341981206828896e-07,5.314153196067712e-07];
-const CONTROL_MAP_CAL_Y=[61.68760389922011,0.0008892973344860491,-0.007272140236054872,8.994982143002685e-07,2.6058420248536017e-07,2.273296397542672e-07];
+const CONTROL_MAP_AFFINE_X=[47.48127100591509,0.011389940634945021,0.000686672786416113];
+const CONTROL_MAP_AFFINE_Y=[62.71226671589643,0.0003632826339144083,-0.006955825367379487];
 function controlMapPoint(x,y){
  const X=Number(x),Y=Number(y);
- const f=[1,X,Y,X*Y,X*X,Y*Y];
- const px=f.reduce((s,v,i)=>s+v*CONTROL_MAP_CAL_X[i],0);
- const py=f.reduce((s,v,i)=>s+v*CONTROL_MAP_CAL_Y[i],0);
+ const px=CONTROL_MAP_AFFINE_X[0]+CONTROL_MAP_AFFINE_X[1]*X+CONTROL_MAP_AFFINE_X[2]*Y;
+ const py=CONTROL_MAP_AFFINE_Y[0]+CONTROL_MAP_AFFINE_Y[1]*X+CONTROL_MAP_AFFINE_Y[2]*Y;
  return {
    x:Math.max(0,Math.min(100,px)),
    y:Math.max(0,Math.min(100,py))
@@ -235,10 +240,105 @@ function mapStationUnits(stationName){
    return standby===stationName || (!standby && home===stationName);
  });
 }
+
+function applyControlMapZoom(nextZoom, focusClientX, focusClientY){
+ const viewport=$("controlMapViewport");
+ const canvas=$("controlMapCanvas");
+ if(!viewport||!canvas)return;
+
+ const oldZoom=controlMapZoom;
+ const newZoom=Math.max(CONTROL_MAP_MIN_ZOOM,Math.min(CONTROL_MAP_MAX_ZOOM,Number(nextZoom)||1));
+ if(newZoom===oldZoom){
+   const label=$("mapZoomLabel");
+   if(label)label.textContent=`${Math.round(newZoom*100)}%`;
+   return;
+ }
+
+ const rect=viewport.getBoundingClientRect();
+ const fx=Number.isFinite(focusClientX)?focusClientX-rect.left:viewport.clientWidth/2;
+ const fy=Number.isFinite(focusClientY)?focusClientY-rect.top:viewport.clientHeight/2;
+ const contentX=(viewport.scrollLeft+fx)/oldZoom;
+ const contentY=(viewport.scrollTop+fy)/oldZoom;
+
+ controlMapZoom=newZoom;
+ canvas.style.width=`${controlMapZoom*100}%`;
+
+ requestAnimationFrame(()=>{
+   viewport.scrollLeft=Math.max(0,contentX*controlMapZoom-fx);
+   viewport.scrollTop=Math.max(0,contentY*controlMapZoom-fy);
+ });
+
+ const label=$("mapZoomLabel");
+ if(label)label.textContent=`${Math.round(controlMapZoom*100)}%`;
+}
+
+function resetControlMapZoom(){
+ const viewport=$("controlMapViewport");
+ controlMapZoom=1;
+ const canvas=$("controlMapCanvas");
+ if(canvas)canvas.style.width="100%";
+ if(viewport){
+   viewport.scrollLeft=0;
+   viewport.scrollTop=0;
+ }
+ const label=$("mapZoomLabel");
+ if(label)label.textContent="100%";
+}
+
+function bindControlMapNavigation(){
+ const viewport=$("controlMapViewport");
+ const canvas=$("controlMapCanvas");
+ if(!viewport||!canvas)return;
+
+ canvas.style.width=`${controlMapZoom*100}%`;
+ const label=$("mapZoomLabel");
+ if(label)label.textContent=`${Math.round(controlMapZoom*100)}%`;
+
+ const zin=$("mapZoomIn"),zout=$("mapZoomOut"),reset=$("mapZoomReset");
+ if(zin)zin.onclick=()=>applyControlMapZoom(controlMapZoom+CONTROL_MAP_ZOOM_STEP);
+ if(zout)zout.onclick=()=>applyControlMapZoom(controlMapZoom-CONTROL_MAP_ZOOM_STEP);
+ if(reset)reset.onclick=resetControlMapZoom;
+
+ if(viewport.dataset.mapNavBound==="1")return;
+ viewport.dataset.mapNavBound="1";
+
+ viewport.addEventListener("wheel",e=>{
+   e.preventDefault();
+   applyControlMapZoom(
+     controlMapZoom+(e.deltaY<0?CONTROL_MAP_ZOOM_STEP:-CONTROL_MAP_ZOOM_STEP),
+     e.clientX,e.clientY
+   );
+ },{passive:false});
+
+ let dragging=false,startX=0,startY=0,startLeft=0,startTop=0;
+ viewport.addEventListener("pointerdown",e=>{
+   if(e.button!==0 || e.target.closest(".mapMarker"))return;
+   dragging=true;
+   startX=e.clientX; startY=e.clientY;
+   startLeft=viewport.scrollLeft; startTop=viewport.scrollTop;
+   viewport.classList.add("isPanning");
+   viewport.setPointerCapture?.(e.pointerId);
+ });
+ viewport.addEventListener("pointermove",e=>{
+   if(!dragging)return;
+   viewport.scrollLeft=startLeft-(e.clientX-startX);
+   viewport.scrollTop=startTop-(e.clientY-startY);
+ });
+ const stop=e=>{
+   if(!dragging)return;
+   dragging=false;
+   viewport.classList.remove("isPanning");
+   try{viewport.releasePointerCapture?.(e.pointerId)}catch(_){}
+ };
+ viewport.addEventListener("pointerup",stop);
+ viewport.addEventListener("pointercancel",stop);
+}
+
 async function renderControlMap(){
  if(controlView!=="map")return;
  const overlay=$("controlMapOverlay"),list=$("mapCallList"),selection=$("mapSelection");
  if(!overlay||!list||!selection)return;
+ bindControlMapNavigation();
 
  let index;
  try{index=await loadControlPostals()}
