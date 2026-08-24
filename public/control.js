@@ -1,6 +1,9 @@
 
 
 
+const CONTROL_MAP_STATIONS=[{"name":"Berwick Fire Station","postal":"4011"},{"name":"Coldstream Fire Station","postal":"7287"},{"name":"Crewe Toll Fire Station","postal":"7039"},{"name":"McDonald Road Fire Station","postal":"7326"},{"name":"Musselburgh Fire Station","postal":"9092"},{"name":"Sighthill Fire Station","postal":"7246"}];
+const CONTROL_MAP_WORLD={minX:-4000,maxX:4000,minY:-4000,maxY:8000};
+let controlPostalIndex=null;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const upper=v=>String(v??"").trim().toUpperCase();
@@ -183,8 +186,135 @@ function setMdtView(v){
  mdtView=v;document.querySelectorAll(".mdtView").forEach(x=>x.classList.toggle("active",x.id==="mdt-"+v));
  document.querySelectorAll(".mdtNav button").forEach(x=>x.classList.toggle("active",x.dataset.mdtview===v));renderMdt();
 }
+
+async function loadControlPostals(){
+ if(controlPostalIndex)return controlPostalIndex;
+ const rows=await fetch("/control/assets/postals.json",{cache:"no-store"}).then(r=>{
+   if(!r.ok)throw new Error("Postal data failed to load");
+   return r.json();
+ });
+ const entries=Array.isArray(rows)?rows:Object.values(rows);
+ controlPostalIndex=new Map(entries.map(p=>[
+   String(p.code||p.postal||""),
+   {x:Number(p.x),y:Number(p.y)}
+ ]).filter(([code,p])=>code&&Number.isFinite(p.x)&&Number.isFinite(p.y)));
+ return controlPostalIndex;
+}
+function controlMapPoint(x,y){
+ const w=CONTROL_MAP_WORLD;
+ return {
+   x:((Number(x)-w.minX)/(w.maxX-w.minX))*100,
+   y:((w.maxY-Number(y))/(w.maxY-w.minY))*100
+ };
+}
+function controlPostalDistance(a,b,index){
+ const pa=index.get(String(a)),pb=index.get(String(b));
+ if(!pa||!pb)return null;
+ return Math.hypot(pa.x-pb.x,pa.y-pb.y);
+}
+function nearestControlStations(postal,index){
+ return CONTROL_MAP_STATIONS.map(s=>({
+   ...s,
+   distance:controlPostalDistance(postal,s.postal,index)
+ })).filter(s=>Number.isFinite(s.distance)).sort((a,b)=>a.distance-b.distance);
+}
+function formatMapDistance(d){
+ if(!Number.isFinite(d))return "—";
+ return d<1000?`${Math.round(d)} m`:`${(d/1000).toFixed(2)} km`;
+}
+function mapStationUnits(stationName){
+ return liveUnits().filter(u=>{
+   const cs=upper(u.callsign||"");
+   const home=state.callSignStations?.[cs]||u.station||stationFor(cs)||"";
+   const standby=standbyStationFor(cs);
+   return standby===stationName || (!standby && home===stationName);
+ });
+}
+async function renderControlMap(){
+ if(controlView!=="map")return;
+ const overlay=$("controlMapOverlay"),list=$("mapCallList"),selection=$("mapSelection");
+ if(!overlay||!list||!selection)return;
+
+ let index;
+ try{index=await loadControlPostals()}
+ catch(err){
+   overlay.innerHTML="";
+   list.innerHTML=`<div class="emptyState"><strong>Postal data unavailable</strong><span>${esc(err.message)}</span></div>`;
+   return;
+ }
+
+ const stationMarkers=CONTROL_MAP_STATIONS.map(s=>{
+   const p=index.get(String(s.postal));if(!p)return "";
+   const pt=controlMapPoint(p.x,p.y);
+   return `<button class="mapMarker mapStationMarker" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)}">
+     <span>FS</span></button>`;
+ }).join("");
+
+ const calls=(state.calls999||[]).filter(c=>String(c.postal||c.postcode||"").trim());
+ const callMarkers=calls.map(c=>{
+   const postal=String(c.postal||c.postcode||"").trim();
+   const p=index.get(postal);if(!p)return "";
+   const pt=controlMapPoint(p.x,p.y);
+   return `<button class="mapMarker mapCallMarker" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-call="${esc(String(c.id||""))}" title="999 · ${esc(c.type||"Emergency")} · Postal ${esc(postal)}">
+     <span>999</span></button>`;
+ }).join("");
+
+ overlay.innerHTML=stationMarkers+callMarkers;
+
+ list.innerHTML=calls.length?calls.map(c=>{
+   const postal=String(c.postal||c.postcode||"").trim();
+   const nearest=nearestControlStations(postal,index)[0];
+   return `<button class="mapCallRow" data-map-call="${esc(String(c.id||""))}">
+     <strong>${esc(c.type||"999 EMERGENCY")}</strong>
+     <span>${esc(c.address||c.location||"No address")}</span>
+     <small>Postal ${esc(postal)}${nearest?` · Nearest ${esc(nearest.name)}`:""}</small>
+   </button>`;
+ }).join(""):`<div class="emptyState"><strong>No mapped 999 calls</strong><span>A call with a valid postal will appear here automatically.</span></div>`;
+
+ const showStation=name=>{
+   const s=CONTROL_MAP_STATIONS.find(x=>x.name===name);if(!s)return;
+   const units=mapStationUnits(s.name);
+   selection.innerHTML=`<div class="mapDetail">
+     <span class="panelKicker">FIRE STATION</span>
+     <h3>${esc(s.name)}</h3>
+     <p>Postal ${esc(s.postal)}</p>
+     <div class="mapUnitList">${units.length?units.map(u=>`
+       <div class="mapMiniUnit">
+         <strong>${esc(u.callsign||"")}</strong>
+         <span>${esc(u.status||"Unknown")}</span>
+       </div>`).join(""):`<small>No signed-on appliances at this station.</small>`}</div>
+   </div>`;
+ };
+
+ const showCall=id=>{
+   const c=(state.calls999||[]).find(x=>String(x.id||"")===String(id||""));if(!c)return;
+   const postal=String(c.postal||c.postcode||"").trim();
+   const nearest=nearestControlStations(postal,index).slice(0,6);
+   selection.innerHTML=`<div class="mapDetail">
+     <span class="panelKicker">999 CALL</span>
+     <h3>${esc(c.type||"999 EMERGENCY")}</h3>
+     <p><strong>Address</strong><br>${esc(c.address||c.location||"—")}</p>
+     <p><strong>Postal</strong><br>${esc(postal||"—")}</p>
+     <div class="nearestTitle">Nearest Fire Stations</div>
+     <div class="nearestList">${nearest.length?nearest.map((s,i)=>`
+       <div class="nearestRow">
+         <b>${i+1}</b><strong>${esc(s.name)}</strong><span>${formatMapDistance(s.distance)}</span>
+       </div>`).join(""):`<small>Postal not found in Guardian postal data.</small>`}</div>
+     <button class="primary mapOpenQueue">OPEN 999 QUEUE</button>
+   </div>`;
+   selection.querySelector(".mapOpenQueue")?.addEventListener("click",()=>setControlView("calls"));
+ };
+
+ overlay.querySelectorAll("[data-map-station]").forEach(b=>b.onclick=()=>showStation(b.dataset.mapStation));
+ overlay.querySelectorAll("[data-map-call]").forEach(b=>b.onclick=()=>showCall(b.dataset.mapCall));
+ list.querySelectorAll("[data-map-call]").forEach(b=>b.onclick=()=>showCall(b.dataset.mapCall));
+}
+
 function render(){
  reconcileIncidentDrafts();
+ if(controlView==="map")renderControlMap().catch(console.error);
  const units=liveUnits(),incs=state.incidents||[],calls=state.calls999||[];
  $("liveDot").classList.toggle("online",!!state.connected);$("liveText").textContent=state.connected?"LIVE SERVER LINK":"SERVER OFFLINE";
  $("lastSync").textContent=state.updatedAt?`Last sync ${new Date(state.updatedAt).toLocaleTimeString()}`:"Awaiting sync";
