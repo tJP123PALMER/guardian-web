@@ -200,11 +200,16 @@ async function loadControlPostals(){
  ]).filter(([code,p])=>code&&Number.isFinite(p.x)&&Number.isFinite(p.y)));
  return controlPostalIndex;
 }
+const CONTROL_MAP_CAL_X=[45.04978506610879,0.0116876389358033,0.00026041660858265874,6.906342117617616e-07,6.341981206828896e-07,5.314153196067712e-07];
+const CONTROL_MAP_CAL_Y=[61.68760389922011,0.0008892973344860491,-0.007272140236054872,8.994982143002685e-07,2.6058420248536017e-07,2.273296397542672e-07];
 function controlMapPoint(x,y){
- const w=CONTROL_MAP_WORLD;
+ const X=Number(x),Y=Number(y);
+ const f=[1,X,Y,X*Y,X*X,Y*Y];
+ const px=f.reduce((s,v,i)=>s+v*CONTROL_MAP_CAL_X[i],0);
+ const py=f.reduce((s,v,i)=>s+v*CONTROL_MAP_CAL_Y[i],0);
  return {
-   x:((Number(x)-w.minX)/(w.maxX-w.minX))*100,
-   y:((w.maxY-Number(y))/(w.maxY-w.minY))*100
+   x:Math.max(0,Math.min(100,px)),
+   y:Math.max(0,Math.min(100,py))
  };
 }
 function controlPostalDistance(a,b,index){
