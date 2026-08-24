@@ -371,7 +371,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","ackStandbyMove"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove"
 ]);
 
 function queueCommand(action,data={}){
@@ -744,6 +744,25 @@ app.post("/api/command",(req,res)=>{
     if(!standbyType) data.standbyDestination="";
   }
 
+
+  if(action==="returnStandbyIncident"){
+    const cs=String(data.callsign||"").trim().toUpperCase();
+    const inc=resolveIncidentForCommand(data.incidentId,data.standbyMoveId);
+    if(!inc) return res.status(404).json({ok:false,error:"Standby incident not found"});
+    if(!(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES")){
+      return res.status(409).json({ok:false,error:"Incident is not a standby duty"});
+    }
+    data.incidentId=inc.id;
+    inc.sceneStatus="RETURN TO HOME STATION";
+    inc.applianceStatuses ||= {};
+    inc.applianceStatuses[cs]="Return to Home Station";
+    addLocalIncidentTimeline(inc,`Control instructed ${cs} to return to home station`,cs);
+    if(state.units?.[cs]) state.units[cs]={...state.units[cs],status:"Return to Home Station"};
+    if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:"Return to Home Station"};
+    pushEvent("standbyReturnHome",{incidentId:inc.id,callsign:cs});
+    touch();
+  }
+
 if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
 
   if(action==="dismiss999Call"){
@@ -817,7 +836,23 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
       const finalStatus=String(state.units[cs].status||"").toLowerCase();
       if(finalStatus==="home station" || finalStatus==="mobile and available"){
         const move=activeStandby(cs);
-        if(move){move.state="completed";move.status="Standby Completed";move.completedAt=now();closeStandbyIncident(move,"Returned from standby");pushEvent("standbyMoveCompleted",move)}
+        if(move){
+          move.state="completed";move.status="Standby Completed";move.completedAt=now();
+          closeStandbyIncident(move,"Returned from standby");pushEvent("standbyMoveCompleted",move);
+        }
+        for(const inc of state.incidents||[]){
+          if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
+          if(!(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES"))continue;
+          if(!(inc.assignedUnits||[]).map(x=>String(x).toUpperCase()).includes(cs))continue;
+          inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>String(x).toUpperCase()!==cs);
+          if(inc.assignedAppliances) inc.assignedAppliances=inc.assignedAppliances.filter(x=>String(x).toUpperCase()!==cs);
+          if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
+          if(inc.assignedRoles) delete inc.assignedRoles[cs];
+          addLocalIncidentTimeline(inc,`${cs} returned home and cleared standby duties`,cs);
+          if((inc.assignedUnits||[]).length===0){
+            inc.status="CLOSED";inc.sceneStatus="STANDBY COMPLETED";inc.closedAt=now();
+          }
+        }
       }
       pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
       touch();
@@ -865,10 +900,5 @@ app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
 app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
-
-
-app.get("/api/fivem/ping",(req,res)=>{
-  res.json({ok:true,service:"guardian-web",bridge:"fivem"});
-});
 
 app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));

@@ -346,7 +346,9 @@ function renderIncidentDetail(){
              </div>
            </td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
-           <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
+           <td>${inc.isStandby||upper(inc.type)==="STANDBY DUTIES"
+             ? `<button class="secondary" data-return-standby-incident="${esc(cs)}">RETURN HOME</button>`
+             : `<button class="remove" data-unassign="${esc(cs)}">RELEASE</button>`}</td>
          </tr>`).join("")}
          ${candidates.map(u=>`<tr>
            <td><strong>${esc(u.callsign)}</strong></td>
@@ -560,6 +562,19 @@ function renderIncidentDetail(){
    });
  });
  el.querySelectorAll("[data-unassign]").forEach(b=>b.onclick=()=>command("assignAppliance",{incidentId:inc.id,callsign:b.dataset.unassign,assign:false}));
+ el.querySelectorAll("[data-return-standby-incident]").forEach(b=>b.onclick=async()=>{
+   const cs=upper(b.dataset.returnStandbyIncident||"");
+   if(!cs)return;
+   if(!confirm(`Return ${cs} to its home station?`))return;
+   b.disabled=true;b.textContent="SENDING...";
+   try{
+     await command("returnStandbyIncident",{incidentId:inc.id,callsign:cs});
+     setTimeout(()=>load().catch(()=>{}),200);
+   }catch(err){
+     console.error(err);alert(err.message||"Unable to return appliance home.");
+     b.disabled=false;b.textContent="RETURN HOME";
+   }
+ });
 
  el.querySelectorAll(".saveCrewCount").forEach(btn=>btn.onclick=async()=>{
    const cs=btn.dataset.cs,input=el.querySelector(`.crewCountInput[data-cs="${CSS.escape(cs)}"]`);
