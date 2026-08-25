@@ -429,7 +429,7 @@ async function renderControlMap(){
    const pt=saved||(p?{...controlMapPoint(p.x,p.y),adjusted:false}:null);
    if(!pt)return "";
    return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
-     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)}">
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Drag to position">
      <span>FS</span></button>`;
  }).join("");
 

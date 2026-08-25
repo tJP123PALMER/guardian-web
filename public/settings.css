@@ -32,3 +32,20 @@ td input,td select{width:100%;min-width:110px}.pill{display:inline-block;padding
 .toast{position:fixed;right:18px;bottom:18px;z-index:100000;background:#13384b;border:1px solid #4c7590;color:white;padding:11px 14px;border-radius:6px;box-shadow:0 5px 25px #0008}
 .errorCard{border-color:#823947}.errorCard p{color:#ffb7c1}code{font-size:10px;white-space:pre-wrap}
 @media(max-width:900px){.grid.two{grid-template-columns:1fr}.createBar{grid-template-columns:1fr}.sectionHead{display:block}.sectionHead button{margin-top:8px}}
+
+/* Guardian Configuration v5 */
+.configGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.configGrid .wide{grid-column:1/-1}
+.formGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.formGrid label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#8fb4c8}
+.formGrid input,.formGrid select{width:100%}
+.toggleList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.toggleList label{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #294b5d;border-radius:5px;background:#0a202b}
+.configSummary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.configSummary div{padding:12px;border:1px solid #2a4b5e;border-radius:6px;background:#091c27}
+.configSummary b{display:block;font-size:28px}.configSummary span{font-size:10px;color:#87a8ba;text-transform:uppercase;letter-spacing:.06em}
+.statusBadge{padding:5px 8px;border-radius:999px;border:1px solid #4b6674;font-size:10px;font-weight:800}
+.statusBadge.ok{color:#74d8a5;border-color:#2f7d5b}.statusBadge.warn{color:#f0cd70;border-color:#8d6d28}
+.saveBar{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.saveBar h3{margin-bottom:4px}.saveBar p{margin:0;color:#8aa9bb}
+@media(max-width:1000px){.configGrid,.formGrid,.toggleList{grid-template-columns:1fr}.configSummary{grid-template-columns:repeat(2,1fr)}.saveBar{display:block}.saveBar button{margin-top:12px}}

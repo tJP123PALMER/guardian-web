@@ -40,7 +40,8 @@ function showApp(){$("loginView").classList.add("hidden");$("appView").classList
 async function refreshAll(){
   setContent(`<div class="card"><h3>Loading Guardian data…</h3></div>`);
   try{
-    const [c,o]=await Promise.all([api("/api/admin/config"),api("/api/admin/operational")]);
+    const c=await api("/api/admin/config");
+    let o={};try{o=await api("/api/admin/operational")}catch(_){const b=await api("/api/admin/baseline");o={stations:b.stations||[],appliances:b.appliances||[],applianceTypes:c.config?.applianceTypes||[],skills:c.config?.skills||[],statuses:c.config?.statuses||[],stationMapPositions:{},stationMapLocked:false,summary:{stations:(b.stations||[]).length,appliances:(b.appliances||[]).length,booked:0,incidents:0,calls999:0,standby:0,fivemConnected:false,coreMode:"STANDALONE"}}}
     config=c.config||{};operational=o||{};
     config.stations=operational.stations||config.stations||[];
     config.appliances=operational.appliances||config.appliances||[];
@@ -120,14 +121,157 @@ async function renderMap(){
 }
 
 function renderConfig(){
-  const types=(config.applianceTypes||[]).join("\n"),skills=(config.skills||[]).join("\n"),statuses=(config.statuses||[]).join("\n");
-  setContent(`<div class="grid two">
-    <div class="card"><h3>Appliance Types</h3><p>One per line.</p><textarea id="cfgTypes" rows="10">${esc(types)}</textarea></div>
-    <div class="card"><h3>Skills / Capabilities</h3><p>One per line.</p><textarea id="cfgSkills" rows="10">${esc(skills)}</textarea></div>
-    <div class="card"><h3>Status Options</h3><p>Statuses available to Guardian.</p><textarea id="cfgStatuses" rows="13">${esc(statuses)}</textarea></div>
-    <div class="card"><h3>Integration</h3><p><b>Current mode:</b> ${esc(operational.summary?.coreMode||"UNKNOWN")}</p><p>FiveM integration is optional. Guardian Core continues operating in standalone mode when FiveM is offline.</p></div>
-  </div><div class="card"><button id="saveConfig">SAVE CONFIGURATION</button></div>`);
-  $("saveConfig").onclick=async()=>{config.applianceTypes=$("cfgTypes").value.split("\n").map(x=>x.trim()).filter(Boolean);config.skills=$("cfgSkills").value.split("\n").map(x=>x.trim()).filter(Boolean);config.statuses=$("cfgStatuses").value.split("\n").map(x=>x.trim()).filter(Boolean);await api("/api/admin/config",{method:"POST",body:JSON.stringify({config})});notify("Configuration saved");await refreshAll()}
+  config.general ||= {};
+  config.alerts ||= {};
+  const g=config.general,a=config.alerts;
+
+  setContent(`
+  <div class="configGrid">
+
+    <div class="card">
+      <div class="eyebrow">OPERATIONAL CORE</div>
+      <h3>Guardian Core</h3>
+      <div class="formGrid">
+        <label>Standalone Mode
+          <select id="cfgStandalone">
+            <option value="true" ${g.standaloneEnabled!==false?"selected":""}>Enabled</option>
+            <option value="false" ${g.standaloneEnabled===false?"selected":""}>Disabled</option>
+          </select>
+        </label>
+
+        <label>FiveM Integration
+          <select id="cfgFiveM">
+            <option value="true" ${g.fivemEnabled!==false?"selected":""}>Enabled</option>
+            <option value="false" ${g.fivemEnabled===false?"selected":""}>Disabled</option>
+          </select>
+        </label>
+
+        <label>Reconnect Behaviour
+          <select id="cfgPreserve">
+            <option value="true" ${g.preserveStandaloneState!==false?"selected":""}>Preserve standalone incidents/state</option>
+            <option value="false" ${g.preserveStandaloneState===false?"selected":""}>Prefer FiveM snapshot</option>
+          </select>
+        </label>
+
+        <label>Current Mode
+          <input value="${esc(operational.summary?.coreMode||"UNKNOWN")}" disabled>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">INCIDENT CONTROL</div>
+      <h3>Incident Defaults</h3>
+      <div class="formGrid">
+        <label>Incident Numbering
+          <select id="cfgNumbering">
+            <option ${g.incidentNumbering==="AUTO"?"selected":""}>AUTO</option>
+            <option ${g.incidentNumbering==="MANUAL"?"selected":""}>MANUAL</option>
+          </select>
+        </label>
+
+        <label>Default Priority
+          <select id="cfgPriority">
+            ${["LOW","NORMAL","HIGH","URGENT"].map(x=>`<option ${String(g.defaultIncidentPriority||"NORMAL").toUpperCase()===x?"selected":""}>${x}</option>`).join("")}
+          </select>
+        </label>
+
+        <label>Default Appliance Status
+          <select id="cfgDefaultStatus">
+            ${(config.statuses||[]).map(x=>`<option ${String(g.defaultApplianceStatus||"Home Station")===x?"selected":""}>${esc(x)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">ALERTING</div>
+      <h3>Sounds & Notifications</h3>
+      <div class="toggleList">
+        <label><input id="cfgTurnoutSound" type="checkbox" ${a.turnoutSound!==false?"checked":""}> Turnout alert sound</label>
+        <label><input id="cfgMessageSound" type="checkbox" ${a.messageSound!==false?"checked":""}> New message sound</label>
+        <label><input id="cfgStandbySound" type="checkbox" ${a.standbySound!==false?"checked":""}> Standby alert sound</label>
+        <label><input id="cfgBrowserNotify" type="checkbox" ${a.browserNotifications===true?"checked":""}> Browser notifications</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">APPLIANCE SETUP</div>
+      <h3>Appliance Types</h3>
+      <p>One type per line. These feed the Appliance editor.</p>
+      <textarea id="cfgTypes" rows="10">${esc((config.applianceTypes||[]).join("\n"))}</textarea>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">CAPABILITIES</div>
+      <h3>Skills / Capabilities</h3>
+      <p>One skill per line.</p>
+      <textarea id="cfgSkills" rows="10">${esc((config.skills||[]).join("\n"))}</textarea>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">STATUS BOARD</div>
+      <h3>Appliance Statuses</h3>
+      <p>One status per line. Keep operational wording consistent with MDT.</p>
+      <textarea id="cfgStatuses" rows="12">${esc((config.statuses||[]).join("\n"))}</textarea>
+    </div>
+
+    <div class="card wide">
+      <div class="sectionHead">
+        <div>
+          <div class="eyebrow">SYSTEM SUMMARY</div>
+          <h3>Live Configuration</h3>
+        </div>
+        <span class="statusBadge ${operational.summary?.fivemConnected?"ok":"warn"}">
+          ${operational.summary?.fivemConnected?"FIVEM CONNECTED":"STANDALONE"}
+        </span>
+      </div>
+      <div class="configSummary">
+        <div><b>${config.stations?.length||0}</b><span>Stations</span></div>
+        <div><b>${config.appliances?.length||0}</b><span>Appliances</span></div>
+        <div><b>${config.applianceTypes?.length||0}</b><span>Types</span></div>
+        <div><b>${config.skills?.length||0}</b><span>Skills</span></div>
+        <div><b>${config.statuses?.length||0}</b><span>Statuses</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card saveBar">
+    <div>
+      <h3>Save Guardian Configuration</h3>
+      <p>Changes here become Guardian's shared configuration for Control, MDT and standalone operation.</p>
+    </div>
+    <button id="saveConfig">SAVE CONFIGURATION</button>
+  </div>`);
+
+  $("saveConfig").onclick=async()=>{
+    config.applianceTypes=$("cfgTypes").value.split("\n").map(x=>x.trim()).filter(Boolean);
+    config.skills=$("cfgSkills").value.split("\n").map(x=>x.trim()).filter(Boolean);
+    config.statuses=$("cfgStatuses").value.split("\n").map(x=>x.trim()).filter(Boolean);
+
+    config.general={
+      ...config.general,
+      standaloneEnabled:$("cfgStandalone").value==="true",
+      fivemEnabled:$("cfgFiveM").value==="true",
+      preserveStandaloneState:$("cfgPreserve").value==="true",
+      incidentNumbering:$("cfgNumbering").value,
+      defaultIncidentPriority:$("cfgPriority").value,
+      defaultApplianceStatus:$("cfgDefaultStatus").value
+    };
+
+    config.alerts={
+      ...config.alerts,
+      turnoutSound:$("cfgTurnoutSound").checked,
+      messageSound:$("cfgMessageSound").checked,
+      standbySound:$("cfgStandbySound").checked,
+      browserNotifications:$("cfgBrowserNotify").checked
+    };
+
+    await api("/api/admin/config",{method:"POST",body:JSON.stringify({config})});
+    notify("Guardian configuration saved");
+    await refreshAll();
+  };
 }
 
 async function renderUsers(){
