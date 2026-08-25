@@ -378,7 +378,7 @@ async function renderControlMap(){
  const stationMarkers=CONTROL_MAP_STATIONS.map(s=>{
    const p=index.get(String(s.postal));if(!p)return "";
    const pt=controlMapPoint(p.x,p.y);
-   return `<button class="mapMarker mapStationMarker" style="left:${pt.x}%;top:${pt.y}%"
+   return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
      data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)}">
      <span>FS</span></button>`;
  }).join("");
@@ -442,11 +442,43 @@ async function renderControlMap(){
    selection.querySelector(".mapOpenQueue")?.addEventListener("click",()=>setControlView("calls"));
  };
 
- const showIncident=id=>{
+ 
+ function addStationPositionControls(stationName){
+   const st=(state.stations||[]).find(v=>String(v.name||"")===String(stationName||""));
+   if(!st||!selection)return;
+   selection.querySelector(".stationPositionControls")?.remove();
+   const box=document.createElement("div");
+   box.className=`mapPositionState stationPositionControls ${st.mapAdjusted?"adjusted":""}`;
+   box.innerHTML=st.mapAdjusted
+     ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
+     : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
+   selection.appendChild(box);
+   const reset=box.querySelector("[data-reset-station-position]");
+   if(reset)reset.onclick=async()=>{
+     await command("resetStationMapPosition",{stationName});
+     delete st.mapXPercent;delete st.mapYPercent;delete st.mapAdjusted;
+     renderControlMap();
+     showStation(stationName);
+     addStationPositionControls(stationName);
+   };
+ }
+
+const showIncident=id=>{
    const inc=(state.incidents||[]).find(x=>String(x.id||"")===String(id||""));if(!inc)return;
    selection.innerHTML=`<div class="mapDetail"><span class="panelKicker">LIVE INCIDENT</span><h3>INC #${esc(String(inc.id||""))}</h3><p>${esc(inc.type||"Incident")}</p><p><strong>Postal</strong><br>${esc(inc.postal||"—")}</p><div class="mapPositionState ${inc.mapAdjusted?"adjusted":""}">${inc.mapAdjusted?"CONTROL POSITION SAVED":"POSTAL ESTIMATE · DRAG BLUE MARKER TO REFINE"}</div></div>`;
  };
- overlay.querySelectorAll("[data-map-station]").forEach(b=>b.onclick=()=>showStation(b.dataset.mapStation));
+ overlay.querySelectorAll("[data-map-station]").forEach(b=>dragMapMarker(b,{
+   onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
+   onDrop:async(x,y)=>{
+     const stationName=String(b.dataset.mapStation||"");
+     const st=(state.stations||[]).find(v=>String(v.name||"")===stationName);
+     if(st)Object.assign(st,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});
+     await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
+     renderControlMap();
+     showStation(stationName);
+     addStationPositionControls(stationName);
+   }
+ }));
  overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{
    onSelect:()=>showCall(b.dataset.mapCall),
    onDrop:async(x,y)=>{const callId=String(b.dataset.mapCall||"");const c=(state.calls999||[]).find(v=>String(v.id||"")===callId);if(c)Object.assign(c,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("set999MapPosition",{callId,mapXPercent:x,mapYPercent:y});showCall(callId);}

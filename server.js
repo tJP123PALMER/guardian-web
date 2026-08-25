@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,32 @@ function removeUnitFromOtherIncidents(callsign,newIncidentId){
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+
+
+const guardianDataDir=process.env.GUARDIAN_DATA_DIR||path.join(__dirname,"data");
+try{fs.mkdirSync(guardianDataDir,{recursive:true});}catch(_){}
+const stationMapPositionsFile=path.join(guardianDataDir,"station-map-positions.json");
+let stationMapPositions={};
+try{
+  if(fs.existsSync(stationMapPositionsFile)){
+    stationMapPositions=JSON.parse(fs.readFileSync(stationMapPositionsFile,"utf8"))||{};
+  }
+}catch(e){
+  console.warn("[Guardian Web] station map positions load failed:",e.message);
+  stationMapPositions={};
+}
+function stationMapKey(name){return String(name||"").trim().toLowerCase();}
+function saveStationMapPositions(){
+  try{fs.writeFileSync(stationMapPositionsFile,JSON.stringify(stationMapPositions,null,2),"utf8");}
+  catch(e){console.error("[Guardian Web] station map positions save failed:",e.message);}
+}
+function applySavedStationPositions(){
+  if(!Array.isArray(state?.stations))return;
+  state.stations=state.stations.map(st=>{
+    const pos=stationMapPositions[stationMapKey(st?.name)];
+    return pos?{...st,...pos,mapAdjusted:true}:st;
+  });
+}
 
 const manualMapPositions={calls:new Map(),incidents:new Map()};
 
@@ -309,6 +336,7 @@ app.get("/healthz",(_req,res)=>res.json({
 
 app.get("/api/state",(_req,res)=>{
   res.setHeader("Cache-Control","no-store");
+  applySavedStationPositions(); // persistent station map positions
   res.json({ok:true,state});
 });
 
@@ -433,7 +461,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition","setStationMapPosition","resetStationMapPosition"
 ]);
 
 function queueCommand(action,data={}){
@@ -578,6 +606,41 @@ app.post("/api/command",(req,res)=>{
   let action=String(req.body?.action||"");
   const data=req.body?.data||{};
   action=aliases[action]||action;
+
+  if(action==="setStationMapPosition"){
+    const stationName=String(data.stationName||data.name||"").trim();
+    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
+    if(!stationName||!Number.isFinite(x)||!Number.isFinite(y)){
+      return res.status(400).json({ok:false,error:"Valid station and map position required"});
+    }
+    const pos={
+      mapXPercent:Math.max(0,Math.min(100,x)),
+      mapYPercent:Math.max(0,Math.min(100,y)),
+      mapAdjusted:true,
+      mapAdjustedAt:now(),
+      mapAdjustedBy:"CONTROL"
+    };
+    stationMapPositions[stationMapKey(stationName)]=pos;
+    saveStationMapPositions();
+    const st=(state.stations||[]).find(s=>stationMapKey(s.name)===stationMapKey(stationName));
+    if(st)Object.assign(st,pos);
+    touch();
+    return res.json({ok:true,position:pos});
+  }
+
+  if(action==="resetStationMapPosition"){
+    const stationName=String(data.stationName||data.name||"").trim();
+    if(!stationName)return res.status(400).json({ok:false,error:"Station required"});
+    delete stationMapPositions[stationMapKey(stationName)];
+    saveStationMapPositions();
+    const st=(state.stations||[]).find(s=>stationMapKey(s.name)===stationMapKey(stationName));
+    if(st){
+      delete st.mapXPercent;delete st.mapYPercent;delete st.mapAdjusted;
+      delete st.mapAdjustedAt;delete st.mapAdjustedBy;
+    }
+    touch();
+    return res.json({ok:true});
+  }
 
   if(action==="set999MapPosition"){
     const callId=String(data.callId||data.id||"");
