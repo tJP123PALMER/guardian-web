@@ -429,7 +429,7 @@ async function renderControlMap(){
    const pt=saved||(p?{...controlMapPoint(p.x,p.y),adjusted:false}:null);
    if(!pt)return "";
    return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
-     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Drag to position">
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Position managed in Settings">
      <span>FS</span></button>`;
  }).join("");
 
@@ -495,35 +495,9 @@ async function renderControlMap(){
  
  function addStationPositionControls(stationName){
    const saved=savedStationMapPosition(stationName);
-   const locked=state?.stationMapLocked===true;
-   if(!selection)return;
-   selection.querySelector(".stationPositionControls")?.remove();
-
-   const box=document.createElement("div");
-   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""} ${locked?"locked":""}`;
-
-   if(locked){
-     box.innerHTML=saved
-       ? `CONTROL POSITION SAVED · LOCKED`
-       : `POSTAL POSITION · STATIONS LOCKED`;
-   }else{
-     box.innerHTML=saved
-       ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
-       : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
-   }
-
+   const box=document.createElement("div");box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""}`;
+   box.textContent=saved?"STATION POSITION MANAGED IN SETTINGS":"POSTAL POSITION · MANAGED IN SETTINGS";
    selection.appendChild(box);
-
-   const reset=box.querySelector("[data-reset-station-position]");
-   if(reset)reset.onclick=async()=>{
-     if(state?.stationMapLocked===true)return;
-     await command("resetStationMapPosition",{stationName});
-     const key=String(stationName||"").trim().toLowerCase();
-     if(state.stationMapPositions)delete state.stationMapPositions[key];
-     await renderControlMap();
-     showStation(stationName);
-     addStationPositionControls(stationName);
-   };
  }
 
 
@@ -532,47 +506,8 @@ const showIncident=id=>{
    selection.innerHTML=`<div class="mapDetail"><span class="panelKicker">LIVE INCIDENT</span><h3>INC #${esc(String(inc.id||""))}</h3><p>${esc(inc.type||"Incident")}</p><p><strong>Postal</strong><br>${esc(inc.postal||"—")}</p><div class="mapPositionState ${inc.mapAdjusted?"adjusted":""}">${inc.mapAdjusted?"CONTROL POSITION SAVED":"POSTAL ESTIMATE · DRAG BLUE MARKER TO REFINE"}</div></div>`;
  };
  overlay.querySelectorAll("[data-map-station]").forEach(b=>{
-   if(state?.stationMapLocked===true){
-     b.classList.add("stationLocked");
-     b.onclick=()=>{
-       showStation(b.dataset.mapStation);
-       addStationPositionControls(b.dataset.mapStation);
-     };
-     return;
-   }
-
-   dragMapMarker(b,{
-     onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
-     onDrop:async(x,y)=>{
-       if(state?.stationMapLocked===true)return;
-
-       const stationName=String(b.dataset.mapStation||"");
-       const key=stationName.trim().toLowerCase();
-
-       state.stationMapPositions ||= {};
-       state.stationMapPositions[key]={
-         mapXPercent:x,
-         mapYPercent:y,
-         mapAdjusted:true,
-         mapAdjustedBy:"CONTROL",
-         mapAdjustedAt:new Date().toISOString()
-       };
-
-       b.style.left=`${x}%`;
-       b.style.top=`${y}%`;
-       b.classList.add("mapAdjusted");
-
-       showStation(stationName);
-       addStationPositionControls(stationName);
-
-       try{
-         await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
-       }catch(err){
-         console.error("Station position save failed",err);
-         alert(`Station position could not be saved: ${err?.message||err}`);
-       }
-     }
-   });
+   b.classList.toggle("stationLocked",state?.stationMapLocked===true);
+   b.onclick=()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);};
  });
  overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{
    onSelect:()=>showCall(b.dataset.mapCall),

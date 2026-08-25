@@ -1,108 +1,37 @@
-
 const $=id=>document.getElementById(id);
-let me=null,config=null,active="overview";
-
-async function api(url,opt={}){
-  const r=await fetch(url,{headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
-  return data;
-}
-async function boot(){
-  try{
-    const d=await api("/api/admin/me");
-    me=d.user;showApp();await loadConfig();
-  }catch{}
-}
-$("loginBtn").onclick=async()=>{
-  try{
-    const d=await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("loginUser").value,password:$("loginPass").value})});
-    me=d.user;$("loginError").textContent="";showApp();await loadConfig();
-  }catch(e){$("loginError").textContent=e.message}
-};
+let me=null,config=null,operational=null,active="overview";
+const esc=v=>String(v??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(url,opt={}){const r=await fetch(url,{headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);return data}
+async function boot(){try{const d=await api("/api/admin/me");me=d.user;showApp();await refreshAll()}catch{}}
+$("loginBtn").onclick=async()=>{try{const d=await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("loginUser").value,password:$("loginPass").value})});me=d.user;$("loginError").textContent="";showApp();await refreshAll()}catch(e){$("loginError").textContent=e.message}};
 $("logoutBtn").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};
 document.querySelectorAll(".nav").forEach(b=>b.onclick=()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");active=b.dataset.tab;$("pageTitle").textContent=b.textContent;render()});
-function showApp(){
-  $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");
-  $("who").innerHTML=`${me.displayName||me.username} · <span class="badge ${me.role==="owner"?"owner":""}">${me.role.toUpperCase()}</span>`;
-}
-async function loadConfig(){config=(await api("/api/admin/config")).config;render()}
-async function save(){await api("/api/admin/config",{method:"POST",body:JSON.stringify({config})});alert("Saved")}
-function render(){
-  if(!config)return;
-  if(active==="overview")return renderOverview();
-  if(active==="stations")return renderStations();
-  if(active==="appliances")return renderAppliances();
-  if(active==="map")return renderMap();
-  if(active==="config")return renderConfig();
-  if(active==="users")return renderUsers();
-  if(active==="backup")return renderBackup();
-  if(active==="audit")return renderAudit();
-}
-function renderOverview(){
-  $("content").innerHTML=`<div class="grid">
-    <div class="card"><h3>Stations</h3><b>${config.stations?.length||0}</b></div>
-    <div class="card"><h3>Appliances</h3><b>${config.appliances?.length||0}</b></div>
-    <div class="card"><h3>Access</h3><p>Owner / Creator account is protected.</p></div>
-    <div class="card"><h3>Operational Map</h3><p>Station editing is managed here, not on the main Control map.</p></div>
-  </div>`;
-}
-function renderStations(){
-  $("content").innerHTML=`<div class="card"><h3>Stations</h3>
-    <div class="row"><input id="stationName" placeholder="Station name"><input id="stationPostal" placeholder="Postal"><button id="addStation">ADD</button></div>
-    <div id="stationList"></div><button id="saveStations">SAVE CHANGES</button></div>`;
-  const list=$("stationList");
-  (config.stations||[]).forEach((s,i)=>{const r=document.createElement("div");r.className="listRow";r.innerHTML=`<input value="${s.name||""}" data-i="${i}" data-k="name"><input value="${s.postal||""}" data-i="${i}" data-k="postal"><button data-del="${i}">DELETE</button>`;list.appendChild(r)});
-  list.querySelectorAll("input").forEach(x=>x.oninput=()=>config.stations[+x.dataset.i][x.dataset.k]=x.value);
-  list.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{config.stations.splice(+b.dataset.del,1);renderStations()});
-  $("addStation").onclick=()=>{const n=$("stationName").value.trim(),p=$("stationPostal").value.trim();if(!n)return;config.stations||=[];config.stations.push({name:n,postal:p});renderStations()};
-  $("saveStations").onclick=save;
-}
-function renderAppliances(){
-  $("content").innerHTML=`<div class="card"><h3>Appliances / Callsigns</h3>
-  <div class="row"><input id="appCs" placeholder="Callsign"><input id="appStation" placeholder="Home station"><select id="appType">${(config.applianceTypes||[]).map(x=>`<option>${x}</option>`).join("")}</select><button id="addApp">ADD</button></div>
-  <div id="appList"></div><button id="saveApps">SAVE CHANGES</button></div>`;
-  const list=$("appList");
-  (config.appliances||[]).forEach((a,i)=>{const r=document.createElement("div");r.className="listRow";r.innerHTML=`<input value="${a.callsign||""}" data-i="${i}" data-k="callsign"><input value="${a.station||""}" data-i="${i}" data-k="station"><button data-del="${i}">DELETE</button>`;list.appendChild(r)});
-  list.querySelectorAll("input").forEach(x=>x.oninput=()=>config.appliances[+x.dataset.i][x.dataset.k]=x.value);
-  list.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{config.appliances.splice(+b.dataset.del,1);renderAppliances()});
-  $("addApp").onclick=()=>{const c=$("appCs").value.trim().toUpperCase();if(!c)return;config.appliances||=[];config.appliances.push({callsign:c,station:$("appStation").value.trim(),type:$("appType").value});renderAppliances()};
-  $("saveApps").onclick=save;
-}
-function renderMap(){
-  $("content").innerHTML=`<div class="card"><h3>Station Map Editor</h3><p>Drag station markers here. Main Control map stays operational/read-only.</p><div id="stationMap" class="mapCanvas"></div><button id="saveMap">SAVE MAP POSITIONS</button></div>`;
-  const canvas=$("stationMap");config.map||={stations:{}};config.map.stations||={};
-  (config.stations||[]).forEach((s,i)=>{
-    const pos=config.map.stations[s.name]||{x:50+(i%4)*4,y:50+Math.floor(i/4)*4};
-    const m=document.createElement("div");m.className="stationMarker";m.textContent="FS";m.title=s.name;m.style.left=pos.x+"%";m.style.top=pos.y+"%";
-    let dragging=false;
-    m.onpointerdown=e=>{dragging=true;m.setPointerCapture?.(e.pointerId)};
-    m.onpointermove=e=>{if(!dragging)return;const r=canvas.getBoundingClientRect();const x=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)),y=Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100));m.style.left=x+"%";m.style.top=y+"%";config.map.stations[s.name]={x,y}};
-    m.onpointerup=()=>dragging=false;canvas.appendChild(m);
-  });
-  $("saveMap").onclick=save;
-}
-function renderConfig(){
-  $("content").innerHTML=`<div class="grid">
-    <div class="card"><h3>Appliance Types</h3><textarea id="types" rows="8">${(config.applianceTypes||[]).join("\n")}</textarea></div>
-    <div class="card"><h3>Status Options</h3><textarea id="statuses" rows="12">${(config.statuses||[]).join("\n")}</textarea></div>
-  </div><button id="saveConfig">SAVE CONFIGURATION</button>`;
-  $("saveConfig").onclick=()=>{config.applianceTypes=$("types").value.split("\n").map(x=>x.trim()).filter(Boolean);config.statuses=$("statuses").value.split("\n").map(x=>x.trim()).filter(Boolean);save()};
-}
-async function renderUsers(){
-  $("content").innerHTML=`<div class="card"><h3>Users & Access</h3><div class="row"><input id="newUser" placeholder="Username"><input id="newDisplay" placeholder="Display name"><input id="newPass" type="password" placeholder="Password 8+ chars"><select id="newRole"><option>admin</option><option>dev</option><option>readonly</option></select><button id="createUser">CREATE</button></div><div id="usersList">Loading...</div></div>`;
-  const data=await api("/api/admin/users");const host=$("usersList");host.innerHTML="";
-  data.users.forEach(u=>{const r=document.createElement("div");r.className="listRow";r.innerHTML=`<div><b>${u.displayName||u.username}</b><br><small>${u.username}</small></div><span class="badge ${u.role==="owner"?"owner":""}">${u.role.toUpperCase()}</span>${u.protected?`<span>PROTECTED OWNER</span>`:`<button data-del="${u.username}">DELETE</button>`}`;host.appendChild(r)});
-  host.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("Delete user?")){await api("/api/admin/users/"+encodeURIComponent(b.dataset.del),{method:"DELETE"});renderUsers()}});
-  $("createUser").onclick=async()=>{await api("/api/admin/users",{method:"POST",body:JSON.stringify({username:$("newUser").value,displayName:$("newDisplay").value,password:$("newPass").value,role:$("newRole").value})});renderUsers()};
-}
-function renderBackup(){
-  $("content").innerHTML=`<div class="grid"><div class="card"><h3>Export</h3><p>Download current Guardian configuration.</p><button id="exportBtn">DOWNLOAD BACKUP</button></div><div class="card"><h3>Restore</h3><textarea id="restoreData" rows="12" placeholder="Paste backup JSON"></textarea><button id="restoreBtn">RESTORE</button></div></div>`;
-  $("exportBtn").onclick=()=>location.href="/api/admin/export";
-  $("restoreBtn").onclick=async()=>{const data=JSON.parse($("restoreData").value);await api("/api/admin/import",{method:"POST",body:JSON.stringify(data)});await loadConfig()};
-}
-async function renderAudit(){
-  $("content").innerHTML=`<div class="card"><h3>Audit Log</h3><div id="auditList">Loading...</div></div>`;
-  const a=(await api("/api/admin/audit")).audit;$("auditList").innerHTML=a.map(x=>`<div class="listRow"><span>${new Date(x.at).toLocaleString()}</span><b>${x.actor}</b><span>${x.action}</span></div>`).join("");
-}
+function showApp(){$("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("who").innerHTML=`${esc(me.displayName||me.username)} · <span class="badge ${me.role==="owner"?"owner":""}">${esc(me.role.toUpperCase())}</span>`}
+async function refreshAll(){const [c,o]=await Promise.all([api("/api/admin/config"),api("/api/admin/operational")]);config=c.config;operational=o;render()}
+function render(){if(!config||!operational)return;if(active==="overview")return renderOverview();if(active==="stations")return renderStations();if(active==="appliances")return renderAppliances();if(active==="map")return renderMap();if(active==="config")return renderConfig();if(active==="users")return renderUsers();if(active==="backup")return renderBackup();if(active==="audit")return renderAudit()}
+function metric(title,value,sub=""){return `<div class="metric card"><span>${esc(title)}</span><b>${esc(value)}</b><small>${esc(sub)}</small></div>`}
+function renderOverview(){const s=operational.state||{},liveApps=(operational.appliances||[]).filter(a=>a.live).length;$("content").innerHTML=`<div class="grid metrics">${metric("Configured Stations",operational.stations.length,"Guardian configuration")}${metric("Configured Appliances",operational.appliances.length,`${liveApps} currently live`)}${metric("Open Incidents",s.incidents||0,"Current operational incidents")}${metric("999 Queue",s.calls999||0,"Awaiting Control action")}${metric("Standby Moves",s.standbyMoves||0,"Active standby cover")}${metric("Web MDT Sessions",s.bookings||0,"Booked web appliances")}</div><div class="grid"><div class="card"><h3>Guardian Core</h3><div class="statusLine"><i class="dot ok"></i><b>ONLINE</b></div><p>Mode: <strong>${esc(s.coreMode||"STANDALONE")}</strong></p><p>FiveM: <strong>${s.connected?"CONNECTED":"OFFLINE / OPTIONAL"}</strong></p><p class="muted">Control and Web MDT continue through Guardian Core when FiveM is unavailable.</p></div><div class="card"><h3>Configuration Source</h3><p>Stations, appliances, skills and station-map positions are managed here and applied to the same operational state used by Control and MDT.</p><button id="refreshOverview">REFRESH LIVE DATA</button></div></div>`;$("refreshOverview").onclick=refreshAll}
+function stationRows(){const map=new Map((operational.stations||[]).map(s=>[s.name.toLowerCase(),{...s}]));for(const s of config.stations||[]){if(s?.name)map.set(String(s.name).toLowerCase(),{...(map.get(String(s.name).toLowerCase())||{}),...s})}return [...map.values()].sort((a,b)=>String(a.name).localeCompare(String(b.name)))}
+function renderStations(){let rows=stationRows();$("content").innerHTML=`<div class="card"><div class="sectionHead"><div><h3>Stations</h3><p>These are the stations used by Guardian Control, MDT and appliance assignments.</p></div><button id="addStation">+ ADD STATION</button></div><div class="tableWrap"><table><thead><tr><th>Station</th><th>Postal</th><th>Appliances</th><th>Active</th><th></th></tr></thead><tbody id="stationBody"></tbody></table></div><div class="actions"><button id="saveStations" class="primary">SAVE STATIONS</button></div></div>`;const body=$("stationBody");
+function draw(){body.innerHTML=rows.map((s,i)=>`<tr><td><input data-i="${i}" data-k="name" value="${esc(s.name)}"></td><td><input data-i="${i}" data-k="postal" value="${esc(s.postal||"")}" placeholder="Postal"></td><td><span class="countPill">${Number(s.appliances||0)}</span></td><td><label class="switch"><input type="checkbox" data-active="${i}" ${s.active!==false?"checked":""}><span></span></label></td><td><button class="danger small" data-del="${i}">REMOVE</button></td></tr>`).join("");body.querySelectorAll("input[data-k]").forEach(x=>x.oninput=()=>rows[+x.dataset.i][x.dataset.k]=x.value);body.querySelectorAll("[data-active]").forEach(x=>x.onchange=()=>rows[+x.dataset.active].active=x.checked);body.querySelectorAll("[data-del]").forEach(x=>x.onclick=()=>{rows.splice(+x.dataset.del,1);draw()})}draw();
+$("addStation").onclick=()=>{rows.push({name:"New Fire Station",postal:"",active:true,appliances:0});draw()};$("saveStations").onclick=async()=>{await api("/api/admin/stations",{method:"POST",body:JSON.stringify({stations:rows.map(({name,postal,active})=>({name,postal,active}))})});await refreshAll();toast("Stations saved")}}
+function applianceRows(){const map=new Map((operational.appliances||[]).map(a=>[a.callsign.toUpperCase(),{...a}]));for(const a of config.appliances||[]){if(a?.callsign)map.set(String(a.callsign).toUpperCase(),{...(map.get(String(a.callsign).toUpperCase())||{}),...a})}return [...map.values()].sort((a,b)=>a.callsign.localeCompare(b.callsign))}
+function renderAppliances(){let rows=applianceRows();const stations=stationRows().filter(s=>s.active!==false).map(s=>s.name);const types=config.applianceTypes||[];$("content").innerHTML=`<div class="card"><div class="sectionHead"><div><h3>Appliances / Callsigns</h3><p>Edits here feed the callsign station and appliance type data used across Guardian.</p></div><button id="addAppliance">+ ADD APPLIANCE</button></div><div class="tableWrap"><table><thead><tr><th>Callsign</th><th>Home Station</th><th>Type / Skill</th><th>Live Status</th><th>Active</th><th></th></tr></thead><tbody id="applianceBody"></tbody></table></div><div class="actions"><button id="saveAppliances" class="primary">SAVE APPLIANCES</button></div></div>`;const body=$("applianceBody");
+function opts(arr,val){return [...new Set([val,...arr].filter(Boolean))].map(x=>`<option ${x===val?"selected":""}>${esc(x)}</option>`).join("")}
+function draw(){body.innerHTML=rows.map((a,i)=>`<tr><td><input class="mono" data-i="${i}" data-k="callsign" value="${esc(a.callsign)}"></td><td><select data-i="${i}" data-k="station"><option value="">Unassigned</option>${opts(stations,a.station)}</select></td><td><select data-i="${i}" data-k="type">${opts(types,a.type)}</select></td><td><span class="statusPill ${a.live?"live":""}">${esc(a.status||"OFF RUN")}</span></td><td><label class="switch"><input type="checkbox" data-active="${i}" ${a.active!==false?"checked":""}><span></span></label></td><td><button class="danger small" data-del="${i}">REMOVE</button></td></tr>`).join("");body.querySelectorAll("[data-k]").forEach(x=>x.onchange=()=>rows[+x.dataset.i][x.dataset.k]=x.value);body.querySelectorAll("input[data-k]").forEach(x=>x.oninput=()=>rows[+x.dataset.i][x.dataset.k]=x.value);body.querySelectorAll("[data-active]").forEach(x=>x.onchange=()=>rows[+x.dataset.active].active=x.checked);body.querySelectorAll("[data-del]").forEach(x=>x.onclick=()=>{rows.splice(+x.dataset.del,1);draw()})}draw();
+$("addAppliance").onclick=()=>{rows.push({callsign:"NEWP1",station:stations[0]||"",type:types[0]||"Pump",status:"OFF RUN",active:true,live:false,skills:[]});draw()};$("saveAppliances").onclick=async()=>{await api("/api/admin/appliances",{method:"POST",body:JSON.stringify({appliances:rows.map(a=>({callsign:String(a.callsign||"").toUpperCase(),station:a.station,type:a.type,skills:a.skills||[a.type],active:a.active!==false}))})});await refreshAll();toast("Appliances saved")}}
+async function renderMap(){const stations=stationRows().filter(s=>s.active!==false);const positions=operational.state.stationMapPositions||{};const locked=operational.state.stationMapLocked===true;$("content").innerHTML=`<div class="card mapCard"><div class="sectionHead"><div><h3>Station Map</h3><p>Station placement is edited only here. 999 and incident markers remain movable in Control.</p></div><div class="mapActions"><button id="mapLock" class="${locked?"warning":""}">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button><button id="saveMap" class="primary" ${locked?"disabled":""}>SAVE POSITIONS</button></div></div><div class="mapLegend"><span><i class="legendStation"></i> Fire Station</span><span>${locked?"Positions locked":"Drag FS markers to exact positions"}</span></div><div id="stationMap" class="settingsMap"></div><div id="mapList" class="mapStationList"></div></div>`;const canvas=$("stationMap"),pending=new Map();
+let postalIndex=new Map();try{const raw=await fetch("/control/assets/postals.json",{cache:"no-store"}).then(r=>r.json());const entries=Array.isArray(raw)?raw:Object.values(raw||{});postalIndex=new Map(entries.map(p=>[String(p.code||p.postal||""),{x:Number(p.x),y:Number(p.y)}]))}catch{}const B={minX:-3427.08984375,maxX:3751.1640625,minY:-3779.6020520333,maxY:6990.4082043770};const world=p=>({x:((p.x-B.minX)/(B.maxX-B.minX))*100,y:((B.maxY-p.y)/(B.maxY-B.minY))*100});
+for(const [i,s] of stations.entries()){const key=s.name.trim().toLowerCase(),saved=positions[key],pp=postalIndex.get(String(s.postal||""));const pos=saved?{x:+saved.mapXPercent,y:+saved.mapYPercent}:pp?world(pp):{x:50+(i%4)*3,y:50+Math.floor(i/4)*3};const m=document.createElement("button");m.className="settingsStationMarker"+(saved?" adjusted":"");m.style.left=pos.x+"%";m.style.top=pos.y+"%";m.innerHTML=`<span>FS</span><b>${esc(s.name)}</b>`;m.title=s.name+(locked?" · locked":" · drag to position");if(!locked){let drag=false;m.onpointerdown=e=>{if(e.button!==0)return;drag=true;m.setPointerCapture?.(e.pointerId);m.classList.add("dragging")};m.onpointermove=e=>{if(!drag)return;const r=canvas.getBoundingClientRect(),x=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)),y=Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100));m.style.left=x+"%";m.style.top=y+"%";pending.set(s.name,{x,y});m.classList.add("adjusted")};m.onpointerup=()=>{drag=false;m.classList.remove("dragging")};m.onpointercancel=m.onpointerup}canvas.appendChild(m)}
+$("mapList").innerHTML=stations.map(s=>{const saved=positions[s.name.toLowerCase()];return `<div class="mapListRow"><div><b>${esc(s.name)}</b><small>Postal ${esc(s.postal||"—")}</small></div><span>${saved?"SAVED POSITION":"POSTAL POSITION"}</span>${saved&&!locked?`<button class="small" data-reset="${esc(s.name)}">RESET</button>`:""}</div>`}).join("");$("mapList").querySelectorAll("[data-reset]").forEach(b=>b.onclick=async()=>{await api("/api/admin/station-map/position/"+encodeURIComponent(b.dataset.reset),{method:"DELETE"});await refreshAll();toast("Station reset to postal")});
+$("saveMap").onclick=async()=>{for(const [stationName,p] of pending)await api("/api/admin/station-map/position",{method:"POST",body:JSON.stringify({stationName,mapXPercent:p.x,mapYPercent:p.y})});await refreshAll();toast("Station map saved")};$("mapLock").onclick=async()=>{await api("/api/admin/station-map/lock",{method:"POST",body:JSON.stringify({locked:!locked})});await refreshAll();toast(!locked?"Station positions locked":"Station positions unlocked")}}
+function renderConfig(){$("content").innerHTML=`<div class="grid"><div class="card"><h3>Appliance Types / Skills</h3><p class="muted">One per line. These populate appliance configuration.</p><textarea id="types" rows="14">${esc((config.applianceTypes||[]).join("\
+"))}</textarea></div><div class="card"><h3>MDT Status Options</h3><p class="muted">Guardian operational status names.</p><textarea id="statuses" rows="14">${esc((config.statuses||[]).join("\
+"))}</textarea></div><div class="card"><h3>Guardian Core</h3><label>Operating mode<input value="AUTO · FiveM when connected / standalone when offline" disabled></label><label class="checkRow"><input id="allowStandalone" type="checkbox" ${config.general?.allowStandalone!==false?"checked":""}> Allow standalone web operation</label><label class="checkRow"><input id="fivemIntegration" type="checkbox" ${config.general?.fiveMIntegration!==false?"checked":""}> FiveM integration enabled</label></div><div class="card"><h3>Alerts</h3><label class="checkRow"><input id="turnoutSound" type="checkbox" ${config.alerts?.turnoutSound!==false?"checked":""}> Turnout / incident alert sound</label><label class="checkRow"><input id="messageSound" type="checkbox" ${config.alerts?.messageSound!==false?"checked":""}> MDT message alert sound</label><p class="muted">These settings are stored centrally so the MDT/Control alert system can consume them as we continue the standalone conversion.</p></div></div><div class="actions"><button id="saveConfig" class="primary">SAVE CONFIGURATION</button></div>`;$("saveConfig").onclick=async()=>{config.applianceTypes=$("types").value.split("\
+").map(x=>x.trim()).filter(Boolean);config.skills=[...config.applianceTypes];config.statuses=$("statuses").value.split("\
+").map(x=>x.trim()).filter(Boolean);config.general={...(config.general||{}),mode:"AUTO",allowStandalone:$("allowStandalone").checked,fiveMIntegration:$("fivemIntegration").checked};config.alerts={...(config.alerts||{}),turnoutSound:$("turnoutSound").checked,messageSound:$("messageSound").checked};await api("/api/admin/config",{method:"POST",body:JSON.stringify({config})});await refreshAll();toast("Configuration saved")}}
+async function renderUsers(){$("content").innerHTML=`<div class="card"><div class="sectionHead"><div><h3>Users & Access</h3><p>Owner is protected. Admin, Dev and Read-only accounts can be managed here.</p></div></div><div class="userCreate"><input id="newUser" placeholder="Username"><input id="newDisplay" placeholder="Display name"><input id="newPass" type="password" placeholder="Password 8+ chars"><select id="newRole"><option>admin</option><option>dev</option><option>readonly</option></select><button id="createUser">CREATE USER</button></div><div id="usersList">Loading…</div></div>`;const data=await api("/api/admin/users"),host=$("usersList");host.innerHTML=data.users.map(u=>`<div class="userRow"><div><b>${esc(u.displayName||u.username)}</b><small>${esc(u.username)}</small></div><span class="badge ${u.role==="owner"?"owner":""}">${esc(u.role.toUpperCase())}</span><span>${u.protected?"PROTECTED OWNER":""}</span><button class="small" data-pw="${esc(u.username)}">RESET PASSWORD</button>${u.protected?"":`<button class="danger small" data-del="${esc(u.username)}">DELETE</button>`}</div>`).join("");host.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm(`Delete ${b.dataset.del}?`)){await api("/api/admin/users/"+encodeURIComponent(b.dataset.del),{method:"DELETE"});renderUsers()}});host.querySelectorAll("[data-pw]").forEach(b=>b.onclick=async()=>{const pw=prompt(`New password for ${b.dataset.pw} (8+ characters)`);if(!pw)return;await api("/api/admin/users/"+encodeURIComponent(b.dataset.pw)+"/password",{method:"POST",body:JSON.stringify({password:pw})});toast("Password updated")});$("createUser").onclick=async()=>{await api("/api/admin/users",{method:"POST",body:JSON.stringify({username:$("newUser").value,displayName:$("newDisplay").value,password:$("newPass").value,role:$("newRole").value})});renderUsers();toast("User created")}}
+function renderBackup(){$("content").innerHTML=`<div class="grid"><div class="card"><h3>Full Configuration Backup</h3><p>Exports stations, appliances, configuration and saved station-map positions/lock state.</p><button id="exportBtn" class="primary">DOWNLOAD BACKUP</button></div><div class="card"><h3>Restore Backup</h3><p class="muted">Paste a Guardian backup JSON file below. User passwords are not exported.</p><textarea id="restoreData" rows="14" placeholder="Paste backup JSON"></textarea><button id="restoreBtn" class="warning">RESTORE CONFIGURATION</button></div></div>`;$("exportBtn").onclick=()=>location.href="/api/admin/export";$("restoreBtn").onclick=async()=>{if(!confirm("Restore this Guardian configuration?"))return;const data=JSON.parse($("restoreData").value);await api("/api/admin/import",{method:"POST",body:JSON.stringify(data)});await refreshAll();toast("Backup restored")}}
+async function renderAudit(){$("content").innerHTML=`<div class="card"><div class="sectionHead"><div><h3>Audit Log</h3><p>Administrative changes and sign-in activity.</p></div><input id="auditFilter" class="filter" placeholder="Filter actor or action"></div><div id="auditList"></div></div>`;const rows=(await api("/api/admin/audit")).audit;const host=$("auditList");function draw(q=""){q=q.toLowerCase();host.innerHTML=rows.filter(x=>!q||`${x.actor} ${x.action} ${JSON.stringify(x.details||{})}`.toLowerCase().includes(q)).map(x=>`<div class="auditRow"><time>${new Date(x.at).toLocaleString()}</time><b>${esc(x.actor)}</b><span>${esc(x.action.replaceAll("_"," "))}</span><code>${esc(JSON.stringify(x.details||{}))}</code></div>`).join("")||`<div class="empty">No matching audit entries.</div>`}draw();$("auditFilter").oninput=e=>draw(e.target.value)}
+function toast(text){let t=$("adminToast");if(!t){t=document.createElement("div");t.id="adminToast";document.body.appendChild(t)}t.textContent=text;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)}
 boot();
