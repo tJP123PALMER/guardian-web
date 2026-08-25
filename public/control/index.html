@@ -76,7 +76,7 @@
         </div>
         <div class="mapLegend">
           <span><i class="legendStation"></i> Fire Station</span>
-          <span><i class="legendCall"></i> 999 Call</span>
+          <span><i class="legendCall"></i> 999 Call</span><span><i class="legendIncident"></i> Incident</span>
         </div>
       </div>
 
@@ -87,7 +87,7 @@
             <span id="mapZoomLabel" class="mapZoomLabel">100%</span>
             <button type="button" id="mapZoomIn" class="mapToolBtn" title="Zoom in">+</button>
             <button type="button" id="mapZoomReset" class="mapToolBtn mapResetBtn" title="Fit full map">FIT MAP</button>
-            <button type="button" id="mapStationLock" class="mapToolBtn mapStationLockBtn" title="Lock fire-station markers">LOCK STATIONS</button>
+            
           </div>
           <div id="controlMapViewport" class="controlMapViewport">
             <div id="controlMapCanvas" class="controlMapCanvas">
@@ -123,7 +123,7 @@
 
     <section id="view-units" class="view">
       <div class="pageHeader"><div><span class="eyebrow">RESOURCE MANAGEMENT</span><h1>Appliance Board</h1><p>Live signed-on units and configured fleet.</p></div></div>
-      <section class="panel"><div class="table" id="unitTable"></div></section>
+      <section class="panel"><div class="boardToolbar"><input id="unitSearch" placeholder="Search callsign, station or type"><select id="unitLiveFilter"><option value="all">All appliances</option><option value="live">Signed on only</option><option value="off">Off duty only</option></select><select id="unitStatusFilter"><option value="">All statuses</option></select><span id="unitBoardSummary" class="boardSummary"></span></div><div class="table" id="unitTable"></div></section>
     </section>
 
     <section id="view-calls" class="view">

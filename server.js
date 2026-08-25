@@ -31,7 +31,15 @@ const GUARDIAN_OWNER_PASSWORD=String(process.env.GUARDIAN_OWNER_PASSWORD||"");
 const guardianAdminSessions=new Map();
 const guardianAdminAudit=[];
 const guardianAdminUsers=new Map();
-let guardianConfig={
+const guardianAdminDataDir=path.join(__dirname,"data");
+try{fs.mkdirSync(guardianAdminDataDir,{recursive:true})}catch{}
+const guardianConfigFile=path.join(guardianAdminDataDir,"guardian-admin-config.json");
+const guardianUsersFile=path.join(guardianAdminDataDir,"guardian-admin-users.json");
+const guardianAuditFile=path.join(guardianAdminDataDir,"guardian-admin-audit.json");
+function guardianReadJson(file,fallback){try{if(fs.existsSync(file))return JSON.parse(fs.readFileSync(file,"utf8"))}catch(e){console.warn("[Guardian Admin] load failed:",e.message)}return fallback}
+function guardianWriteJson(file,value){try{fs.writeFileSync(file,JSON.stringify(value,null,2),"utf8")}catch(e){console.error("[Guardian Admin] save failed:",e.message)}}
+
+let guardianConfig=guardianReadJson(guardianConfigFile,{
   stations:[{"name":"Berwick Fire Station","postal":"4011","active":true},{"name":"Coldstream Fire Station","postal":"7287","active":true},{"name":"Crewe Toll Fire Station","postal":"7039","active":true},{"name":"McDonald Road Fire Station","postal":"7326","active":true},{"name":"Musselburgh Fire Station","postal":"9092","active":true},{"name":"Sighthill Fire Station","postal":"7246","active":true},{"name":"Dalkeith Fire Station","postal":"","active":true},{"name":"North Berwick Fire Station","postal":"","active":true},{"name":"Tollcross Fire Station","postal":"","active":true},{"name":"Pegswood Fire Station","postal":"","active":true}],
   appliances:[{"callsign":"J01C1","station":"Dalkeith Fire Station","type":"Command Unit","skills":["Command Unit"],"active":true},{"callsign":"J02G1","station":"Musselburgh Fire Station","type":"Wildfire Unit","skills":["Wildfire Unit"],"active":true},{"callsign":"J02G2","station":"Musselburgh Fire Station","type":"Wildfire Unit","skills":["Wildfire Unit"],"active":true},{"callsign":"J02P1","station":"Musselburgh Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"J22Z6","station":"North Berwick Fire Station","type":"Specialist Appliance","skills":["Specialist Appliance"],"active":true},{"callsign":"J27P6","station":"Coldstream Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K01P1","station":"Crewe Toll Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K01P2","station":"Crewe Toll Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K01T1","station":"Crewe Toll Fire Station","type":"Water Carrier","skills":["Water Carrier"],"active":true},{"callsign":"K02A1","station":"McDonald Road Fire Station","type":"Aerial Appliance","skills":["Aerial Appliance"],"active":true},{"callsign":"K02H1","station":"McDonald Road Fire Station","type":"Specialist Appliance","skills":["Specialist Appliance"],"active":true},{"callsign":"K02P1","station":"McDonald Road Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K02P2","station":"McDonald Road Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K06P1","station":"Sighthill Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K06P2","station":"Sighthill Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"K06R1","station":"Sighthill Fire Station","type":"Rescue Appliance","skills":["Rescue Appliance"],"active":true},{"callsign":"K07A1","station":"Tollcross Fire Station","type":"Turntable Ladder","skills":["Turntable Ladder"],"active":true},{"callsign":"N04A1","station":"Pegswood Fire Station","type":"Aerial Appliance","skills":["Aerial Appliance"],"active":true},{"callsign":"N14P1","station":"Berwick Fire Station","type":"Pump","skills":["Pump"],"active":true},{"callsign":"N14P6","station":"Berwick Fire Station","type":"Wildfire Unit","skills":["Wildfire Unit"],"active":true},{"callsign":"N14W1","station":"Berwick Fire Station","type":"Swift Water Rescue","skills":["Swift Water Rescue"],"active":true}],
   applianceTypes:["Pump","Aerial","Rescue","Specialist"],
@@ -44,7 +52,7 @@ let guardianConfig={
   map:{stations:{}},
   alerts:{},
   general:{}
-};
+});
 
 function guardianAdminCookieMap(req){
   const out={};
@@ -86,7 +94,13 @@ function guardianAdminAuditLog(actor,action,details={}){
     actor:String(actor||"SYSTEM"),action:String(action||"UNKNOWN"),details
   });
   guardianAdminAudit.splice(500);
+  guardianWriteJson(guardianAuditFile,guardianAdminAudit);
 }
+const guardianLoadedUsers=guardianReadJson(guardianUsersFile,[]);
+for(const u of Array.isArray(guardianLoadedUsers)?guardianLoadedUsers:[])if(u?.username)guardianAdminUsers.set(String(u.username),u);
+const guardianLoadedAudit=guardianReadJson(guardianAuditFile,[]);
+if(Array.isArray(guardianLoadedAudit))guardianAdminAudit.push(...guardianLoadedAudit.slice(0,500));
+
 function guardianBootstrapOwner(){
   if(guardianAdminUsers.has(GUARDIAN_OWNER_USERNAME))return;
   if(!GUARDIAN_OWNER_PASSWORD)return;
@@ -100,6 +114,7 @@ function guardianBootstrapOwner(){
     passwordHash:pw.hash,
     createdAt:new Date().toISOString()
   });
+  guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog("SYSTEM","OWNER_BOOTSTRAPPED",{username:GUARDIAN_OWNER_USERNAME});
 }
 guardianBootstrapOwner();
@@ -168,6 +183,64 @@ app.get("/api/admin/baseline",guardianRequireAdmin("settings.view"),(req,res)=>{
   applyGuardianBaselineToState();
   res.json({ok:true,stations:guardianConfig.stations||[],appliances:guardianConfig.appliances||[],callSignStations:state.callSignStations,applianceSkills:state.applianceSkills});
 });
+
+app.post("/api/admin/station-map/position",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
+  const stationName=String(req.body?.stationName||"").trim();
+  const x=Number(req.body?.mapXPercent),y=Number(req.body?.mapYPercent);
+  if(!stationName||!Number.isFinite(x)||!Number.isFinite(y)){
+    return res.status(400).json({ok:false,error:"Valid stationName, mapXPercent and mapYPercent required"});
+  }
+  const pos={
+    mapXPercent:Math.max(0,Math.min(100,x)),
+    mapYPercent:Math.max(0,Math.min(100,y)),
+    mapAdjusted:true,
+    mapAdjustedAt:now(),
+    mapAdjustedBy:req.guardianAdmin.username
+  };
+  const key=stationMapKey(stationName);
+  stationMapPositions[key]=pos;
+  applySavedStationPositions();
+  saveStationMapPositions();
+  guardianAdminAuditLog(req.guardianAdmin.username,"STATION_MAP_POSITION",{stationName,...pos});
+  touch(); // pushes the changed state to Control immediately over SSE
+  res.json({ok:true,stationName,key,position:pos,stationMapPositions:state.stationMapPositions});
+});
+
+app.delete("/api/admin/station-map/position/:station",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
+  const stationName=decodeURIComponent(String(req.params.station||"")).trim();
+  const key=stationMapKey(stationName);
+  delete stationMapPositions[key];
+  applySavedStationPositions();
+  saveStationMapPositions();
+  guardianAdminAuditLog(req.guardianAdmin.username,"STATION_MAP_POSITION_RESET",{stationName});
+  touch();
+  res.json({ok:true,stationName,key,stationMapPositions:state.stationMapPositions});
+});
+
+app.post("/api/admin/station-map/lock",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  stationMapLocked=req.body?.locked===true;
+  applySavedStationPositions();
+  saveStationMapLock();
+  guardianAdminAuditLog(req.guardianAdmin.username,"STATION_MAP_LOCK",{locked:stationMapLocked});
+  touch();
+  res.json({ok:true,locked:stationMapLocked});
+});
+
+function guardianAdminOperationalSnapshot(){
+  applyGuardianBaselineToState();applySavedStationPositions();
+  const stations=(guardianConfig.stations||[]).filter(s=>s?.active!==false).map(s=>({...s,appliances:(guardianConfig.appliances||[]).filter(a=>a.active!==false&&String(a.station||"")===String(s.name||"")).map(a=>a.callsign)}));
+  const appliances=(guardianConfig.appliances||[]).filter(a=>a?.active!==false).map(a=>{const cs=String(a.callsign||"").trim().toUpperCase(),u=state.units?.[cs];return {...a,callsign:cs,status:String(u?.status||""),signedOn:guardianUnitOperationallyLive(cs)}});
+  const openIncidents=(state.incidents||[]).filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+  const activeStandby=(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase()));
+  const warnings=[],stationNames=new Set(stations.map(s=>String(s.name)));
+  for(const a of appliances)if(a.station&&!stationNames.has(String(a.station)))warnings.push(`${a.callsign} references missing station ${a.station}`);
+  const calls=appliances.map(a=>a.callsign),dupes=[...new Set(calls.filter((x,i)=>calls.indexOf(x)!==i))];if(dupes.length)warnings.push(`Duplicate callsigns: ${dupes.join(", ")}`);
+  return {stations,appliances,applianceTypes:guardianConfig.applianceTypes||[],skills:guardianConfig.skills||[],statuses:guardianConfig.statuses||[],stationMapPositions:{...stationMapPositions},stationMapLocked,warnings,summary:{stations:stations.length,appliances:appliances.length,booked:appliances.filter(a=>a.signedOn).length,incidents:openIncidents.length,calls999:dedupe999Calls(state.calls999||[]).length,standby:activeStandby.length,mappedStations:Object.keys(stationMapPositions||{}).length,fivemConnected:!!state.connected,coreMode:state.coreMode||(state.connected?"FIVEM CONNECTED":"STANDALONE"),lastHeartbeat:state.lastHeartbeat||null,updatedAt:state.updatedAt||null}};
+}
+app.get("/api/admin/operational",guardianRequireAdmin("settings.view"),(req,res)=>{res.setHeader("Cache-Control","no-store");res.json({ok:true,...guardianAdminOperationalSnapshot()})});
+
 app.get("/api/admin/config",guardianRequireAdmin("settings.view"),(req,res)=>{
   res.json({ok:true,config:guardianConfig});
 });
@@ -204,6 +277,7 @@ app.post("/api/admin/users",guardianRequireAdmin("settings.edit"),(req,res)=>{
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"Username already exists"});
   const pw=guardianAdminHashPassword(password);
   guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString()});
+  guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"USER_CREATED",{username,role});
   res.json({ok:true});
 });
@@ -217,6 +291,7 @@ app.post("/api/admin/users/:username/password",guardianRequireAdmin("settings.ed
   if(password.length<8)return res.status(400).json({ok:false,error:"Password must be at least 8 characters"});
   const pw=guardianAdminHashPassword(password);
   user.salt=pw.salt;user.passwordHash=pw.hash;
+  guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"PASSWORD_RESET",{username});
   res.json({ok:true});
 });
@@ -227,6 +302,7 @@ app.delete("/api/admin/users/:username",guardianRequireAdmin("users.delete"),(re
   if(!user)return res.status(404).json({ok:false,error:"User not found"});
   if(user.protected||user.role==="owner")return res.status(403).json({ok:false,error:"Owner / Creator account cannot be deleted"});
   guardianAdminUsers.delete(username);
+  guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"USER_DELETED",{username});
   res.json({ok:true});
 });
@@ -236,18 +312,17 @@ app.get("/api/admin/audit",guardianRequireAdmin("audit.view"),(req,res)=>{
 });
 
 app.get("/api/admin/export",guardianRequireAdmin("settings.view"),(req,res)=>{
-  const payload={version:1,exportedAt:new Date().toISOString(),config:guardianConfig};
+  const payload={version:2,exportedAt:new Date().toISOString(),config:guardianConfig,stationMapPositions:{...stationMapPositions},stationMapLocked};
   guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_EXPORTED");
-  res.setHeader("Content-Disposition",'attachment; filename="guardian-config-backup.json"');
-  res.type("application/json").send(JSON.stringify(payload,null,2));
+  res.setHeader("Content-Disposition",'attachment; filename="guardian-full-backup.json"');res.type("application/json").send(JSON.stringify(payload,null,2));
 });
-
 app.post("/api/admin/import",guardianRequireAdmin("settings.edit"),(req,res)=>{
-  const payload=req.body;
-  if(!payload?.config||typeof payload.config!=="object")return res.status(400).json({ok:false,error:"Invalid backup"});
+  const payload=req.body;if(!payload?.config||typeof payload.config!=="object")return res.status(400).json({ok:false,error:"Invalid Guardian backup"});
   guardianConfig=payload.config;
-  guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_IMPORTED");
-  res.json({ok:true,config:guardianConfig});
+  if(payload.stationMapPositions&&typeof payload.stationMapPositions==="object")stationMapPositions={...payload.stationMapPositions};
+  if(typeof payload.stationMapLocked==="boolean")stationMapLocked=payload.stationMapLocked;
+  guardianWriteJson(guardianConfigFile,guardianConfig);saveStationMapPositions();saveStationMapLock();applyGuardianBaselineToState();applySavedStationPositions();
+  guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_IMPORTED",{version:payload.version||1});touch();res.json({ok:true,config:guardianConfig});
 });
 
 const clients = new Set();

@@ -58,58 +58,41 @@ function render(){
 }
 
 function renderOverview(){
-  const s=operational.summary||{};
-  setContent(`<div class="grid stats">
-    <div class="card"><div class="eyebrow">STATIONS</div><div class="big">${s.stations||0}</div><p>Configured operational stations</p></div>
-    <div class="card"><div class="eyebrow">APPLIANCES</div><div class="big">${s.appliances||0}</div><p>Known Guardian callsigns</p></div>
-    <div class="card"><div class="eyebrow">BOOKED ON</div><div class="big">${s.booked||0}</div><p>Current MDT bookings</p></div>
-    <div class="card"><div class="eyebrow">OPEN INCIDENTS</div><div class="big">${s.incidents||0}</div><p>Currently active</p></div>
-    <div class="card"><div class="eyebrow">999 QUEUE</div><div class="big">${s.calls999||0}</div><p>Awaiting Control action</p></div>
-    <div class="card"><div class="eyebrow">STANDBY</div><div class="big">${s.standby||0}</div><p>Active standby moves</p></div>
-    <div class="card wide"><div class="eyebrow">GUARDIAN CORE</div><h3>${esc(s.coreMode||"UNKNOWN")}</h3><p>FiveM: <b>${s.fivemConnected?"CONNECTED":"OFFLINE / OPTIONAL"}</b>${s.lastHeartbeat?` · Last heartbeat ${new Date(s.lastHeartbeat).toLocaleString()}`:""}</p></div>
-  </div>`);
+ const s=operational.summary||{},warnings=operational.warnings||[],mapCount=s.mappedStations||Object.keys(operational.stationMapPositions||{}).length;
+ setContent(`<div class="grid stats"><div class="card"><div class="eyebrow">STATIONS</div><div class="big">${s.stations||0}</div><p>Configured operational stations</p></div><div class="card"><div class="eyebrow">APPLIANCES</div><div class="big">${s.appliances||0}</div><p>Known Guardian callsigns</p></div><div class="card"><div class="eyebrow">SIGNED ON</div><div class="big">${s.booked||0}</div><p>Operationally live appliances</p></div><div class="card"><div class="eyebrow">OPEN INCIDENTS</div><div class="big">${s.incidents||0}</div><p>Currently active</p></div><div class="card"><div class="eyebrow">999 QUEUE</div><div class="big">${s.calls999||0}</div><p>Awaiting Control action</p></div><div class="card"><div class="eyebrow">STANDBY</div><div class="big">${s.standby||0}</div><p>Active standby moves</p></div><div class="card"><div class="eyebrow">MAP POSITIONS</div><div class="big">${mapCount}</div><p>Manual station positions</p></div><div class="card"><div class="eyebrow">CONFIG HEALTH</div><div class="big">${warnings.length}</div><p>${warnings.length?"Warnings need attention":"No detected warnings"}</p></div><div class="card wide"><div class="sectionHead"><div><div class="eyebrow">GUARDIAN CORE</div><h3>${esc(s.coreMode||"UNKNOWN")}</h3></div><span class="statusBadge ${s.fivemConnected?"ok":"warn"}">${s.fivemConnected?"FIVEM CONNECTED":"STANDALONE"}</span></div><p>Last heartbeat: <b>${s.lastHeartbeat?new Date(s.lastHeartbeat).toLocaleString():"No active FiveM heartbeat"}</b></p>${warnings.length?`<div class="warningList">${warnings.map(w=>`<div>⚠ ${esc(w)}</div>`).join("")}</div>`:""}</div></div>`);
 }
 
 function renderStations(){
-  const rows=(config.stations||[]).map((s,i)=>`<tr><td><input data-st-name="${i}" value="${esc(s.name)}"></td><td><input data-st-postal="${i}" value="${esc(s.postal||"")}"></td><td>${(operational.appliances||[]).filter(a=>a.station===s.name).map(a=>`<span class="pill">${esc(a.callsign)}</span>`).join(" ")||"—"}</td><td><label><input type="checkbox" data-st-active="${i}" ${s.active!==false?"checked":""}> Active</label></td><td><button class="danger" data-st-del="${i}">DELETE</button></td></tr>`).join("");
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Stations</h3><p>These are the stations used by Guardian Control and MDT.</p></div><button id="addStation">ADD STATION</button></div><div class="tableWrap"><table><thead><tr><th>Station</th><th>Postal</th><th>Appliances</th><th>Status</th><th></th></tr></thead><tbody id="stationRows">${rows||`<tr><td colspan="5">No stations configured.</td></tr>`}</tbody></table></div><button id="saveStations">SAVE STATIONS</button></div>`);
-  $("addStation").onclick=()=>{config.stations.push({name:"New Station",postal:"",active:true});renderStations()};
-  document.querySelectorAll("[data-st-del]").forEach(b=>b.onclick=()=>{config.stations.splice(+b.dataset.stDel,1);renderStations()});
-  $("saveStations").onclick=async()=>{
-    config.stations.forEach((s,i)=>{s.name=document.querySelector(`[data-st-name="${i}"]`).value.trim();s.postal=document.querySelector(`[data-st-postal="${i}"]`).value.trim();s.active=document.querySelector(`[data-st-active="${i}"]`).checked});
-    await api("/api/admin/stations",{method:"POST",body:JSON.stringify({stations:config.stations})});notify("Stations saved");await refreshAll()
-  };
+ const saved=operational.stationMapPositions||{};
+ const rows=(config.stations||[]).map((s,i)=>{const mapped=!!saved[String(s.name||"").trim().toLowerCase()];return `<tr><td><input data-st-name="${i}" value="${esc(s.name)}"></td><td><input data-st-postal="${i}" value="${esc(s.postal||"")}" placeholder="Postal"></td><td>${(operational.appliances||[]).filter(a=>a.station===s.name).map(a=>`<span class="pill">${esc(a.callsign)}</span>`).join(" ")||"—"}</td><td><span class="statusBadge ${mapped?"ok":"warn"}">${mapped?"MANUAL MAP":"POSTAL MAP"}</span></td><td><label><input type="checkbox" data-st-active="${i}" ${s.active!==false?"checked":""}> Active</label></td><td><button class="danger" data-st-del="${i}">DELETE</button></td></tr>`}).join("");
+ setContent(`<div class="card"><div class="sectionHead"><div><h3>Stations</h3><p>Shared by Control, MDT, standby cover and mapping.</p></div><button id="addStation">ADD STATION</button></div><div id="stationValidation" class="validationBox hidden"></div><div class="tableWrap"><table><thead><tr><th>Station</th><th>Postal</th><th>Appliances</th><th>Map</th><th>Status</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6">No stations configured.</td></tr>`}</tbody></table></div><button id="saveStations">VALIDATE & SAVE STATIONS</button></div>`);
+ $("addStation").onclick=()=>{config.stations.push({name:"New Station",postal:"",active:true});renderStations()};document.querySelectorAll("[data-st-del]").forEach(b=>b.onclick=()=>{config.stations.splice(+b.dataset.stDel,1);renderStations()});
+ $("saveStations").onclick=async()=>{config.stations.forEach((s,i)=>{s.name=document.querySelector(`[data-st-name="${i}"]`).value.trim();s.postal=document.querySelector(`[data-st-postal="${i}"]`).value.trim();s.active=document.querySelector(`[data-st-active="${i}"]`).checked});const names=config.stations.map(s=>s.name.toLowerCase()),errors=[];config.stations.forEach((s,i)=>{if(!s.name)errors.push(`Row ${i+1}: station name required`);if(names.indexOf(s.name.toLowerCase())!==i)errors.push(`Duplicate station: ${s.name}`)});const box=$("stationValidation");if(errors.length){box.classList.remove("hidden");box.innerHTML=errors.map(x=>`<div>⚠ ${esc(x)}</div>`).join("");return}box.classList.add("hidden");await api("/api/admin/stations",{method:"POST",body:JSON.stringify({stations:config.stations})});notify("Stations saved to Guardian");await refreshAll()};
 }
 
 function renderAppliances(){
-  const stations=(config.stations||[]).map(s=>s.name);
-  const types=config.applianceTypes||[];
-  const rows=(config.appliances||[]).map((a,i)=>`<tr>
-    <td><input data-ap-cs="${i}" value="${esc(a.callsign)}"></td>
-    <td><select data-ap-st="${i}"><option value="">—</option>${stations.map(x=>`<option ${x===a.station?"selected":""}>${esc(x)}</option>`).join("")}</select></td>
-    <td><select data-ap-type="${i}">${types.map(x=>`<option ${x===a.type?"selected":""}>${esc(x)}</option>`).join("")}</select></td>
-    <td><input data-ap-skills="${i}" value="${esc((a.skills||[]).join(", "))}" placeholder="BA, Aerial, Rescue"></td>
-    <td>${esc(a.status||"—")}</td>
-    <td><span class="statusBadge ${a.signedOn?"ok":"off"}">${a.signedOn?"SIGNED ON":"OFF DUTY"}</span></td>
-    <td><button class="danger" data-ap-del="${i}">DELETE</button></td></tr>`).join("");
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Appliances</h3><p>Callsign, home station, type and skills used throughout Guardian.</p></div><button id="addAppliance">ADD APPLIANCE</button></div><div class="tableWrap"><table><thead><tr><th>Callsign</th><th>Home Station</th><th>Type</th><th>Skills</th><th>Live Status</th><th>Live</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="7">No appliances found.</td></tr>`}</tbody></table></div><button id="saveAppliances">SAVE APPLIANCES</button></div>`);
-  $("addAppliance").onclick=()=>{config.appliances.push({callsign:"NEW",station:stations[0]||"",type:types[0]||"Pump",skills:[],active:true});renderAppliances()};
-  document.querySelectorAll("[data-ap-del]").forEach(b=>b.onclick=()=>{config.appliances.splice(+b.dataset.apDel,1);renderAppliances()});
-  $("saveAppliances").onclick=async()=>{
-    config.appliances.forEach((a,i)=>{a.callsign=document.querySelector(`[data-ap-cs="${i}"]`).value.trim().toUpperCase();a.station=document.querySelector(`[data-ap-st="${i}"]`).value;a.type=document.querySelector(`[data-ap-type="${i}"]`).value;a.skills=document.querySelector(`[data-ap-skills="${i}"]`).value.split(",").map(x=>x.trim()).filter(Boolean)});
-    await api("/api/admin/appliances",{method:"POST",body:JSON.stringify({appliances:config.appliances})});notify("Appliances saved");await refreshAll()
-  };
+ const stations=(config.stations||[]).map(s=>s.name),types=config.applianceTypes||[];
+ const rows=(config.appliances||[]).map((a,i)=>`<tr><td><input data-ap-cs="${i}" value="${esc(a.callsign)}"></td><td><select data-ap-st="${i}"><option value="">— Select —</option>${stations.map(x=>`<option ${x===a.station?"selected":""}>${esc(x)}</option>`).join("")}</select></td><td><select data-ap-type="${i}">${types.map(x=>`<option ${x===a.type?"selected":""}>${esc(x)}</option>`).join("")}</select></td><td><input data-ap-skills="${i}" value="${esc((a.skills||[]).join(", "))}" placeholder="BA, Aerial, Rescue"></td><td>${esc(a.status||"—")}</td><td><span class="statusBadge ${a.signedOn?"ok":"off"}">${a.signedOn?"SIGNED ON":"OFF DUTY"}</span></td><td><button class="danger" data-ap-del="${i}">DELETE</button></td></tr>`).join("");
+ setContent(`<div class="card"><div class="sectionHead"><div><h3>Appliances</h3><p>Configured fleet. Configuration never signs an appliance on.</p></div><button id="addAppliance">ADD APPLIANCE</button></div><div id="applianceValidation" class="validationBox hidden"></div><div class="tableWrap"><table><thead><tr><th>Callsign</th><th>Home Station</th><th>Type</th><th>Skills</th><th>Live Status</th><th>Live</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="7">No appliances found.</td></tr>`}</tbody></table></div><button id="saveAppliances">VALIDATE & SAVE APPLIANCES</button></div>`);
+ $("addAppliance").onclick=()=>{config.appliances.push({callsign:"NEW",station:stations[0]||"",type:types[0]||"Pump",skills:[],active:true});renderAppliances()};document.querySelectorAll("[data-ap-del]").forEach(b=>b.onclick=()=>{config.appliances.splice(+b.dataset.apDel,1);renderAppliances()});
+ $("saveAppliances").onclick=async()=>{config.appliances.forEach((a,i)=>{a.callsign=document.querySelector(`[data-ap-cs="${i}"]`).value.trim().toUpperCase();a.station=document.querySelector(`[data-ap-st="${i}"]`).value;a.type=document.querySelector(`[data-ap-type="${i}"]`).value;a.skills=document.querySelector(`[data-ap-skills="${i}"]`).value.split(",").map(x=>x.trim()).filter(Boolean)});const calls=config.appliances.map(a=>a.callsign),errors=[];config.appliances.forEach((a,i)=>{if(!a.callsign)errors.push(`Row ${i+1}: callsign required`);if(calls.indexOf(a.callsign)!==i)errors.push(`Duplicate callsign: ${a.callsign}`);if(!a.station)errors.push(`${a.callsign||`Row ${i+1}`}: home station required`)});const box=$("applianceValidation");if(errors.length){box.classList.remove("hidden");box.innerHTML=errors.map(x=>`<div>⚠ ${esc(x)}</div>`).join("");return}box.classList.add("hidden");await api("/api/admin/appliances",{method:"POST",body:JSON.stringify({appliances:config.appliances})});notify("Appliances saved to Guardian");await refreshAll()};
 }
 
 async function renderMap(){
   const locked=!!operational.stationMapLocked;
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Station Map</h3><p>Station markers are managed here. Control Centre stations are read-only.</p></div><div><button id="lockMap">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button></div></div><div class="mapHint">${locked?"Station positions are locked. Unlock before moving them.":"Drag a station marker, then save it."}</div><div id="stationMap" class="stationMapEditor"></div><div class="mapActions"><button id="saveMap">SAVE MOVED STATIONS</button><button id="resetMap">RESET SELECTED</button><select id="resetStation"><option value="">Select station…</option>${(config.stations||[]).map(s=>`<option>${esc(s.name)}</option>`).join("")}</select></div></div>`);
+  setContent(`<div class="card"><div class="sectionHead"><div><h3>Station Map</h3><p>This is the same map and coordinate system used by Control Centre. Dragging is only available here.</p></div><div><button id="lockMap">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button></div></div><div class="mapHint">${locked?"Station positions are locked. Unlock before moving them.":"Drag a station marker, then save it. Unsaved markers use their postal position."}</div><div class="stationMapViewport"><div id="stationMap" class="stationMapEditor"></div></div><div class="mapActions"><button id="saveMap">SAVE MOVED STATIONS</button><button id="resetMap">RESET TO POSTAL</button><select id="resetStation"><option value="">Select station…</option>${(config.stations||[]).map(s=>`<option>${esc(s.name)}</option>`).join("")}</select></div></div>`);
   const map=$("stationMap"),pending=new Map(),saved=operational.stationMapPositions||{};
-  const defaults={};
-  (config.stations||[]).forEach((st,i)=>{
+  let postals=new Map();
+  try{postals=await loadSettingsPostals()}catch(err){console.error(err);notify("Postal map data could not be loaded")}
+
+  (config.stations||[]).forEach(st=>{
     const key=String(st.name).trim().toLowerCase(),pos=saved[key]||saved[st.name]||{};
     let x=Number(pos.mapXPercent),y=Number(pos.mapYPercent);
-    if(!Number.isFinite(x)||!Number.isFinite(y)){x=35+(i%3)*12;y=35+Math.floor(i/3)*12}
+    if(!Number.isFinite(x)||!Number.isFinite(y)){
+      const p=postals.get(String(st.postal||"").trim());
+      if(p){const pt=settingsMapPoint(p.x,p.y);x=pt.x;y=pt.y}
+      else {x=50;y=50}
+    }
     const b=document.createElement("button");b.className="stationPin";b.type="button";b.style.left=x+"%";b.style.top=y+"%";b.innerHTML=`<span>FS</span><b>${esc(st.name)}</b>`;
     let drag=false;
     b.onpointerdown=e=>{if(locked)return;e.preventDefault();drag=true;b.setPointerCapture?.(e.pointerId);b.classList.add("dragging")};
@@ -117,10 +100,18 @@ async function renderMap(){
     b.onpointerup=()=>{drag=false;b.classList.remove("dragging")};b.onpointercancel=b.onpointerup;map.appendChild(b)
   });
   $("lockMap").onclick=async()=>{await api("/api/admin/station-map/lock",{method:"POST",body:JSON.stringify({locked:!locked})});await refreshAll()};
-  $("saveMap").onclick=async()=>{for(const [stationName,p] of pending)await api("/api/admin/station-map/position",{method:"POST",body:JSON.stringify({stationName,mapXPercent:p.x,mapYPercent:p.y})});notify("Station positions saved");await refreshAll()};
-  $("resetMap").onclick=async()=>{const name=$("resetStation").value;if(!name)return;await api("/api/admin/station-map/position/"+encodeURIComponent(name),{method:"DELETE"});notify("Station position reset");await refreshAll()};
+  $("saveMap").onclick=async()=>{
+    if(!pending.size){notify("No station positions changed");return}
+    for(const [stationName,p] of pending){
+      const result=await api("/api/admin/station-map/position",{method:"POST",body:JSON.stringify({stationName,mapXPercent:p.x,mapYPercent:p.y})});
+      operational.stationMapPositions=result.stationMapPositions||operational.stationMapPositions||{};
+    }
+    pending.clear();
+    notify("Station positions saved to Control");
+    await refreshAll();
+  };
+  $("resetMap").onclick=async()=>{const name=$("resetStation").value;if(!name)return;await api("/api/admin/station-map/position/"+encodeURIComponent(name),{method:"DELETE"});notify("Station reset to its postal position");await refreshAll()};
 }
-
 function renderConfig(){
   config.general ||= {};
   config.alerts ||= {};
@@ -276,27 +267,17 @@ function renderConfig(){
 }
 
 async function renderUsers(){
-  setContent(`<div class="card"><h3>Users & Access</h3><div id="usersArea">Loading users…</div></div>`);
-  try{
-    const data=await api("/api/admin/users");
-    $("usersArea").innerHTML=`<div class="createBar"><input id="newUser" placeholder="Username"><input id="newDisplay" placeholder="Display name"><input id="newPass" type="password" placeholder="Password 8+ chars"><select id="newRole"><option>admin</option><option>dev</option><option>readonly</option></select><button id="createUser">CREATE USER</button></div><div class="tableWrap"><table><thead><tr><th>User</th><th>Role</th><th>Created</th><th></th></tr></thead><tbody>${data.users.map(u=>`<tr><td><b>${esc(u.displayName||u.username)}</b><br><small>${esc(u.username)}</small></td><td><span class="badge ${u.role==="owner"?"owner":""}">${esc(u.role.toUpperCase())}</span></td><td>${u.createdAt?new Date(u.createdAt).toLocaleString():"—"}</td><td>${u.protected?"PROTECTED OWNER":`<button class="danger" data-user-del="${esc(u.username)}">DELETE</button>`}</td></tr>`).join("")}</tbody></table></div>`;
-    $("createUser").onclick=async()=>{await api("/api/admin/users",{method:"POST",body:JSON.stringify({username:$("newUser").value,displayName:$("newDisplay").value,password:$("newPass").value,role:$("newRole").value})});notify("User created");renderUsers()};
-    document.querySelectorAll("[data-user-del]").forEach(b=>b.onclick=async()=>{if(confirm(`Delete ${b.dataset.userDel}?`)){await api("/api/admin/users/"+encodeURIComponent(b.dataset.userDel),{method:"DELETE"});renderUsers()}})
-  }catch(e){errorView("Users & Access",e)}
+ setContent(`<div class="grid two"><div class="card"><h3>Users & Access</h3><p>Protected administration accounts.</p><div id="usersArea">Loading users…</div></div><div class="card"><h3>Role Access</h3><div class="roleGuide"><div><b>OWNER</b><span>Everything, including owner controls.</span></div><div><b>ADMIN</b><span>Full administration except owner-only actions.</span></div><div><b>DEV</b><span>Configuration/development access without destructive security actions.</span></div><div><b>READONLY</b><span>View Settings and Audit only.</span></div></div></div></div>`);
+ try{const data=await api("/api/admin/users");$("usersArea").innerHTML=`<div class="createBar"><input id="newUser" placeholder="Username"><input id="newDisplay" placeholder="Display name"><input id="newPass" type="password" placeholder="Password 8+ chars"><select id="newRole"><option>admin</option><option>dev</option><option>readonly</option></select><button id="createUser">CREATE</button></div><div class="tableWrap"><table><thead><tr><th>User</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody>${data.users.map(u=>`<tr><td><b>${esc(u.displayName||u.username)}</b><br><small>${esc(u.username)}</small></td><td><span class="badge ${u.role==="owner"?"owner":""}">${esc(u.role.toUpperCase())}</span></td><td>${u.createdAt?new Date(u.createdAt).toLocaleString():"—"}</td><td><button data-user-pass="${esc(u.username)}">RESET PASSWORD</button>${u.protected?` <span class="protectedText">PROTECTED OWNER</span>`:` <button class="danger" data-user-del="${esc(u.username)}">DELETE</button>`}</td></tr>`).join("")}</tbody></table></div>`;$("createUser").onclick=async()=>{await api("/api/admin/users",{method:"POST",body:JSON.stringify({username:$("newUser").value,displayName:$("newDisplay").value,password:$("newPass").value,role:$("newRole").value})});notify("User created");renderUsers()};document.querySelectorAll("[data-user-pass]").forEach(b=>b.onclick=async()=>{const pw=prompt(`New password for ${b.dataset.userPass} (minimum 8 characters)`);if(!pw)return;await api("/api/admin/users/"+encodeURIComponent(b.dataset.userPass)+"/password",{method:"POST",body:JSON.stringify({password:pw})});notify("Password updated")});document.querySelectorAll("[data-user-del]").forEach(b=>b.onclick=async()=>{if(confirm(`Delete ${b.dataset.userDel}?`)){await api("/api/admin/users/"+encodeURIComponent(b.dataset.userDel),{method:"DELETE"});notify("User deleted");renderUsers()}})}catch(e){errorView("Users & Access",e)}
 }
 
 function renderBackup(){
-  setContent(`<div class="grid two"><div class="card"><h3>Backup Guardian</h3><p>Download the current Guardian configuration as JSON.</p><button id="exportBtn">DOWNLOAD BACKUP</button></div><div class="card"><h3>Restore Guardian</h3><p>Paste a Guardian backup below.</p><textarea id="restoreData" rows="14" placeholder="Paste backup JSON"></textarea><button id="restoreBtn">RESTORE BACKUP</button></div></div>`);
-  $("exportBtn").onclick=()=>location.href="/api/admin/export";
-  $("restoreBtn").onclick=async()=>{if(!confirm("Restore this Guardian configuration?"))return;const data=JSON.parse($("restoreData").value);await api("/api/admin/import",{method:"POST",body:JSON.stringify(data)});notify("Backup restored");await refreshAll()}
+ setContent(`<div class="grid two"><div class="card"><div class="eyebrow">EXPORT</div><h3>Full Guardian Backup</h3><p>Configuration plus station map positions and lock state.</p><button id="exportBtn">DOWNLOAD FULL BACKUP</button></div><div class="card"><div class="eyebrow">RESTORE</div><h3>Restore Guardian</h3><p>Select a Guardian JSON backup or paste it below.</p><input id="restoreFile" type="file" accept=".json,application/json"><textarea id="restoreData" rows="12" placeholder="Backup JSON"></textarea><button class="danger" id="restoreBtn">VALIDATE & RESTORE</button></div></div>`);$("exportBtn").onclick=()=>location.href="/api/admin/export";$("restoreFile").onchange=async e=>{const f=e.target.files?.[0];if(f)$("restoreData").value=await f.text()};$("restoreBtn").onclick=async()=>{let data;try{data=JSON.parse($("restoreData").value)}catch{return alert("Backup JSON is invalid.")}if(!data?.config)return alert("This is not a Guardian backup.");if(!confirm("Restore this Guardian backup? Current configuration will be replaced."))return;await api("/api/admin/import",{method:"POST",body:JSON.stringify(data)});notify("Guardian backup restored");await refreshAll()}
 }
 
 async function renderAudit(){
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Audit Log</h3><p>Administrative actions and sign-ins.</p></div><button id="refreshAudit">REFRESH</button></div><div id="auditArea">Loading audit log…</div></div>`);
-  try{
-    const a=(await api("/api/admin/audit")).audit||[];
-    $("auditArea").innerHTML=a.length?`<div class="tableWrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${a.map(x=>`<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.actor)}</td><td>${esc(x.action)}</td><td><code>${esc(JSON.stringify(x.details||{}))}</code></td></tr>`).join("")}</tbody></table></div>`:`<p>No audit entries yet.</p>`;
-    $("refreshAudit").onclick=renderAudit
-  }catch(e){errorView("Audit Log",e)}
+ setContent(`<div class="card"><div class="sectionHead"><div><h3>Audit Log</h3><p>Administrative logins and configuration changes.</p></div><button id="refreshAudit">REFRESH</button></div><div class="auditTools"><input id="auditSearch" placeholder="Filter by user, action or detail"></div><div id="auditArea">Loading audit log…</div></div>`);
+ try{const all=(await api("/api/admin/audit")).audit||[];const draw=()=>{const q=String($("auditSearch")?.value||"").toLowerCase(),a=all.filter(x=>!q||`${x.actor} ${x.action} ${JSON.stringify(x.details||{})}`.toLowerCase().includes(q));$("auditArea").innerHTML=`<p class="small">${a.length} of ${all.length} entries</p>`+(a.length?`<div class="tableWrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${a.map(x=>`<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.actor)}</td><td><span class="auditAction">${esc(x.action)}</span></td><td><code>${esc(JSON.stringify(x.details||{}))}</code></td></tr>`).join("")}</tbody></table></div>`:`<p>No matching audit entries.</p>`)};draw();$("auditSearch").oninput=draw;$("refreshAudit").onclick=renderAudit}catch(e){errorView("Audit Log",e)}
 }
+
 boot();

@@ -244,3 +244,4 @@
 .mapStationMarker.stationLocked{cursor:default}
 .mapStationMarker.stationLocked.mapAdjusted{outline:3px solid #ffd43b;outline-offset:2px}
 .stationPositionControls.locked{border-color:#8b7520;background:#292711;color:#f1d95e}
+\n/* Guardian Control v9 */\n.boardToolbar{display:grid;grid-template-columns:minmax(240px,1fr) 180px 200px auto;gap:10px;align-items:center;padding:12px;border-bottom:1px solid #254354}.boardSummary{font-size:11px;color:#8faebe;text-align:right;white-space:nowrap}.applianceBoardRow.isOffDuty{opacity:.72}.liveState{display:inline-block;padding:4px 7px;border-radius:4px;font-size:10px;font-weight:800}.liveState.on{background:#103d2a;color:#78d8a5}.liveState.off{background:#202c33;color:#9fb0ba}.legendIncident{display:inline-block;width:10px;height:10px;border-radius:50%;background:#3478d4}@media(max-width:1000px){.boardToolbar{grid-template-columns:1fr 1fr}.boardSummary{grid-column:1/-1;text-align:left}}\n

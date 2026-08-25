@@ -231,8 +231,31 @@ function controlPostalDistance(a,b,index){
  if(!pa||!pb)return null;
  return Math.hypot(pa.x-pb.x,pa.y-pb.y);
 }
+function controlConfiguredStations(){
+ const byName=new Map();
+ for(const s of CONTROL_MAP_STATIONS){
+   if(s?.name)byName.set(String(s.name).trim().toLowerCase(),{...s});
+ }
+ for(const [key,value] of Object.entries(state.stations||{})){
+   const obj=value&&typeof value==="object"?value:{};
+   const name=String(obj.name||obj.station||key||"").trim();
+   if(!name)continue;
+   const k=name.toLowerCase();
+   const prev=byName.get(k)||{};
+   byName.set(k,{...prev,...obj,name,postal:String(obj.postal||prev.postal||"")});
+ }
+ // A saved map position is enough to make a configured station display in Control,
+ // even if it has no postal.
+ for(const name of Object.values(state.callSignStations||{})){
+   const n=String(name||"").trim();if(!n)continue;
+   const k=n.toLowerCase();
+   if(!byName.has(k))byName.set(k,{name:n,postal:""});
+ }
+ return [...byName.values()].sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+}
+
 function nearestControlStations(postal,index){
- return CONTROL_MAP_STATIONS.map(s=>({
+ return controlConfiguredStations().map(s=>({
    ...s,
    distance:controlPostalDistance(postal,s.postal,index)
  })).filter(s=>Number.isFinite(s.distance)).sort((a,b)=>a.distance-b.distance);
@@ -435,13 +458,13 @@ async function renderControlMap(){
    return;
  }
 
- const stationMarkers=CONTROL_MAP_STATIONS.map(s=>{
+ const stationMarkers=controlConfiguredStations().map(s=>{
    const saved=savedStationMapPosition(s.name);
    const p=index.get(String(s.postal));
    const pt=saved||(p?{...controlMapPoint(p.x,p.y),adjusted:false}:null);
    if(!pt)return "";
    return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
-     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Drag to position">
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)}">
      <span>FS</span></button>`;
  }).join("");
 
@@ -506,36 +529,10 @@ async function renderControlMap(){
 
  
  function addStationPositionControls(stationName){
-   const saved=savedStationMapPosition(stationName);
-   const locked=state?.stationMapLocked===true;
-   if(!selection)return;
+   const saved=savedStationMapPosition(stationName);if(!selection)return;
    selection.querySelector(".stationPositionControls")?.remove();
-
-   const box=document.createElement("div");
-   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""} ${locked?"locked":""}`;
-
-   if(locked){
-     box.innerHTML=saved
-       ? `CONTROL POSITION SAVED · LOCKED`
-       : `POSTAL POSITION · STATIONS LOCKED`;
-   }else{
-     box.innerHTML=saved
-       ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
-       : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
-   }
-
-   selection.appendChild(box);
-
-   const reset=box.querySelector("[data-reset-station-position]");
-   if(reset)reset.onclick=async()=>{
-     if(state?.stationMapLocked===true)return;
-     await command("resetStationMapPosition",{stationName});
-     const key=String(stationName||"").trim().toLowerCase();
-     if(state.stationMapPositions)delete state.stationMapPositions[key];
-     await renderControlMap();
-     showStation(stationName);
-     addStationPositionControls(stationName);
-   };
+   const box=document.createElement("div");box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""}`;
+   box.innerHTML=saved?`POSITION MANAGED IN SETTINGS · SAVED`:`POSITION MANAGED IN SETTINGS · USING POSTAL`;selection.appendChild(box);
  }
 
 
@@ -576,7 +573,8 @@ function render(){
 }
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
- $("incidentList").innerHTML=state.incidents.length?state.incidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
+ const openIncidents=(state.incidents||[]).filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+ $("incidentList").innerHTML=openIncidents.length?openIncidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
 }
 
 function incidentAckInfo(inc,cs){
@@ -1063,36 +1061,18 @@ function incidentRelatedStatus(status){
 }
 
 function renderUnits(){
- const configured=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
+ const configured=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper),...Object.keys(state.callSignStations||{}).map(upper)])].filter(Boolean).sort();
+ const search=String($("unitSearch")?.value||"").trim().toLowerCase(),liveFilter=$("unitLiveFilter")?.value||"all",statusFilter=$("unitStatusFilter")?.value||"";
+ const statuses=[...new Set(configured.map(cs=>currentStatus(cs)).filter(Boolean))].sort(),statusSelect=$("unitStatusFilter");
+ if(statusSelect){const cur=statusSelect.value;statusSelect.innerHTML=`<option value="">All statuses</option>`+statuses.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");if(statuses.includes(cur))statusSelect.value=cur}
+ const filtered=configured.filter(cs=>{const home=stationFor(cs)||"",type=skillText(state.applianceSkills?.[cs])||"",status=currentStatus(cs),live=unitSignedOn(cs,state.units?.[cs]);if(search&&!`${cs} ${home} ${type} ${status}`.toLowerCase().includes(search))return false;if(liveFilter==="live"&&!live)return false;if(liveFilter==="off"&&live)return false;if(statusFilter&&status!==statusFilter)return false;return true});
+ const liveCount=configured.filter(cs=>unitSignedOn(cs,state.units?.[cs])).length,availableCount=configured.filter(cs=>unitSignedOn(cs,state.units?.[cs])&&/AVAILABLE|HOME STATION/i.test(currentStatus(cs))).length;
+ if($("unitBoardSummary"))$("unitBoardSummary").textContent=`${filtered.length}/${configured.length} shown · ${liveCount} signed on · ${availableCount} available`;
  $("unitTable").innerHTML=`<div class="tableHead applianceBoardHead"><div>CALLSIGN</div><div>HOME STATION</div><div>CURRENT COVER / LOCATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+
- configured.map(cs=>{
-   const home=stationFor(cs)||"—";
-   const move=activeStandbyMove(cs);
-   const live=unitSignedOn(cs,state.units?.[cs]);
-   const moveLive=live?move:null;
-   const current=moveLive?(moveLive.destination||"Standby"):(live?home:"—");
-   const status=currentStatus(cs);
-   const inc=currentOpenIncidentForUnit(cs);
-   const incNo=displayIncidentNumber(inc);
-   const ack=inc?incidentAckInfo(inc,cs):{acked:false,time:""};
-
-   return `<div class="tableRow applianceBoardRow">
-     <div><strong>${esc(cs)}</strong>${moveLive?'<span class="standbyFlag">STANDBY</span>':""}</div>
-     <div>${esc(home)}</div>
-     <div>${moveLive?`<strong>${esc(current)}</strong><small class="standbySub">${esc(moveLive.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
-     <div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div>
-     <div>
-       <div class="boardStatusLine">
-         <span class="status ${statusClass(status)}">${esc(status)}</span>
-         ${inc&&incNo?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
-         ${inc?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
-       </div>
-       ${moveLive?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
-     </div>
-     <div>${live?"SIGNED ON":"OFF DUTY"}</div>
-   </div>`;
- }).join("");
+ filtered.map(cs=>{const home=stationFor(cs)||"—",move=activeStandbyMove(cs),live=unitSignedOn(cs,state.units?.[cs]),moveLive=live?move:null,current=moveLive?(moveLive.destination||"Standby"):(live?home:"—"),status=currentStatus(cs),inc=currentOpenIncidentForUnit(cs),incNo=displayIncidentNumber(inc),ack=inc?incidentAckInfo(inc,cs):{acked:false,time:""};
+ return `<div class="tableRow applianceBoardRow ${live?"isLive":"isOffDuty"}"><div><strong>${esc(cs)}</strong>${moveLive?'<span class="standbyFlag">STANDBY</span>':""}</div><div>${esc(home)}</div><div>${moveLive?`<strong>${esc(current)}</strong><small class="standbySub">${esc(moveLive.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div><div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div><div><div class="boardStatusLine"><span class="status ${statusClass(status)}">${esc(status)}</span>${inc&&incNo?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}${inc?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}</div>${moveLive?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}</div><div><span class="liveState ${live?"on":"off"}">${live?"SIGNED ON":"OFF DUTY"}</span></div></div>`}).join("")+(filtered.length?"":empty("No appliances match the current filters"));
 }
+
 function renderCalls(){
  const calls=state.calls999||[];
  $("callsList").innerHTML=calls.length?calls.map(c=>{
@@ -1156,7 +1136,7 @@ function renderStations(){
      const status=currentStatus(cs),away=activeStandbyMove(cs);
      return `<div class="stationUnit"><div><strong>${esc(cs)}</strong><small>${esc(skillText(state.applianceSkills?.[cs])||"General Appliance")}${away?` · AWAY COVERING ${esc(away.destination)}`:""}</small></div><span class="status ${statusClass(status)}">${esc(status)}</span></div>`;
    }).join("");
-   const live=list.filter(cs=>!!state.units?.[cs]).length;
+   const live=list.filter(cs=>unitSignedOn(cs,state.units?.[cs])).length;
    const active=(state.standbyMoves||[]).filter(m=>!["cancelled","completed","superseded"].includes(String(m.state||"").toLowerCase()));
    const incoming=active.filter(m=>String(m.destination||"")===String(st));
    const outgoing=active.filter(m=>String(m.sourceStation||"")===String(st));
@@ -1177,9 +1157,9 @@ function coverData(){
    (groups[station]=groups[station]||[]).push(cs);
  }
  return Object.entries(groups).map(([station,list])=>{
-   const rows=list.map(cs=>({callsign:cs,status:currentStatus(cs),live:!!state.units?.[cs]}));
-   const available=rows.filter(r=>/AVAILABLE|HOME STATION/i.test(r.status)).length;
-   const mobile=rows.filter(r=>/MOBILE|ATTENDANCE|INCIDENT/i.test(r.status)).length;
+   const rows=list.map(cs=>({callsign:cs,status:currentStatus(cs),live:unitSignedOn(cs,state.units?.[cs])}));
+   const available=rows.filter(r=>r.live&&/AVAILABLE|HOME STATION/i.test(r.status)).length;
+   const mobile=rows.filter(r=>r.live&&/MOBILE|ATTENDANCE|INCIDENT/i.test(r.status)).length;
    return {station,list,rows,available,mobile,live:rows.filter(r=>r.live).length,level:available===0?"red":available===1?"amber":"green"};
  }).sort((a,b)=>a.station.localeCompare(b.station));
 }
@@ -1291,6 +1271,10 @@ $("sendStatus").onclick=()=>{if(!mdtCallsign)return alert("Select your callsign 
 $("mdtSendMessage").onclick=async()=>{if(!mdtCallsign)return alert("Select your callsign first.");const t=$("mdtMessageText").value.trim();if(!t)return;await command("webMdtMessage",{callsign:mdtCallsign,message:t});$("mdtMessageText").value=""};
 async function load(){try{const j=await (await fetch("/api/state",{cache:"no-store"})).json();if(j.state){state={...state,...j.state};render()}}catch(e){console.error(e)}}
 function connect(){const es=new EventSource("/api/events");es.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="state"){state={...state,...m.payload};render()}}catch(err){console.error(err)}}}
+let unitBoardFiltersBound=false;
+function bindUnitBoardFilters(){if(unitBoardFiltersBound)return;unitBoardFiltersBound=true;["unitSearch","unitLiveFilter","unitStatusFilter"].forEach(id=>document.getElementById(id)?.addEventListener(id==="unitSearch"?"input":"change",()=>renderUnits()))}
+bindUnitBoardFilters();
+
 setMode();load();connect();
 window.addEventListener("online",()=>load().catch?.(()=>{}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
