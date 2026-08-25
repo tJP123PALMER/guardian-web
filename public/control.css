@@ -238,3 +238,9 @@
 .mapStationMarker.isDragging{cursor:grabbing;z-index:31;animation:none;transform:translate(-50%,-50%) scale(1.15)}
 .mapStationMarker.mapAdjusted{outline:3px solid #ffd43b;outline-offset:2px}
 .stationPositionControls .smallBtn{margin-top:7px;padding:6px 9px;border:1px solid #547286;border-radius:4px;background:#102b3b;color:#fff;font-weight:800;cursor:pointer}
+
+.mapStationLockBtn{margin-left:auto;padding:0 12px}
+.mapStationLockBtn.isLocked{border-color:#8b7520;background:#302b0d;color:#ffe66d}
+.mapStationMarker.stationLocked{cursor:default}
+.mapStationMarker.stationLocked.mapAdjusted{outline:3px solid #ffd43b;outline-offset:2px}
+.stationPositionControls.locked{border-color:#8b7520;background:#292711;color:#f1d95e}

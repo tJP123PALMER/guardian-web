@@ -321,6 +321,43 @@ function resetControlMapZoom(){
  if(label)label.textContent="100%";
 }
 
+
+function updateStationMapLockUi(){
+ const btn=$("mapStationLock");
+ if(!btn)return;
+ const locked=state?.stationMapLocked===true;
+ btn.textContent=locked?"STATIONS LOCKED":"LOCK STATIONS";
+ btn.classList.toggle("isLocked",locked);
+ btn.title=locked
+   ?"Station positions are locked. Click to unlock."
+   :"Lock all fire-station marker positions.";
+}
+
+async function toggleStationMapLock(){
+ const locked=state?.stationMapLocked===true;
+
+ if(locked){
+   const ok=confirm(
+     "Unlock fire-station positions?\n\nThis will allow FS markers to be dragged and reset again."
+   );
+   if(!ok)return;
+ }else{
+   const ok=confirm(
+     "Lock fire-station positions?\n\nAll current FS marker locations will be protected from dragging or reset."
+   );
+   if(!ok)return;
+ }
+
+ try{
+   await command("setStationMapLock",{locked:!locked});
+   state.stationMapLocked=!locked;
+   updateStationMapLockUi();
+   renderControlMap();
+ }catch(err){
+   alert(`Could not change station lock: ${err?.message||err}`);
+ }
+}
+
 function bindControlMapNavigation(){
  const viewport=$("controlMapViewport");
  const canvas=$("controlMapCanvas");
@@ -330,10 +367,12 @@ function bindControlMapNavigation(){
  const label=$("mapZoomLabel");
  if(label)label.textContent=`${Math.round(controlMapZoom*100)}%`;
 
- const zin=$("mapZoomIn"),zout=$("mapZoomOut"),reset=$("mapZoomReset");
+ const zin=$("mapZoomIn"),zout=$("mapZoomOut"),reset=$("mapZoomReset"),stationLock=$("mapStationLock");
  if(zin)zin.onclick=()=>applyControlMapZoom(controlMapZoom+CONTROL_MAP_ZOOM_STEP);
  if(zout)zout.onclick=()=>applyControlMapZoom(controlMapZoom-CONTROL_MAP_ZOOM_STEP);
  if(reset)reset.onclick=resetControlMapZoom;
+ if(stationLock)stationLock.onclick=toggleStationMapLock;
+ updateStationMapLockUi();
 
  if(viewport.dataset.mapNavBound==="1")return;
  viewport.dataset.mapNavBound="1";
@@ -456,18 +495,28 @@ async function renderControlMap(){
  
  function addStationPositionControls(stationName){
    const saved=savedStationMapPosition(stationName);
+   const locked=state?.stationMapLocked===true;
    if(!selection)return;
    selection.querySelector(".stationPositionControls")?.remove();
 
    const box=document.createElement("div");
-   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""}`;
-   box.innerHTML=saved
-     ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
-     : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
+   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""} ${locked?"locked":""}`;
+
+   if(locked){
+     box.innerHTML=saved
+       ? `CONTROL POSITION SAVED · LOCKED`
+       : `POSTAL POSITION · STATIONS LOCKED`;
+   }else{
+     box.innerHTML=saved
+       ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
+       : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
+   }
+
    selection.appendChild(box);
 
    const reset=box.querySelector("[data-reset-station-position]");
    if(reset)reset.onclick=async()=>{
+     if(state?.stationMapLocked===true)return;
      await command("resetStationMapPosition",{stationName});
      const key=String(stationName||"").trim().toLowerCase();
      if(state.stationMapPositions)delete state.stationMapPositions[key];
@@ -482,36 +531,49 @@ const showIncident=id=>{
    const inc=(state.incidents||[]).find(x=>String(x.id||"")===String(id||""));if(!inc)return;
    selection.innerHTML=`<div class="mapDetail"><span class="panelKicker">LIVE INCIDENT</span><h3>INC #${esc(String(inc.id||""))}</h3><p>${esc(inc.type||"Incident")}</p><p><strong>Postal</strong><br>${esc(inc.postal||"—")}</p><div class="mapPositionState ${inc.mapAdjusted?"adjusted":""}">${inc.mapAdjusted?"CONTROL POSITION SAVED":"POSTAL ESTIMATE · DRAG BLUE MARKER TO REFINE"}</div></div>`;
  };
- overlay.querySelectorAll("[data-map-station]").forEach(b=>dragMapMarker(b,{
-   onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
-   onDrop:async(x,y)=>{
-     const stationName=String(b.dataset.mapStation||"");
-     const key=stationName.trim().toLowerCase();
-
-     state.stationMapPositions ||= {};
-     state.stationMapPositions[key]={
-       mapXPercent:x,
-       mapYPercent:y,
-       mapAdjusted:true,
-       mapAdjustedBy:"CONTROL",
-       mapAdjustedAt:new Date().toISOString()
+ overlay.querySelectorAll("[data-map-station]").forEach(b=>{
+   if(state?.stationMapLocked===true){
+     b.classList.add("stationLocked");
+     b.onclick=()=>{
+       showStation(b.dataset.mapStation);
+       addStationPositionControls(b.dataset.mapStation);
      };
-
-     b.style.left=`${x}%`;
-     b.style.top=`${y}%`;
-     b.classList.add("mapAdjusted");
-
-     showStation(stationName);
-     addStationPositionControls(stationName);
-
-     try{
-       await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
-     }catch(err){
-       console.error("Station position save failed",err);
-       alert(`Station position could not be saved: ${err?.message||err}`);
-     }
+     return;
    }
- }));
+
+   dragMapMarker(b,{
+     onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
+     onDrop:async(x,y)=>{
+       if(state?.stationMapLocked===true)return;
+
+       const stationName=String(b.dataset.mapStation||"");
+       const key=stationName.trim().toLowerCase();
+
+       state.stationMapPositions ||= {};
+       state.stationMapPositions[key]={
+         mapXPercent:x,
+         mapYPercent:y,
+         mapAdjusted:true,
+         mapAdjustedBy:"CONTROL",
+         mapAdjustedAt:new Date().toISOString()
+       };
+
+       b.style.left=`${x}%`;
+       b.style.top=`${y}%`;
+       b.classList.add("mapAdjusted");
+
+       showStation(stationName);
+       addStationPositionControls(stationName);
+
+       try{
+         await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
+       }catch(err){
+         console.error("Station position save failed",err);
+         alert(`Station position could not be saved: ${err?.message||err}`);
+       }
+     }
+   });
+ });
  overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{
    onSelect:()=>showCall(b.dataset.mapCall),
    onDrop:async(x,y)=>{const callId=String(b.dataset.mapCall||"");const c=(state.calls999||[]).find(v=>String(v.id||"")===callId);if(c)Object.assign(c,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("set999MapPosition",{callId,mapXPercent:x,mapYPercent:y});showCall(callId);}

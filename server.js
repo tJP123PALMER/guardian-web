@@ -130,6 +130,27 @@ const id = () => crypto.randomUUID();
 const guardianDataDir=process.env.GUARDIAN_DATA_DIR||path.join(__dirname,"data");
 try{fs.mkdirSync(guardianDataDir,{recursive:true});}catch(_){}
 const stationMapPositionsFile=path.join(guardianDataDir,"station-map-positions.json");
+const stationMapLockFile=path.join(guardianDataDir,"station-map-lock.json");
+let stationMapLocked=false;
+try{
+  if(fs.existsSync(stationMapLockFile)){
+    const lockData=JSON.parse(fs.readFileSync(stationMapLockFile,"utf8"))||{};
+    stationMapLocked=lockData.locked===true;
+  }
+}catch(e){
+  console.warn("[Guardian Web] station map lock load failed:",e.message);
+}
+function saveStationMapLock(){
+  try{
+    fs.writeFileSync(stationMapLockFile,JSON.stringify({
+      locked:stationMapLocked,
+      updatedAt:now()
+    },null,2),"utf8");
+  }catch(e){
+    console.error("[Guardian Web] station map lock save failed:",e.message);
+  }
+}
+
 let stationMapPositions={};
 try{
   if(fs.existsSync(stationMapPositionsFile)){
@@ -146,6 +167,7 @@ function saveStationMapPositions(){
 }
 function applySavedStationPositions(){
   state.stationMapPositions={...stationMapPositions};
+  state.stationMapLocked=stationMapLocked;
 }
 
 const manualMapPositions={calls:new Map(),incidents:new Map()};
@@ -166,7 +188,8 @@ let state = {
   eventLog: [],
   standbyMoves: [],
   standbyIncidents: [],
-  stationMapPositions: {...stationMapPositions}
+  stationMapPositions: {...stationMapPositions},
+  stationMapLocked: stationMapLocked
 };
 
 function auth(req,res,next){
@@ -458,7 +481,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition","setStationMapPosition","resetStationMapPosition"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition","setStationMapPosition","resetStationMapPosition","setStationMapLock"
 ]);
 
 function queueCommand(action,data={}){
@@ -604,7 +627,17 @@ app.post("/api/command",(req,res)=>{
   const data=req.body?.data||{};
   action=aliases[action]||action;
 
+  if(action==="setStationMapLock"){
+    stationMapLocked=data.locked===true;
+    state.stationMapLocked=stationMapLocked;
+    saveStationMapLock();
+    pushEvent("stationMapLockChanged",{locked:stationMapLocked});
+    touch();
+    return res.json({ok:true,locked:stationMapLocked});
+  }
+
   if(action==="setStationMapPosition"){
+    if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
     const stationName=String(data.stationName||data.name||"").trim();
     const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
     if(!stationName||!Number.isFinite(x)||!Number.isFinite(y)){
@@ -625,6 +658,7 @@ app.post("/api/command",(req,res)=>{
   }
 
   if(action==="resetStationMapPosition"){
+    if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
     const stationName=String(data.stationName||data.name||"").trim();
     if(!stationName)return res.status(400).json({ok:false,error:"Station required"});
     delete stationMapPositions[stationMapKey(stationName)];
