@@ -1,6 +1,15 @@
 
 
 
+const CONTROL_MAP_STATIONS=[{"name":"Berwick Fire Station","postal":"4011"},{"name":"Coldstream Fire Station","postal":"7287"},{"name":"Crewe Toll Fire Station","postal":"7039"},{"name":"McDonald Road Fire Station","postal":"7326"},{"name":"Musselburgh Fire Station","postal":"9092"},{"name":"Sighthill Fire Station","postal":"7246"}];
+const CONTROL_MAP_WORLD={minX:-4000,maxX:4000,minY:-4000,maxY:8000};
+let controlPostalIndex=null;
+let controlMapZoom=1;
+const CONTROL_MAP_MIN_ZOOM=1;
+const CONTROL_MAP_MAX_ZOOM=5;
+const CONTROL_MAP_ZOOM_STEP=0.25;
+let controlMapPanBound=false;
+
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const upper=v=>String(v??"").trim().toUpperCase();
@@ -71,6 +80,7 @@ function incidentDraft(inc){
     mapRef:String(inc.mapRef||""),
     talkgroup:String(inc.talkgroup||""),
     specialRisk:String(inc.specialRisk||""),
+    standbyDestination:String(inc.standbyDestination||""),
     dirty:false,
     saving:false,
     saveStartedAt:0,
@@ -106,7 +116,8 @@ function incidentStateMatchesDraft(inc,d){
     && norm(inc.resources)===norm(d.resources)
     && norm(inc.mapRef)===norm(d.mapRef)
     && norm(inc.talkgroup)===norm(d.talkgroup)
-    && norm(inc.specialRisk)===norm(d.specialRisk);
+    && norm(inc.specialRisk)===norm(d.specialRisk)
+    && norm(inc.standbyDestination)===norm(d.standbyDestination);
 }
 
 function reconcileIncidentDrafts(){
@@ -181,8 +192,402 @@ function setMdtView(v){
  mdtView=v;document.querySelectorAll(".mdtView").forEach(x=>x.classList.toggle("active",x.id==="mdt-"+v));
  document.querySelectorAll(".mdtNav button").forEach(x=>x.classList.toggle("active",x.dataset.mdtview===v));renderMdt();
 }
+
+async function loadControlPostals(){
+ if(controlPostalIndex)return controlPostalIndex;
+ const rows=await fetch("/control/assets/postals.json",{cache:"no-store"}).then(r=>{
+   if(!r.ok)throw new Error("Postal data failed to load");
+   return r.json();
+ });
+ const entries=Array.isArray(rows)?rows:Object.values(rows);
+ controlPostalIndex=new Map(entries.map(p=>[
+   String(p.code||p.postal||""),
+   {x:Number(p.x),y:Number(p.y)}
+ ]).filter(([code,p])=>code&&Number.isFinite(p.x)&&Number.isFinite(p.y)));
+ return controlPostalIndex;
+}
+const CONTROL_MAP_IMAGE_BOUNDS={minX:-3427.0898437500,maxX:3751.1640625000,minY:-3779.6020520333,maxY:6990.4082043770};
+function controlMapPoint(x,y){
+ const X=Number(x),Y=Number(y),b=CONTROL_MAP_IMAGE_BOUNDS;
+ return {
+   x:((X-b.minX)/(b.maxX-b.minX))*100,
+   y:((b.maxY-Y)/(b.maxY-b.minY))*100
+ };
+}
+function controlPostalDistance(a,b,index){
+ const pa=index.get(String(a)),pb=index.get(String(b));
+ if(!pa||!pb)return null;
+ return Math.hypot(pa.x-pb.x,pa.y-pb.y);
+}
+function nearestControlStations(postal,index){
+ return CONTROL_MAP_STATIONS.map(s=>({
+   ...s,
+   distance:controlPostalDistance(postal,s.postal,index)
+ })).filter(s=>Number.isFinite(s.distance)).sort((a,b)=>a.distance-b.distance);
+}
+function formatMapDistance(d){
+ if(!Number.isFinite(d))return "—";
+ return d<1000?`${Math.round(d)} m`:`${(d/1000).toFixed(2)} km`;
+}
+
+
+function savedStationMapPosition(name){
+ const key=String(name||"").trim().toLowerCase();
+ const p=state?.stationMapPositions?.[key];
+ if(!p)return null;
+ const x=Number(p.mapXPercent),y=Number(p.mapYPercent);
+ return Number.isFinite(x)&&Number.isFinite(y)?{x,y,adjusted:true}:null;
+}
+
+function controlMapItemPoint(item,index){
+ if(Number.isFinite(Number(item?.mapXPercent))&&Number.isFinite(Number(item?.mapYPercent))){
+   return {x:Number(item.mapXPercent),y:Number(item.mapYPercent),adjusted:item.mapAdjusted===true};
+ }
+ const postal=String(item?.postal||item?.postcode||"").trim();
+ const p=index.get(postal);
+ return p?{...controlMapPoint(p.x,p.y),adjusted:false}:null;
+}
+function dragMapMarker(marker,{onDrop,onSelect}={}){
+ let dragging=false,moved=false,pid=null;
+ marker.addEventListener("pointerdown",e=>{
+   if(e.button!==0)return;e.preventDefault();e.stopPropagation();
+   dragging=true;moved=false;pid=e.pointerId;marker.classList.add("isDragging");marker.setPointerCapture?.(pid);
+ });
+ marker.addEventListener("pointermove",e=>{
+   if(!dragging)return;const canvas=$("controlMapCanvas");if(!canvas)return;
+   const r=canvas.getBoundingClientRect();
+   const x=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100));
+   const y=Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100));
+   marker.style.left=`${x}%`;marker.style.top=`${y}%`;marker.dataset.dragX=x;marker.dataset.dragY=y;moved=true;
+ });
+ const finish=async e=>{
+   if(!dragging)return;dragging=false;marker.classList.remove("isDragging");
+   try{marker.releasePointerCapture?.(pid)}catch(_){}
+   if(moved){const x=Number(marker.dataset.dragX),y=Number(marker.dataset.dragY);marker.classList.add("mapAdjusted");if(onDrop)await onDrop(x,y);}
+   else if(onSelect)onSelect();
+ };
+ marker.addEventListener("pointerup",finish);marker.addEventListener("pointercancel",finish);
+}
+function mapStationUnits(stationName){
+ return liveUnits().filter(u=>{
+   const cs=upper(u.callsign||"");
+   const home=state.callSignStations?.[cs]||u.station||stationFor(cs)||"";
+   const standby=standbyStationFor(cs);
+   return standby===stationName || (!standby && home===stationName);
+ });
+}
+
+function applyControlMapZoom(nextZoom, focusClientX, focusClientY){
+ const viewport=$("controlMapViewport");
+ const canvas=$("controlMapCanvas");
+ if(!viewport||!canvas)return;
+
+ const oldZoom=controlMapZoom;
+ const newZoom=Math.max(CONTROL_MAP_MIN_ZOOM,Math.min(CONTROL_MAP_MAX_ZOOM,Number(nextZoom)||1));
+ if(newZoom===oldZoom){
+   const label=$("mapZoomLabel");
+   if(label)label.textContent=`${Math.round(newZoom*100)}%`;
+   return;
+ }
+
+ const rect=viewport.getBoundingClientRect();
+ const fx=Number.isFinite(focusClientX)?focusClientX-rect.left:viewport.clientWidth/2;
+ const fy=Number.isFinite(focusClientY)?focusClientY-rect.top:viewport.clientHeight/2;
+ const contentX=(viewport.scrollLeft+fx)/oldZoom;
+ const contentY=(viewport.scrollTop+fy)/oldZoom;
+
+ controlMapZoom=newZoom;
+ canvas.style.width=`${controlMapZoom*100}%`;
+
+ requestAnimationFrame(()=>{
+   viewport.scrollLeft=Math.max(0,contentX*controlMapZoom-fx);
+   viewport.scrollTop=Math.max(0,contentY*controlMapZoom-fy);
+ });
+
+ const label=$("mapZoomLabel");
+ if(label)label.textContent=`${Math.round(controlMapZoom*100)}%`;
+}
+
+function resetControlMapZoom(){
+ const viewport=$("controlMapViewport");
+ controlMapZoom=1;
+ const canvas=$("controlMapCanvas");
+ if(canvas)canvas.style.width="100%";
+ if(viewport){
+   viewport.scrollLeft=0;
+   viewport.scrollTop=0;
+ }
+ const label=$("mapZoomLabel");
+ if(label)label.textContent="100%";
+}
+
+
+function updateStationMapLockUi(){
+ const btn=$("mapStationLock");
+ if(!btn)return;
+ const locked=state?.stationMapLocked===true;
+ btn.textContent=locked?"STATIONS LOCKED":"LOCK STATIONS";
+ btn.classList.toggle("isLocked",locked);
+ btn.title=locked
+   ?"Station positions are locked. Click to unlock."
+   :"Lock all fire-station marker positions.";
+}
+
+async function toggleStationMapLock(){
+ const locked=state?.stationMapLocked===true;
+
+ if(locked){
+   const ok=confirm(
+     "Unlock fire-station positions?\n\nThis will allow FS markers to be dragged and reset again."
+   );
+   if(!ok)return;
+ }else{
+   const ok=confirm(
+     "Lock fire-station positions?\n\nAll current FS marker locations will be protected from dragging or reset."
+   );
+   if(!ok)return;
+ }
+
+ try{
+   await command("setStationMapLock",{locked:!locked});
+   state.stationMapLocked=!locked;
+   updateStationMapLockUi();
+   renderControlMap();
+ }catch(err){
+   alert(`Could not change station lock: ${err?.message||err}`);
+ }
+}
+
+function bindControlMapNavigation(){
+ const viewport=$("controlMapViewport");
+ const canvas=$("controlMapCanvas");
+ if(!viewport||!canvas)return;
+
+ canvas.style.width=`${controlMapZoom*100}%`;
+ const label=$("mapZoomLabel");
+ if(label)label.textContent=`${Math.round(controlMapZoom*100)}%`;
+
+ const zin=$("mapZoomIn"),zout=$("mapZoomOut"),reset=$("mapZoomReset"),stationLock=$("mapStationLock");
+ if(zin)zin.onclick=()=>applyControlMapZoom(controlMapZoom+CONTROL_MAP_ZOOM_STEP);
+ if(zout)zout.onclick=()=>applyControlMapZoom(controlMapZoom-CONTROL_MAP_ZOOM_STEP);
+ if(reset)reset.onclick=resetControlMapZoom;
+ if(stationLock)stationLock.onclick=toggleStationMapLock;
+ updateStationMapLockUi();
+
+ if(viewport.dataset.mapNavBound==="1")return;
+ viewport.dataset.mapNavBound="1";
+
+ viewport.addEventListener("wheel",e=>{
+   e.preventDefault();
+   applyControlMapZoom(
+     controlMapZoom+(e.deltaY<0?CONTROL_MAP_ZOOM_STEP:-CONTROL_MAP_ZOOM_STEP),
+     e.clientX,e.clientY
+   );
+ },{passive:false});
+
+ let dragging=false,startX=0,startY=0,startLeft=0,startTop=0;
+ viewport.addEventListener("pointerdown",e=>{
+   if(e.button!==0 || e.target.closest(".mapMarker"))return;
+   dragging=true;
+   startX=e.clientX; startY=e.clientY;
+   startLeft=viewport.scrollLeft; startTop=viewport.scrollTop;
+   viewport.classList.add("isPanning");
+   viewport.setPointerCapture?.(e.pointerId);
+ });
+ viewport.addEventListener("pointermove",e=>{
+   if(!dragging)return;
+   viewport.scrollLeft=startLeft-(e.clientX-startX);
+   viewport.scrollTop=startTop-(e.clientY-startY);
+ });
+ const stop=e=>{
+   if(!dragging)return;
+   dragging=false;
+   viewport.classList.remove("isPanning");
+   try{viewport.releasePointerCapture?.(e.pointerId)}catch(_){}
+ };
+ viewport.addEventListener("pointerup",stop);
+ viewport.addEventListener("pointercancel",stop);
+}
+
+async function renderControlMap(){
+ if(controlView!=="map")return;
+ const overlay=$("controlMapOverlay"),list=$("mapCallList"),selection=$("mapSelection");
+ if(!overlay||!list||!selection)return;
+ bindControlMapNavigation();
+
+ let index;
+ try{index=await loadControlPostals()}
+ catch(err){
+   overlay.innerHTML="";
+   list.innerHTML=`<div class="emptyState"><strong>Postal data unavailable</strong><span>${esc(err.message)}</span></div>`;
+   return;
+ }
+
+ const stationMarkers=CONTROL_MAP_STATIONS.map(s=>{
+   const saved=savedStationMapPosition(s.name);
+   const p=index.get(String(s.postal));
+   const pt=saved||(p?{...controlMapPoint(p.x,p.y),adjusted:false}:null);
+   if(!pt)return "";
+   return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Drag to position">
+     <span>FS</span></button>`;
+ }).join("");
+
+ const calls=(state.calls999||[]).filter(c=>String(c.postal||c.postcode||"").trim()||Number.isFinite(Number(c.mapXPercent)));
+ const callMarkers=calls.map(c=>{
+   const postal=String(c.postal||c.postcode||"").trim();
+   const pt=controlMapItemPoint(c,index);if(!pt)return "";
+   return `<button class="mapMarker mapCallMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-call="${esc(String(c.id||""))}" title="999 · Postal ${esc(postal)} · Drag to exact location"><span>999</span></button>`;
+ }).join("");
+ const incidents=(state.incidents||[]).filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+ const incidentMarkers=incidents.map(inc=>{
+   const pt=controlMapItemPoint(inc,index);if(!pt)return "";
+   return `<button class="mapMarker mapIncidentMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
+     data-map-incident="${esc(String(inc.id||""))}" title="INC #${esc(String(inc.id||""))} · Drag to refine"><span>INC ${esc(String(inc.id||""))}</span></button>`;
+ }).join("");
+ overlay.innerHTML=stationMarkers+callMarkers+incidentMarkers;
+
+ list.innerHTML=calls.length?calls.map(c=>{
+   const postal=String(c.postal||c.postcode||"").trim();
+   const nearest=nearestControlStations(postal,index)[0];
+   return `<button class="mapCallRow" data-map-call="${esc(String(c.id||""))}">
+     <strong>${esc(c.type||"999 EMERGENCY")}</strong>
+     <span>${esc(c.address||c.location||"No address")}</span>
+     <small>Postal ${esc(postal)}${nearest?` · Nearest ${esc(nearest.name)}`:""}</small>
+   </button>`;
+ }).join(""):`<div class="emptyState"><strong>No mapped 999 calls</strong><span>A call with a valid postal will appear here automatically.</span></div>`;
+
+ const showStation=name=>{
+   const s=CONTROL_MAP_STATIONS.find(x=>x.name===name);if(!s)return;
+   const units=mapStationUnits(s.name);
+   selection.innerHTML=`<div class="mapDetail">
+     <span class="panelKicker">FIRE STATION</span>
+     <h3>${esc(s.name)}</h3>
+     <p>Postal ${esc(s.postal)}</p>
+     <div class="mapUnitList">${units.length?units.map(u=>`
+       <div class="mapMiniUnit">
+         <strong>${esc(u.callsign||"")}</strong>
+         <span>${esc(u.status||"Unknown")}</span>
+       </div>`).join(""):`<small>No signed-on appliances at this station.</small>`}</div>
+   </div>`;
+ };
+
+ const showCall=id=>{
+   const c=(state.calls999||[]).find(x=>String(x.id||"")===String(id||""));if(!c)return;
+   const postal=String(c.postal||c.postcode||"").trim();
+   const nearest=nearestControlStations(postal,index).slice(0,6);
+   selection.innerHTML=`<div class="mapDetail">
+     <span class="panelKicker">999 CALL</span>
+     <h3>${esc(c.type||"999 EMERGENCY")}</h3>
+     <p><strong>Address</strong><br>${esc(c.address||c.location||"—")}</p>
+     <p><strong>Postal</strong><br>${esc(postal||"—")}</p>
+     <div class="nearestTitle">Nearest Fire Stations</div>
+     <div class="nearestList">${nearest.length?nearest.map((s,i)=>`
+       <div class="nearestRow">
+         <b>${i+1}</b><strong>${esc(s.name)}</strong><span>${formatMapDistance(s.distance)}</span>
+       </div>`).join(""):`<small>Postal not found in Guardian postal data. Check the entered postal.</small>`}</div>
+     <button class="primary mapOpenQueue">OPEN 999 QUEUE</button>
+   </div>`;
+   selection.querySelector(".mapOpenQueue")?.addEventListener("click",()=>setControlView("calls"));
+ };
+
+ 
+ function addStationPositionControls(stationName){
+   const saved=savedStationMapPosition(stationName);
+   const locked=state?.stationMapLocked===true;
+   if(!selection)return;
+   selection.querySelector(".stationPositionControls")?.remove();
+
+   const box=document.createElement("div");
+   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""} ${locked?"locked":""}`;
+
+   if(locked){
+     box.innerHTML=saved
+       ? `CONTROL POSITION SAVED · LOCKED`
+       : `POSTAL POSITION · STATIONS LOCKED`;
+   }else{
+     box.innerHTML=saved
+       ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
+       : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
+   }
+
+   selection.appendChild(box);
+
+   const reset=box.querySelector("[data-reset-station-position]");
+   if(reset)reset.onclick=async()=>{
+     if(state?.stationMapLocked===true)return;
+     await command("resetStationMapPosition",{stationName});
+     const key=String(stationName||"").trim().toLowerCase();
+     if(state.stationMapPositions)delete state.stationMapPositions[key];
+     await renderControlMap();
+     showStation(stationName);
+     addStationPositionControls(stationName);
+   };
+ }
+
+
+const showIncident=id=>{
+   const inc=(state.incidents||[]).find(x=>String(x.id||"")===String(id||""));if(!inc)return;
+   selection.innerHTML=`<div class="mapDetail"><span class="panelKicker">LIVE INCIDENT</span><h3>INC #${esc(String(inc.id||""))}</h3><p>${esc(inc.type||"Incident")}</p><p><strong>Postal</strong><br>${esc(inc.postal||"—")}</p><div class="mapPositionState ${inc.mapAdjusted?"adjusted":""}">${inc.mapAdjusted?"CONTROL POSITION SAVED":"POSTAL ESTIMATE · DRAG BLUE MARKER TO REFINE"}</div></div>`;
+ };
+ overlay.querySelectorAll("[data-map-station]").forEach(b=>{
+   if(state?.stationMapLocked===true){
+     b.classList.add("stationLocked");
+     b.onclick=()=>{
+       showStation(b.dataset.mapStation);
+       addStationPositionControls(b.dataset.mapStation);
+     };
+     return;
+   }
+
+   dragMapMarker(b,{
+     onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
+     onDrop:async(x,y)=>{
+       if(state?.stationMapLocked===true)return;
+
+       const stationName=String(b.dataset.mapStation||"");
+       const key=stationName.trim().toLowerCase();
+
+       state.stationMapPositions ||= {};
+       state.stationMapPositions[key]={
+         mapXPercent:x,
+         mapYPercent:y,
+         mapAdjusted:true,
+         mapAdjustedBy:"CONTROL",
+         mapAdjustedAt:new Date().toISOString()
+       };
+
+       b.style.left=`${x}%`;
+       b.style.top=`${y}%`;
+       b.classList.add("mapAdjusted");
+
+       showStation(stationName);
+       addStationPositionControls(stationName);
+
+       try{
+         await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
+       }catch(err){
+         console.error("Station position save failed",err);
+         alert(`Station position could not be saved: ${err?.message||err}`);
+       }
+     }
+   });
+ });
+ overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{
+   onSelect:()=>showCall(b.dataset.mapCall),
+   onDrop:async(x,y)=>{const callId=String(b.dataset.mapCall||"");const c=(state.calls999||[]).find(v=>String(v.id||"")===callId);if(c)Object.assign(c,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("set999MapPosition",{callId,mapXPercent:x,mapYPercent:y});showCall(callId);}
+ }));
+ overlay.querySelectorAll("[data-map-incident]").forEach(b=>dragMapMarker(b,{
+   onSelect:()=>showIncident(b.dataset.mapIncident),
+   onDrop:async(x,y)=>{const incidentId=String(b.dataset.mapIncident||"");const inc=(state.incidents||[]).find(v=>String(v.id||"")===incidentId);if(inc)Object.assign(inc,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});await command("setIncidentMapPosition",{incidentId,mapXPercent:x,mapYPercent:y});showIncident(incidentId);}
+ }));
+ list.querySelectorAll("[data-map-call]").forEach(b=>b.onclick=()=>showCall(b.dataset.mapCall));
+}
+
 function render(){
  reconcileIncidentDrafts();
+ if(controlView==="map")renderControlMap().catch(console.error);
  const units=liveUnits(),incs=state.incidents||[],calls=state.calls999||[];
  $("liveDot").classList.toggle("online",!!state.connected);$("liveText").textContent=state.connected?"LIVE SERVER LINK":"SERVER OFFLINE";
  $("lastSync").textContent=state.updatedAt?`Last sync ${new Date(state.updatedAt).toLocaleTimeString()}`:"Awaiting sync";
@@ -201,6 +606,74 @@ function empty(text){return `<div class="emptyState"><strong>${esc(text)}</stron
 function renderIncidentList(){
  $("incidentList").innerHTML=state.incidents.length?state.incidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
 }
+
+function incidentAckInfo(inc,cs){
+ const key=upper(cs);
+ const ackBy=inc?.acknowledgedBy;
+ const ackAt=inc?.acknowledgedAt;
+
+ if(ackBy && typeof ackBy==="object" && ackBy[key]){
+   return {acked:true,time:String((ackAt&&typeof ackAt==="object"?ackAt[key]:"")||"")};
+ }
+
+ if(typeof ackBy==="string" && upper(ackBy)===key){
+   return {acked:true,time:typeof ackAt==="string"?ackAt:""};
+ }
+
+ return {acked:false,time:""};
+}
+function liveAssignedStatus(inc,cs){
+ const key=upper(cs);
+ return String(state.units?.[key]?.status||inc?.applianceStatuses?.[key]||"Mobilised");
+}
+
+
+
+function timelineSortKey(e,index){
+ const t=String(e?.time||"");
+ const parts=t.split(":").map(Number);
+ return ((parts[0]||0)*3600+(parts[1]||0)*60+(parts[2]||0))*1000+index;
+}
+function cleanTimelineEvents(events){
+ const rows=Array.isArray(events)?events:[];
+ const seen=new Set();
+ const out=[];
+
+ rows.forEach((e,index)=>{
+   const text=String(e?.text||"").trim();
+   if(!text || /^Incident details updated$/i.test(text))return;
+
+   const explicit=String(e?.id||e?.eventId||"");
+   const key=explicit
+     ? `ID:${explicit}`
+     : `LEGACY:${String(e?.time||"")}|${text}|${upper(e?.callsign||"")}`;
+
+   if(seen.has(key))return;
+   seen.add(key);
+   out.push({...e,__sort:timelineSortKey(e,index)});
+ });
+
+ out.sort((a,b)=>a.__sort-b.__sort);
+ return out;
+}
+
+function timelineEventClass(text){
+ const t=upper(text||"");
+ if(t.includes("ACKNOWLEDGED"))return "ack";
+ if(t.includes("STATUS CHANGED TO"))return "status";
+ if(t.includes("MOBILISED")||t.includes("REMOBILISED"))return "mobilise";
+ if(t.includes("RELEASED")||t.includes("RETURNED HOME"))return "release";
+ if(t.includes("CLOSED")||t.includes("COMPLETED"))return "closed";
+ if(t.includes("STANDBY"))return "standby";
+ if(t.includes("CREATED"))return "created";
+ return "update";
+}
+function timelineEventLabel(text){
+ const t=String(text||"");
+ if(/^Incident details updated$/i.test(t))return "";
+ return t;
+}
+
 function renderIncidentDetail(){
  const el=$("incidentDetail"),inc=incidentById(selectedIncidentId);
  if(!inc){
@@ -217,11 +690,23 @@ function renderIncidentDetail(){
  const turnout=prefs.turnout??(inc.sendTurnout===true);
  const pager=prefs.pager??(inc.sendPager===true);
 
- const candidates=units.filter(u=>!assigned.includes(u.callsign)&&!assignedToOther(u.callsign,inc.id));
- const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","OTHER"].filter(Boolean))];
+ const candidates=units.filter(u=>
+   !assigned.includes(u.callsign) &&
+   (!assignedToOther(u.callsign,inc.id) ||
+    ["AVAILABLE AT INCIDENT","MOBILE TO INCIDENT"].includes(upper(u.status)))
+ );
+ const standbyStations=Object.keys(state.stations||{}).sort();
+ const standbyDetailsText=station=>{
+   const destination=String(station||"").trim();
+   return destination
+     ? `Proceed to ${destination} for standby duties.\nMaintain availability for immediate mobilisation.\nAwait further instructions from Control.`
+     : `Proceed to the nominated station for standby duties.\nMaintain availability for immediate mobilisation.\nAwait further instructions from Control.`;
+ };
+
+ const typeOptions=[...new Set([draft.type,"999 EMERGENCY","DWELLING FIRE","SHED / OUTBUILDING FIRE","COMMERCIAL FIRE","VEHICLE FIRE","RTC","FIRE ALARM","CHIMNEY FIRE","GRASS / WILDFIRE","WATER RESCUE","ROPE RESCUE","HEIGHT RESCUE","SPECIAL SERVICE","EFFECTING ENTRY","STANDBY DUTIES","OTHER"].filter(Boolean))];
  const priorityOptions=[...new Set([draft.priority,"Immediate","Prompt","Non Emergency"].filter(Boolean))];
  const sceneOptions=[...new Set([draft.sceneStatus,"","Being Attended","Under Control","Making Pumps","Rescue Underway","Evacuation","All Clear"])];
- const timeline=Array.isArray(inc.timeline)?inc.timeline:[];
+ const timeline=cleanTimelineEvents(Array.isArray(inc.timeline)?inc.timeline:[]).filter(e=>timelineEventLabel(e?.text));
  const crews=inc.applianceCrew||{}, members=inc.crewMembers||{};
 
  el.innerHTML=`<div class="incidentDetailContent commandRecord">
@@ -243,6 +728,12 @@ function renderIncidentDetail(){
        <div class="incidentEditGrid">
          <label>Incident Type
            <select id="editIncidentType">${typeOptions.map(v=>`<option ${v===draft.type?"selected":""}>${esc(v)}</option>`).join("")}</select>
+         </label>
+         <label>Standby Station
+           <select id="editStandbyStation" ${upper(draft.type)==="STANDBY DUTIES"?"":"disabled"}>
+             <option value="">Select station...</option>
+             ${standbyStations.map(st=>`<option value="${esc(st)}" ${String(draft.standbyDestination)===String(st)?"selected":""}>${esc(st)}</option>`).join("")}
+           </select>
          </label>
          <label>Priority
            <select id="editIncidentPriority">${priorityOptions.map(v=>`<option ${v===draft.priority?"selected":""}>${esc(v)}</option>`).join("")}</select>
@@ -296,20 +787,30 @@ function renderIncidentDetail(){
        <label><input id="prefPager" type="checkbox" ${pager?"checked":""}> Send to Pager</label>
      </div>
      <div class="turnoutPreflight"><strong>TURNOUT PRE-FLIGHT</strong><span>Set talkgroup, map ref, hazards and further information above. Select an appliance role before mobilisation.</span></div>
+     
      <table class="resourceTable">
        <thead><tr><th>CALLSIGN</th><th>STATION</th><th>STATUS</th><th>ROLE</th><th>ACTION</th></tr></thead>
        <tbody>
          ${assigned.map(cs=>`<tr>
            <td><strong>${esc(cs)}</strong></td>
            <td>${standbyStationFor(cs)?`<strong>${esc(standbyStationFor(cs))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(cs)||"—")}</small>`:esc(stationFor(cs)||"")}</td>
-           <td>${esc(state.units?.[cs]?.status||inc.applianceStatuses?.[cs]||"Mobilised")}</td>
+           <td>
+             <div class="liveIncidentUnitState">
+               <strong>${esc(liveAssignedStatus(inc,cs))}</strong>
+             </div>
+           </td>
            <td>${esc(inc.assignedRoles?.[cs]||"Pump")}</td>
-           <td><button class="remove" data-unassign="${esc(cs)}">RELEASE</button></td>
+           <td>${inc.isStandby||upper(inc.type)==="STANDBY DUTIES"
+             ? `<button class="secondary" data-return-standby-incident="${esc(cs)}">RETURN HOME</button>`
+             : `<button class="remove" data-unassign="${esc(cs)}">RELEASE</button>`}</td>
          </tr>`).join("")}
          ${candidates.map(u=>`<tr>
            <td><strong>${esc(u.callsign)}</strong></td>
            <td>${standbyStationFor(u.callsign)?`<strong>${esc(standbyStationFor(u.callsign))}</strong><small class="standbySub">STANDBY · Home ${esc(stationFor(u.callsign)||"—")}</small>`:esc(stationFor(u.callsign)||"")}</td>
-           <td>${esc(u.status||"AVAILABLE")}${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
+           <td>${esc(u.status||"AVAILABLE")}
+             ${["AVAILABLE AT INCIDENT","MOBILE TO INCIDENT"].includes(upper(u.status))
+               ? `<small class="standbySub">CAN BE REMOBILISED</small>`:""}
+             ${activeStandbyMove(u.callsign)?`<small class="standbySub">AVAILABLE FROM STANDBY</small>`:""}</td>
            <td><select class="mobiliseRole" data-role-cs="${esc(u.callsign)}">${["Pump","Pump Commander","Incident Commander","Sector Commander","Safety Officer","Water","Aerial","Rescue","Command","Other"].map(r=>`<option>${esc(r)}</option>`).join("")}</select></td>
            <td><button data-mobilise="${esc(u.callsign)}">MOBILISE</button></td>
          </tr>`).join("")}
@@ -366,7 +867,7 @@ function renderIncidentDetail(){
 
  // Keep every editable field as a local draft while heartbeats arrive.
  const draftBindings={
-   editIncidentType:"type",editIncidentPriority:"priority",editIncidentAddress:"address",
+   editIncidentType:"type",editStandbyStation:"standbyDestination",editIncidentPriority:"priority",editIncidentAddress:"address",
    editIncidentPostal:"postal",editMapRef:"mapRef",editTalkgroup:"talkgroup",editIncidentCaller:"caller",editSceneStatus:"sceneStatus",
    editCasualties:"casualties",editDetails:"details",editHazards:"hazards",editSpecialRisk:"specialRisk",editResources:"resources"
  };
@@ -375,6 +876,54 @@ function renderIncidentDetail(){
    input.addEventListener("input",()=>setIncidentDraftField(inc.id,field,field==="casualties"?Number(input.value||0):input.value));
    input.addEventListener("change",()=>setIncidentDraftField(inc.id,field,field==="casualties"?Number(input.value||0):input.value));
  });
+
+ const typeSelect=$("editIncidentType");
+ const stationSelect=$("editStandbyStation");
+ const detailsBox=$("editDetails");
+ const addressBox=$("editIncidentAddress");
+
+ const applyStandbyMode=()=>{
+   const isStandby=upper(typeSelect?.value)==="STANDBY DUTIES";
+   if(stationSelect) stationSelect.disabled=!isStandby;
+
+   if(isStandby && detailsBox){
+     const existing=String(detailsBox.value||"").trim();
+     if(!existing || existing==="No further information."){
+       const text=standbyDetailsText(stationSelect?.value||"");
+       detailsBox.value=text;
+       setIncidentDraftField(inc.id,"details",text);
+     }
+   }
+ };
+
+ typeSelect?.addEventListener("change",()=>{
+   applyStandbyMode();
+   if(upper(typeSelect.value)!=="STANDBY DUTIES"){
+     setIncidentDraftField(inc.id,"standbyDestination","");
+     if(stationSelect) stationSelect.value="";
+   }
+ });
+
+ stationSelect?.addEventListener("change",()=>{
+   const d=incidentDraft(inc);
+   const previous=String(d.standbyDestination||"");
+   const station=String(stationSelect.value||"");
+   setIncidentDraftField(inc.id,"standbyDestination",station);
+
+   if(upper(typeSelect?.value)==="STANDBY DUTIES"){
+     if(addressBox && (!String(addressBox.value||"").trim() || String(addressBox.value||"").trim()===previous)){
+       addressBox.value=station;
+       setIncidentDraftField(inc.id,"address",station);
+     }
+     if(detailsBox){
+       const text=standbyDetailsText(station);
+       detailsBox.value=text;
+       setIncidentDraftField(inc.id,"details",text);
+     }
+   }
+ });
+
+ applyStandbyMode();
 
  const savePrefs=()=>localStorage.setItem(prefsKey,JSON.stringify({
    mdt:$("prefMDT")?.checked===true,
@@ -402,8 +951,12 @@ function renderIncidentDetail(){
      await command("updateIncidentDetails",{
        incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,
        caller:d.caller,sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),
-       details:d.details,hazards:d.hazards,resources:d.resources,
-       mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
+       details:d.details,notes:d.details,hazards:d.hazards,resources:d.resources,
+       mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk,
+       standbyDestination:d.standbyDestination,
+       dispatchMode:upper(d.type)==="STANDBY DUTIES"?"STANDBY":"INCIDENT",
+       category:upper(d.type)==="STANDBY DUTIES"?"standby":"incident",
+       isStandby:upper(d.type)==="STANDBY DUTIES"
      });
      hint.textContent="Sent — waiting for FiveM confirmation…";
 
@@ -452,8 +1005,12 @@ function renderIncidentDetail(){
    const d=incidentDraft(inc);
    await command("updateIncidentDetails",{
      incidentId:inc.id,type:d.type,priority:d.priority,address:d.address,postal:d.postal,caller:d.caller,
-     sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),details:d.details,hazards:d.hazards,resources:d.resources,
-     mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk
+     sceneStatus:d.sceneStatus,casualties:Number(d.casualties||0),details:d.details,notes:d.details,hazards:d.hazards,resources:d.resources,
+     mapRef:d.mapRef,talkgroup:d.talkgroup,specialRisk:d.specialRisk,
+     standbyDestination:d.standbyDestination,
+     dispatchMode:upper(d.type)==="STANDBY DUTIES"?"STANDBY":"INCIDENT",
+     category:upper(d.type)==="STANDBY DUTIES"?"standby":"incident",
+     isStandby:upper(d.type)==="STANDBY DUTIES"
    });
    const role=el.querySelector(`.mobiliseRole[data-role-cs="${CSS.escape(cs)}"]`)?.value||"Pump";
    await command("assignAppliance",{
@@ -462,6 +1019,19 @@ function renderIncidentDetail(){
    });
  });
  el.querySelectorAll("[data-unassign]").forEach(b=>b.onclick=()=>command("assignAppliance",{incidentId:inc.id,callsign:b.dataset.unassign,assign:false}));
+ el.querySelectorAll("[data-return-standby-incident]").forEach(b=>b.onclick=async()=>{
+   const cs=upper(b.dataset.returnStandbyIncident||"");
+   if(!cs)return;
+   if(!confirm(`Return ${cs} to its home station?`))return;
+   b.disabled=true;b.textContent="SENDING...";
+   try{
+     await command("returnStandbyIncident",{incidentId:inc.id,callsign:cs});
+     setTimeout(()=>load().catch(()=>{}),200);
+   }catch(err){
+     console.error(err);alert(err.message||"Unable to return appliance home.");
+     b.disabled=false;b.textContent="RETURN HOME";
+   }
+ });
 
  el.querySelectorAll(".saveCrewCount").forEach(btn=>btn.onclick=async()=>{
    const cs=btn.dataset.cs,input=el.querySelector(`.crewCountInput[data-cs="${CSS.escape(cs)}"]`);
@@ -490,6 +1060,36 @@ function renderIncidentDetail(){
    }finally{btn.disabled=false;btn.textContent="CREATE RESOURCE REQUEST";}
  };
 }
+
+function currentOpenIncidentForUnit(cs){
+ const key=upper(cs);
+ const primary=Array.isArray(state.incidents)?state.incidents:[];
+ const standby=Array.isArray(state.standbyIncidents)?state.standbyIncidents:[];
+ const list=[...primary,...standby];
+
+ for(let i=list.length-1;i>=0;i--){
+   const inc=list[i]||{};
+   if(upper(inc.status)==="CLOSED")continue;
+   if(assignedUnits(inc).includes(key))return inc;
+ }
+
+ // Last fallback: active standby move can point us back to its incident.
+ const move=activeStandbyMove(key);
+ if(move){
+   return list.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===String(move.id))||null;
+ }
+ return null;
+}
+function displayIncidentNumber(inc){
+ if(!inc)return "";
+ const raw=String(inc.incidentNumber||inc.id||"");
+ const match=raw.match(/(\d{5})(?!.*\d)/);
+ return match?match[1]:raw;
+}
+function incidentRelatedStatus(status){
+ return /MOBILE TO INCIDENT|IN ATTENDANCE|AVAILABLE AT INCIDENT|ON SCENE|INCIDENT/i.test(String(status||""));
+}
+
 function renderUnits(){
  const configured=[...new Set([...(state.callsigns||[]).map(upper),...Object.keys(state.units||{}).map(upper)])].sort();
  $("unitTable").innerHTML=`<div class="tableHead applianceBoardHead"><div>CALLSIGN</div><div>HOME STATION</div><div>CURRENT COVER / LOCATION</div><div>SKILL / TYPE</div><div>STATUS</div><div>LIVE</div></div>`+
@@ -499,12 +1099,23 @@ function renderUnits(){
    const current=move?(move.destination||"Standby"):(state.units?.[cs]?home:"—");
    const live=!!state.units?.[cs];
    const status=currentStatus(cs);
+   const inc=currentOpenIncidentForUnit(cs);
+   const incNo=displayIncidentNumber(inc);
+   const ack=inc?incidentAckInfo(inc,cs):{acked:false,time:""};
+
    return `<div class="tableRow applianceBoardRow">
      <div><strong>${esc(cs)}</strong>${move?'<span class="standbyFlag">STANDBY</span>':""}</div>
      <div>${esc(home)}</div>
      <div>${move?`<strong>${esc(current)}</strong><small class="standbySub">${esc(move.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
      <div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div>
-     <div><span class="status ${statusClass(status)}">${esc(status)}</span>${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}</div>
+     <div>
+       <div class="boardStatusLine">
+         <span class="status ${statusClass(status)}">${esc(status)}</span>
+         ${inc&&incNo?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
+         ${inc?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
+       </div>
+       ${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
+     </div>
      <div>${live?"SIGNED ON":"OFF RUN"}</div>
    </div>`;
  }).join("");
@@ -599,8 +1210,29 @@ function coverData(){
    return {station,list,rows,available,mobile,live:rows.filter(r=>r.live).length,level:available===0?"red":available===1?"amber":"green"};
  }).sort((a,b)=>a.station.localeCompare(b.station));
 }
-function renderCover(){
+
+function standbyEditorHasFocus(){
+ const a=document.activeElement;
+ return !!(a && [
+   "standbyUnit",
+   "standbyDestination",
+   "standbyPostal",
+   "standbyMapRef",
+   "standbyTalkgroup",
+   "standbyRole",
+   "standbySpecialRisk",
+   "standbyFurtherInfo",
+   "standbyNote"
+ ].includes(a.id));
+}
+
+function renderCover(force=false){
  const summary=$("coverSummary"),suggestions=$("coverSuggestions"); if(!summary||!suggestions)return;
+
+ // Live state refreshes must not replace the editor DOM while Control is
+ // typing or choosing a select option. Replacing it was stealing focus every
+ // couple of seconds and making values appear to last for only a moment.
+ if(!force && standbyEditorHasFocus()) return;
  const data=coverData();
  summary.innerHTML=data.length?data.map(s=>`<article class="coverCard ${s.level}"><header><div><span>STATION COVER</span><strong>${esc(s.station)}</strong></div><b>${s.available} AVAILABLE</b></header><div class="coverStats"><span>${s.live}/${s.list.length} live</span><span>${s.mobile} committed</span><span>${s.list.length} configured</span></div></article>`).join(""):empty("No station configuration received");
  const deficits=data.filter(s=>s.available===0),donors=data.filter(s=>s.available>=2),moves=[];
@@ -629,7 +1261,7 @@ function renderCover(){
    const {callsign,destination}=standbyDraft;if(!callsign||!destination)return alert("Select an appliance and destination station.");
    try{await command("createStandbyMove",{...standbyDraft});Object.assign(standbyDraft,{callsign:"",destination:"",note:"Maintain cover while another appliance is committed",postal:"",mapRef:"",talkgroup:"FLAB-OPS1",role:"Pump",specialRisk:"",furtherInfo:""});await load()}catch(e){alert(e.message||"Unable to send standby move")}
  });
- document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{standbyDraft.callsign=b.dataset.suggestStandby||"";standbyDraft.destination=b.dataset.coverTarget||"";standbyDraft.note="Standby move recommended by Guardian cover board";standbyDraft.furtherInfo=`Proceed to ${standbyDraft.destination} and provide standby cover until released by Control.`;renderCover()});
+ document.querySelectorAll("[data-suggest-standby]").forEach(b=>b.onclick=()=>{standbyDraft.callsign=b.dataset.suggestStandby||"";standbyDraft.destination=b.dataset.coverTarget||"";standbyDraft.note="Standby move recommended by Guardian cover board";standbyDraft.furtherInfo=`Proceed to ${standbyDraft.destination} and provide standby cover until released by Control.`;renderCover(true)});
  document.querySelectorAll("[data-cancel-standby]").forEach(b=>b.onclick=async()=>{try{await command("cancelStandbyMove",{id:b.dataset.cancelStandby});await load()}catch(e){alert(e.message)}});
  document.querySelectorAll("[data-return-standby]").forEach(b=>b.onclick=async()=>{try{await command("returnStandbyMove",{id:b.dataset.returnStandby});await load()}catch(e){alert(e.message)}});
 }
@@ -651,6 +1283,8 @@ function renderMdt(){
  document.querySelectorAll("[data-mdtincident]").forEach(b=>b.onclick=()=>{selectedMdtIncidentId=b.dataset.mdtincident;renderMdt()});
  $("mdtAck")&&($("mdtAck").onclick=()=>command("webMdtAck",{callsign:mdtCallsign,incidentId:inc.id}));
 }
+
+
 function openModal(){ $("incidentModal").classList.remove("hidden") } function closeModal(){ $("incidentModal").classList.add("hidden") }
 document.addEventListener("click",e=>{
  const v=e.target.closest("[data-view]");if(v)setControlView(v.dataset.view);
@@ -663,7 +1297,21 @@ document.addEventListener("click",e=>{
  const mv=e.target.closest("[data-mdtview]");if(mv)setMdtView(mv.dataset.mdtview);
 });
 $("openCreate").onclick=$("openCreate2").onclick=openModal;$("closeModal").onclick=$("cancelCreate").onclick=closeModal;
-$("createIncident").onclick=async()=>{await command("createIncident",{type:$("fType").value,address:$("fAddress").value,postal:$("fPostal").value,priority:$("fPriority").value,caller:$("fCaller").value,notes:$("fNotes").value,enableMDT:$("fMDT").checked,enableTurnout:$("fTurnout").checked,enablePager:$("fPager").checked});closeModal()};
+$("createIncident").onclick=async()=>{
+ await command("createIncident",{
+   type:$("fType").value.trim()||"INCIDENT",
+   address:$("fAddress").value,
+   postal:$("fPostal").value,
+   priority:$("fPriority").value,
+   caller:$("fCaller").value,
+   notes:$("fNotes").value,
+   details:$("fNotes").value,
+   enableMDT:$("fMDT").checked,
+   enableTurnout:$("fTurnout").checked,
+   enablePager:$("fPager").checked
+ });
+ closeModal()
+};
 $("sendMessage").onclick=async()=>{if(!$("messageText").value.trim())return;await command("sendMessage",{target:$("messageTarget").value,message:$("messageText").value.trim()});$("messageText").value=""};
 $("mdtCallsign").onchange=()=>{mdtCallsign=upper($("mdtCallsign").value);localStorage.setItem("guardianMdtCallsign",mdtCallsign);selectedMdtIncidentId=null;renderMdt()};
 $("sendStatus").onclick=()=>{if(!mdtCallsign)return alert("Select your callsign first.");if(!selectedStatus)return alert("Select a status first.");command("webMdtStatus",{callsign:mdtCallsign,status:selectedStatus})};
@@ -675,3 +1323,7 @@ window.addEventListener("online",()=>load().catch?.(()=>{}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
 
 
+
+const guardianLiveIncidentRefresh=setInterval(()=>{
+  if(document.visibilityState==="visible") load().catch(()=>{});
+},2000);
