@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Guardian Operations</title>
 <link rel="stylesheet" href="/control.css">
-</head>
+<style>
+#guardianCoreStatus{position:fixed;left:12px;bottom:10px;z-index:99990;padding:6px 9px;border-radius:4px;background:#0a202c;border:1px solid #356276;color:#b9d8e7;font:800 9px Arial;letter-spacing:.06em;box-shadow:0 3px 14px #0008}
+#guardianCoreStatus.fivem{border-color:#287d59;color:#75dca9}#guardianCoreStatus.standalone{border-color:#a57b22;color:#f1cf70}#guardianCoreStatus.offline{border-color:#913b45;color:#ff9ca7}
+</style></head>
 <body>
 <header class="masthead">
   <div class="identity">
@@ -23,7 +26,6 @@
   <aside class="rail">
     <div class="sectionLabel">OPERATIONS</div>
     <button data-view="overview" class="railBtn active">Overview</button>
-    <button data-view="map" class="railBtn">Map</button>
     <button data-view="incidents" class="railBtn">Incidents <b id="incidentBadge">0</b></button>
     <button data-view="units" class="railBtn">Appliances</button>
     <button data-view="calls" class="railBtn">999 Queue <b id="callBadge">0</b></button>
@@ -59,52 +61,6 @@
           <header><div><span class="panelKicker">FLEET STATUS</span><h2>Live Appliances</h2></div><button class="textBtn" data-jump="units">FULL BOARD</button></header>
           <div id="overviewUnits" class="rows"></div>
         </section>
-      </div>
-    </section>
-
-    <section id="view-map" class="view">
-      <div class="pageHeader">
-        <div>
-          <span class="eyebrow">OPERATIONAL MAPPING</span>
-          <h1>Control Map</h1>
-          <p>Fire stations and 999 calls plotted using Guardian postal coordinates.</p>
-        </div>
-        <div class="mapLegend">
-          <span><i class="legendStation"></i> Fire Station</span>
-          <span><i class="legendCall"></i> 999 Call</span>
-        </div>
-      </div>
-
-      <div class="controlMapLayout">
-        <section class="panel controlMapPanel">
-          <div class="controlMapToolbar" aria-label="Map controls">
-            <button type="button" id="mapZoomOut" class="mapToolBtn" title="Zoom out">−</button>
-            <span id="mapZoomLabel" class="mapZoomLabel">100%</span>
-            <button type="button" id="mapZoomIn" class="mapToolBtn" title="Zoom in">+</button>
-            <button type="button" id="mapZoomReset" class="mapToolBtn mapResetBtn" title="Fit full map">FIT MAP</button>
-            <button type="button" id="mapStationLock" class="mapToolBtn mapStationLockBtn" title="Lock fire-station markers">LOCK STATIONS</button>
-          </div>
-          <div id="controlMapViewport" class="controlMapViewport">
-            <div id="controlMapCanvas" class="controlMapCanvas">
-              <img src="/control/assets/postal_map.png" class="controlMapImage" alt="Postal map">
-              <div id="controlMapOverlay" class="controlMapOverlay"></div>
-            </div>
-          </div>
-        </section>
-
-        <aside class="controlMapSidebar">
-          <section class="panel mapSidePanel">
-            <header><div><span class="panelKicker">LIVE INCIDENT INTAKE</span><h2>999 Calls</h2></div></header>
-            <div id="mapCallList" class="mapCallList"></div>
-          </section>
-
-          <section class="panel mapSidePanel">
-            <header><div><span class="panelKicker">MAP DETAILS</span><h2>Selection</h2></div></header>
-            <div id="mapSelection" class="mapSelection">
-              <div class="emptyState"><strong>Select a marker</strong><span>Choose a station or 999 call from the map.</span></div>
-            </div>
-          </section>
-        </aside>
       </div>
     </section>
 
@@ -200,4 +156,4 @@
   </div>
 </div>
 <script src="/control.js"></script>
-</body></html>
+<script src="/core_status.js" defer></script></body></html>

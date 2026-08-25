@@ -5,8 +5,35 @@ local function upper(v)
     return string.upper(tostring(v or "")):gsub("%s+", "")
 end
 
-local function mergeWebBookings(snapshot)
+
+local function mergeFleetConfig(snapshot)
     snapshot = snapshot or {}
+    snapshot.callsigns = snapshot.callsigns or {}
+    snapshot.callSignStations = snapshot.callSignStations or {}
+    snapshot.applianceSkills = snapshot.applianceSkills or {}
+
+    local seen = {}
+    for _, cs in ipairs(snapshot.callsigns) do seen[upper(cs)] = true end
+    for _, cs in ipairs(Config.Callsigns or {}) do
+        local key = upper(cs)
+        if key ~= "" and not seen[key] then
+            snapshot.callsigns[#snapshot.callsigns + 1] = key
+            seen[key] = true
+        end
+    end
+    for cs, station in pairs(Config.CallSignStations or {}) do
+        local key = upper(cs)
+        if snapshot.callSignStations[key] == nil then snapshot.callSignStations[key] = station end
+    end
+    for cs, skill in pairs(Config.ApplianceSkills or {}) do
+        local key = upper(cs)
+        if snapshot.applianceSkills[key] == nil then snapshot.applianceSkills[key] = skill end
+    end
+    return snapshot
+end
+
+local function mergeWebBookings(snapshot)
+    snapshot = mergeFleetConfig(snapshot or {})
     snapshot.units = snapshot.units or {}
     snapshot.callsigns = snapshot.callsigns or {}
     snapshot.bookings = snapshot.bookings or {}

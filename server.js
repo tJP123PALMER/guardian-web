@@ -1,7 +1,6 @@
 import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,92 +87,12 @@ function recentlyQueued(action,data,windowMs=1200){
   return Date.now()-last < windowMs;
 }
 
-
-function canOverrideIncidentAssignment(callsign){
-  const cs=String(callsign||"").trim().toUpperCase();
-  const st=String(state.units?.[cs]?.status||"").trim().toUpperCase();
-  return st==="AVAILABLE AT INCIDENT" || st==="MOBILE TO INCIDENT";
-}
-
-function removeUnitFromOtherIncidents(callsign,newIncidentId){
-  const cs=String(callsign||"").trim().toUpperCase();
-
-  for(const inc of state.incidents||[]){
-    if(String(inc.id||"")===String(newIncidentId||""))continue;
-    if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
-
-    const assigned=(inc.assignedUnits||[]).map(x=>String(x).trim().toUpperCase());
-    if(!assigned.includes(cs))continue;
-
-    inc.assignedUnits=(inc.assignedUnits||[]).filter(x=>String(x).trim().toUpperCase()!==cs);
-    if(inc.assignedAppliances){
-      inc.assignedAppliances=inc.assignedAppliances.filter(x=>String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs);
-    }
-    if(inc.applianceStatuses) delete inc.applianceStatuses[cs];
-    if(inc.assignedRoles) delete inc.assignedRoles[cs];
-
-    addLocalIncidentTimeline(inc,`${cs} remobilised to incident #${newIncidentId}`,cs);
-
-    if(inc.isStandby && (inc.assignedUnits||[]).length===0){
-      inc.status="CLOSED";
-      inc.sceneStatus="SUPERSEDED BY INCIDENT";
-      inc.closedAt=now();
-      inc.supersededByIncident=newIncidentId;
-    }
-  }
-}
-
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
-
-const guardianDataDir=process.env.GUARDIAN_DATA_DIR||path.join(__dirname,"data");
-try{fs.mkdirSync(guardianDataDir,{recursive:true});}catch(_){}
-const stationMapPositionsFile=path.join(guardianDataDir,"station-map-positions.json");
-const stationMapLockFile=path.join(guardianDataDir,"station-map-lock.json");
-let stationMapLocked=false;
-try{
-  if(fs.existsSync(stationMapLockFile)){
-    const lockData=JSON.parse(fs.readFileSync(stationMapLockFile,"utf8"))||{};
-    stationMapLocked=lockData.locked===true;
-  }
-}catch(e){
-  console.warn("[Guardian Web] station map lock load failed:",e.message);
-}
-function saveStationMapLock(){
-  try{
-    fs.writeFileSync(stationMapLockFile,JSON.stringify({
-      locked:stationMapLocked,
-      updatedAt:now()
-    },null,2),"utf8");
-  }catch(e){
-    console.error("[Guardian Web] station map lock save failed:",e.message);
-  }
-}
-
-let stationMapPositions={};
-try{
-  if(fs.existsSync(stationMapPositionsFile)){
-    stationMapPositions=JSON.parse(fs.readFileSync(stationMapPositionsFile,"utf8"))||{};
-  }
-}catch(e){
-  console.warn("[Guardian Web] station map positions load failed:",e.message);
-  stationMapPositions={};
-}
-function stationMapKey(name){return String(name||"").trim().toLowerCase();}
-function saveStationMapPositions(){
-  try{fs.writeFileSync(stationMapPositionsFile,JSON.stringify(stationMapPositions,null,2),"utf8");}
-  catch(e){console.error("[Guardian Web] station map positions save failed:",e.message);}
-}
-function applySavedStationPositions(){
-  state.stationMapPositions={...stationMapPositions};
-  state.stationMapLocked=stationMapLocked;
-}
-
-const manualMapPositions={calls:new Map(),incidents:new Map()};
-
 let state = {
   connected: false,
+  coreMode: "STANDALONE",
   lastHeartbeat: null,
   updatedAt: now(),
   units: {},
@@ -187,9 +106,7 @@ let state = {
   bookings: {},
   eventLog: [],
   standbyMoves: [],
-  standbyIncidents: [],
-  stationMapPositions: {...stationMapPositions},
-  stationMapLocked: stationMapLocked
+  standbyIncidents: []
 };
 
 function auth(req,res,next){
@@ -217,77 +134,6 @@ function pushEvent(kind,payload={}){
   state.eventLog = state.eventLog.slice(0,500);
   broadcast("event", event);
   return event;
-}
-
-
-function normaliseIncidentLive(inc){
-  if(!inc || typeof inc!=="object") return inc;
-  inc.assignedUnits = Array.isArray(inc.assignedUnits)
-    ? inc.assignedUnits
-    : Array.isArray(inc.assignedAppliances) ? inc.assignedAppliances
-    : Array.isArray(inc.appliances) ? inc.appliances : [];
-  inc.applianceStatuses = inc.applianceStatuses && typeof inc.applianceStatuses==="object" ? inc.applianceStatuses : {};
-  inc.acknowledgedBy = inc.acknowledgedBy && typeof inc.acknowledgedBy==="object" ? inc.acknowledgedBy : {};
-  inc.acknowledgedAt = inc.acknowledgedAt && typeof inc.acknowledgedAt==="object" ? inc.acknowledgedAt : {};
-  inc.timeline = Array.isArray(inc.timeline) ? inc.timeline : [];
-  return inc;
-}
-function sameIncidentIdentity(a,b){
-  if(!a||!b)return false;
-  if(String(a.id||"") && String(a.id||"")===String(b.id||"")) return true;
-  if(a.standbyMoveId && b.standbyMoveId && String(a.standbyMoveId)===String(b.standbyMoveId)) return true;
-  return false;
-}
-function timelineHas(inc,text){
-  return (inc.timeline||[]).some(e=>String(e?.text||"")===String(text||""));
-}
-function mergeIncidentLive(previous,incoming){
-  const old=normaliseIncidentLive(previous?{...previous}: {});
-  const fresh=normaliseIncidentLive(incoming?{...incoming}: {});
-  const next=normaliseIncidentLive({...old,...fresh});
-
-  next.acknowledgedBy={...(old.acknowledgedBy||{}),...(fresh.acknowledgedBy||{})};
-  next.acknowledgedAt={...(old.acknowledgedAt||{}),...(fresh.acknowledgedAt||{})};
-
-  next.applianceStatuses=(fresh.applianceStatuses && Object.keys(fresh.applianceStatuses).length)
-    ? {...fresh.applianceStatuses}
-    : {...(old.applianceStatuses||{})};
-
-  const mergedTimeline=[];
-  const seen=new Set();
-
-  for(const e of [...(old.timeline||[]),...(fresh.timeline||[])]){
-    if(!e)continue;
-
-    const explicit=String(e.id||e.eventId||"");
-    const key=explicit
-      ? `ID:${explicit}`
-      : `LEGACY:${String(e.time||"")}|${String(e.text||"")}|${String(e.callsign||e.unit||"")}`;
-
-    if(seen.has(key))continue;
-    seen.add(key);
-    mergedTimeline.push(e);
-  }
-
-  for(const rawCs of next.assignedUnits||[]){
-    const cs=String(typeof rawCs==="string"?rawCs:(rawCs?.callsign||rawCs?.unit||"")).toUpperCase();
-    if(!cs)continue;
-
-    if(next.acknowledgedBy?.[cs] && !next.timeline.some(e=>
-      String(e?.text||"").toUpperCase()===`${cs} ACKNOWLEDGED INCIDENT`
-    )){
-      next.timeline.push({
-        id:`ACK:${next.id}:${cs}`,
-        eventId:`ACK:${next.id}:${cs}`,
-        time:next.acknowledgedAt?.[cs]||new Date().toLocaleTimeString("en-GB",{hour12:false}),
-        text:`${cs} acknowledged incident`,
-        callsign:cs
-      });
-    }
-  }
-
-  next.timeline.sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
-  return next;
 }
 
 function touch(){
@@ -341,10 +187,10 @@ setInterval(()=>{
   }
 },5000).unref?.();
 
-app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.7.0 Production Sync"));
+app.get("/guardian-version",(_req,res)=>res.type("text/plain").send("Guardian Operations v2.5.1.1 Turnout + Incident Fix"));
 app.get("/healthz",(_req,res)=>res.json({
   ok:true,
-  version:"Guardian Operations v2.7.0 Production Sync",
+  version:"Guardian Operations v2.5.1.1 Turnout + Incident Fix",
   fivemConnected:state.connected,
   browserClients:clients.size,
   units:Object.keys(state.units).length,
@@ -356,7 +202,6 @@ app.get("/healthz",(_req,res)=>res.json({
 
 app.get("/api/state",(_req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  applySavedStationPositions(); // persistent station map positions
   res.json({ok:true,state});
 });
 
@@ -378,70 +223,19 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   const hadIncidents = new Map((state.incidents||[]).map(i=>[String(i.id), i]));
   const hadCalls = new Set((state.calls999||[]).map(c=>String(c.id)));
 
-  if(body.units && typeof body.units==="object"){
-    const authoritative=normalizeUnits(body.units);
-    const merged={};
-
-    for(const [cs,incomingRaw] of Object.entries(authoritative)){
-      const incoming=(incomingRaw && typeof incomingRaw==="object")
-        ? {...incomingRaw}
-        : {status:incomingRaw};
-
-      merged[cs]={
-        ...(state.units?.[cs]||{}),
-        ...incoming,
-        webStatusPending:false,
-        webStatusPendingAt:null
-      };
-    }
-
-    for(const [cs,current] of Object.entries(state.units||{})){
-      if(!(cs in merged) && current?.webOnly===true && current?.webBooked===true){
-        merged[cs]=current;
-      }
-    }
-
-    state.units=merged;
-  }
+  const incomingUnits=normalizeUnits(body.units ?? {});
+  state.units={...(state.units||{}),...incomingUnits};
   if(Array.isArray(body.incidents)){
-    const previous=state.incidents||[];
-    const liveIncidents=body.incidents.map(raw=>{
-      const incoming=normaliseIncidentLive(raw);
-      const old=previous.find(x=>sameIncidentIdentity(x,incoming));
-      return mergeIncidentLive(old,incoming);
+    const currentById=new Map((state.incidents||[]).map(i=>[String(i.id),i]));
+    const merged=body.incidents.map(incoming=>{
+      const prior=currentById.get(String(incoming.id));
+      currentById.delete(String(incoming.id));
+      return prior?.coreOwned?{...prior,...incoming,coreOwned:true}:{...(prior||{}),...incoming};
     });
-
-    // Browser-created standby placeholder exists immediately in Control.
-    // The authoritative FiveM standby (same standbyMoveId) replaces it.
-    const activeStandbys=(state.standbyIncidents||[])
-      .filter(i=>String(i.status||"").toUpperCase()!=="CLOSED")
-      .map(raw=>{
-        const standby=normaliseIncidentLive(raw);
-        const old=previous.find(x=>sameIncidentIdentity(x,standby));
-        return mergeIncidentLive(old,standby);
-      });
-
-    const merged=[...liveIncidents];
-    for(const standby of activeStandbys){
-      const idx=merged.findIndex(i=>sameIncidentIdentity(i,standby));
-      if(idx>=0) merged[idx]=mergeIncidentLive(merged[idx],standby);
-      else merged.push(standby);
-    }
-    state.incidents=merged.map(inc=>{
-      const iid=String(inc?.id||"");
-      const sid=String(inc?.source999Id||inc?.source999CallId||"");
-      const manual=manualMapPositions.incidents.get(iid)||(sid?manualMapPositions.calls.get(sid):null);
-      if(!manual)return inc;
-      if(iid)manualMapPositions.incidents.set(iid,{...manual});
-      return {...inc,...manual,mapAdjusted:true};
-    });
+    const retained=[...currentById.values()].filter(i=>i?.coreOwned===true || i?.isStandby===true);
+    state.incidents=[...merged,...retained];
   }
-  if(Array.isArray(body.calls999)){
-    state.calls999=dedupe999Calls(body.calls999).map(call=>{
-      const manual=manualMapPositions.calls.get(String(call?.id||""));
-      return manual?{...call,...manual}:call;
-    });
-  }
+  if(Array.isArray(body.calls999)) state.calls999 = dedupe999Calls(body.calls999);
   if(Array.isArray(body.messages)) state.messages = body.messages;
   if(Array.isArray(body.callsigns)) state.callsigns = body.callsigns;
   if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
@@ -449,6 +243,7 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   if(body.bookings && typeof body.bookings === "object") state.bookings = body.bookings;
 
   state.connected = true;
+  state.coreMode = "FIVEM CONNECTED";
   state.lastHeartbeat = now();
   rebuildStations();
 
@@ -481,7 +276,7 @@ const allowed = new Set([
   "assignAppliance","unassignAppliance","sendMessage","dismiss999Call",
   "setApplianceCrew","setCrewMember","setIncidentRole","createResourceRequest",
   "webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage",
-  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","returnStandbyIncident","ackStandbyMove","set999MapPosition","setIncidentMapPosition","setStationMapPosition","resetStationMapPosition","setStationMapLock"
+  "requestStatus","setSceneStatus","standbyMove","createStandbyMove","createStandbyIncident","cancelStandbyMove","returnStandbyMove","ackStandbyMove"
 ]);
 
 function queueCommand(action,data={}){
@@ -510,22 +305,14 @@ function makeStandbyIncident(move){
     priority:"Standby",
     location:move.destination,
     address:move.destination,
-    postal:move.postal||"",
-    mapRef:move.mapRef||"",
-    talkgroup:move.talkgroup||"FLAB-OPS1",
-    specialRisk:move.specialRisk||"",
-    hazards:move.specialRisk||"",
-    role:move.role||"Pump",
+    postal:"",
     caller:"Control",
-    details:move.furtherInfo||move.note||`Proceed to ${move.destination} for standby cover.`,
-    notes:move.furtherInfo||move.note||"",
-    furtherInfo:move.furtherInfo||"",
+    details:move.note||`Proceed to ${move.destination} for standby cover.`,
+    notes:move.note||"",
     sceneStatus:"Standby Move Sent",
     status:"ONGOING",
     appliances:[move.callsign],
-    assignedUnits:[move.callsign],
     assignedAppliances:[move.callsign],
-    assignedRoles:{[move.callsign]:move.role||"Pump"},
     applianceStatuses:{[move.callsign]:"Standby Move Sent"},
     enableMDT:true,
     enableTurnout:true,
@@ -549,146 +336,121 @@ function find999(callId){
   return (state.calls999||[]).find(c=>String(c.id)===String(callId));
 }
 
-
-function resolveIncidentForCommand(incidentId, standbyMoveId){
-  const normal=Array.isArray(state.incidents)?state.incidents:[];
-  const standby=Array.isArray(state.standbyIncidents)?state.standbyIncidents:[];
-  const requested=String(incidentId||"");
-
-  // 1. Real/numeric incident ID always wins.
-  let inc=normal.find(i=>String(i?.id||"")===requested);
-  if(inc) return inc;
-
-  // 2. Resolve via standbyMoveId into the real incident first.
-  const moveId=String(standbyMoveId || (requested.startsWith("STBY-") ? "" : "") || "");
-  if(moveId){
-    inc=normal.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===moveId);
-    if(inc) return inc;
-  }
-
-  // 3. Legacy STBY-* records are allowed only as a lookup bridge. If one is
-  // found, translate it to the real incident sharing its standbyMoveId.
-  if(requested.startsWith("STBY-")){
-    const legacy=standby.find(i=>String(i?.id||"")===requested);
-    if(legacy?.standbyMoveId){
-      inc=normal.find(i=>i?.standbyMoveId && String(i.standbyMoveId)===String(legacy.standbyMoveId));
-      if(inc) return inc;
-    }
-  }
-
-  // 4. Last resort: exact legacy object only for old historical data.
-  return standby.find(i=>String(i?.id||"")===requested) || null;
+function coreFiveMOnline(){
+  if(!state.lastHeartbeat)return false;
+  return Date.now()-Date.parse(state.lastHeartbeat)<15000;
 }
-
-function addLocalIncidentTimeline(inc,text,callsign,time,{allowRepeat=false}={}){
+function refreshCoreMode(){
+  state.connected=coreFiveMOnline();
+  state.coreMode=state.connected?"FIVEM CONNECTED":"STANDALONE";
+}
+function coreIncidentId(){
+  const used=new Set((state.incidents||[]).map(i=>String(i.id)));
+  for(let n=0;n<500;n++){
+    const candidate=String(Math.floor(10000+Math.random()*90000));
+    if(!used.has(candidate))return candidate;
+  }
+  return String(Date.now()).slice(-5);
+}
+function coreTimeline(inc,text,callsign="",kind="event"){
   if(!inc)return;
   inc.timeline=Array.isArray(inc.timeline)?inc.timeline:[];
-  const cs=String(callsign||"").trim().toUpperCase();
-  const msg=String(text||"");
-  const stamp=time||new Date().toLocaleTimeString("en-GB",{hour12:false});
-
+  const entry={id:id(),time:new Date().toLocaleTimeString("en-GB",{hour12:false}),at:now(),text:String(text||""),callsign:String(callsign||""),kind};
   const last=inc.timeline[inc.timeline.length-1];
-  if(last && String(last.text||"")===msg && String(last.callsign||"").toUpperCase()===cs){
-    if(!allowRepeat)return;
-    if(String(last.time||"")===String(stamp))return;
-  }
-
-  inc.timeline.push({
-    time:stamp,
-    text:msg,
-    callsign:cs||undefined
-  });
-
-  if(inc.timeline.length>200)inc.timeline=inc.timeline.slice(-200);
+  if(!last || last.text!==entry.text || last.callsign!==entry.callsign)inc.timeline.push(entry);
 }
-
-
-function persistLocalIncidentAck(inc,callsign){
-  if(!inc)return false;
-  const cs=String(callsign||"").trim().toUpperCase();
-  if(!cs)return false;
-
-  inc.acknowledgedBy=(inc.acknowledgedBy&&typeof inc.acknowledgedBy==="object")
-    ? inc.acknowledgedBy : {};
-  inc.acknowledgedAt=(inc.acknowledgedAt&&typeof inc.acknowledgedAt==="object")
-    ? inc.acknowledgedAt : {};
-
-  if(inc.acknowledgedBy[cs]) return true;
-
-  const ackTime=new Date().toLocaleTimeString("en-GB",{hour12:false});
-  inc.acknowledgedBy[cs]=true;
-  inc.acknowledgedAt[cs]=ackTime;
-  addLocalIncidentTimeline(inc,`${cs} acknowledged incident`,cs,ackTime);
-  return true;
+function coreFindIncident(incidentId){
+  return (state.incidents||[]).find(i=>String(i.id)===String(incidentId));
+}
+function coreAssigned(inc){
+  return inc?.assignedUnits||inc?.assignedAppliances||inc?.appliances||[];
+}
+function coreSetAssigned(inc,list){
+  inc.assignedUnits=[...list];inc.assignedAppliances=[...list];inc.appliances=[...list];
+}
+function applyCoreCommand(action,data={}){
+  refreshCoreMode();
+  if(action==="createIncident"){
+    const incidentNumber=String(data.incidentNumber||data.id||coreIncidentId());
+    let inc=coreFindIncident(incidentNumber);
+    if(inc)return {incident:inc,alreadyExists:true};
+    inc={
+      ...data,id:incidentNumber,incidentNumber,
+      type:data.type||"INCIDENT",status:"ONGOING",sceneStatus:data.sceneStatus||"",
+      assignedUnits:[],assignedAppliances:[],appliances:[],assignedRoles:{},applianceStatuses:{},
+      resourceRequests:[],timeline:[],createdAt:now(),coreOwned:true,
+      sendMDT:data.enableMDT===true,sendTurnout:data.enableTurnout===true,sendPager:data.enablePager===true
+    };
+    coreTimeline(inc,"Incident created","","incidentCreated");
+    state.incidents.unshift(inc);
+    pushEvent("incidentCreated",inc);touch();
+    return {incident:inc};
+  }
+  const incidentId=String(data.incidentId||data.id||"");
+  const inc=coreFindIncident(incidentId);
+  if(action==="updateIncident" && inc){
+    const protectedKeys=new Set(["id","incidentNumber","timeline","assignedUnits","assignedAppliances","appliances","applianceStatuses"]);
+    for(const [k,v] of Object.entries(data))if(!protectedKeys.has(k)&&v!==undefined)inc[k]=v;
+    inc.updatedAt=now();coreTimeline(inc,"Incident details updated","","incidentUpdated");pushEvent("incidentUpdated",inc);touch();return {incident:inc};
+  }
+  if(action==="closeIncident" && inc){
+    inc.status="CLOSED";inc.sceneStatus=data.sceneStatus||"Closed";inc.closedAt=now();
+    coreTimeline(inc,"Incident closed","","incidentClosed");pushEvent("incidentClosed",inc);touch();return {incident:inc};
+  }
+  if(action==="reopenIncident" && inc){
+    inc.status="ONGOING";inc.sceneStatus=data.sceneStatus||"Reopened";delete inc.closedAt;
+    coreTimeline(inc,"Incident reopened","","incidentReopened");pushEvent("incidentReopened",inc);touch();return {incident:inc};
+  }
+  if((action==="assignAppliance"||action==="unassignAppliance") && inc){
+    const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();if(!cs)return {};
+    const list=coreAssigned(inc).map(x=>String(x).toUpperCase());
+    if(action==="assignAppliance"){
+      if(!list.includes(cs))list.push(cs);
+      coreSetAssigned(inc,list);inc.applianceStatuses||={};
+      const current=state.units?.[cs]?.status||"MOBILISED TO THIS INCIDENT";inc.applianceStatuses[cs]=current;
+      state.units||={};state.units[cs]={...(state.units[cs]||{}),callsign:cs,incidentId:inc.id};
+      coreTimeline(inc,`${cs} mobilised to incident`,cs,"mobilised");
+    }else{
+      coreSetAssigned(inc,list.filter(x=>x!==cs));if(inc.applianceStatuses)delete inc.applianceStatuses[cs];
+      if(state.units?.[cs]&&String(state.units[cs].incidentId||"")===String(inc.id))delete state.units[cs].incidentId;
+      coreTimeline(inc,`${cs} released from incident`,cs,"released");
+    }
+    pushEvent("incidentUpdated",inc);touch();return {incident:inc};
+  }
+  if(action==="webMdtAck"){
+    const cs=String(data.callsign||"").trim().toUpperCase();
+    const ackInc=inc||coreFindIncident(data.id||data.incidentId);
+    if(ackInc&&cs){
+      ackInc.acknowledged=ackInc.acknowledged||{};ackInc.acknowledged[cs]=true;
+      ackInc.acknowledgedAt=ackInc.acknowledgedAt||{};ackInc.acknowledgedAt[cs]=now();
+      coreTimeline(ackInc,`${cs} acknowledged incident`,cs,"ack");
+      pushEvent("incidentUpdated",ackInc);touch();return {incident:ackInc};
+    }
+  }
+  if(action==="setSceneStatus" && inc){
+    inc.sceneStatus=String(data.status||data.sceneStatus||"");
+    coreTimeline(inc,`Incident status: ${inc.sceneStatus}`,"","sceneStatus");pushEvent("incidentUpdated",inc);touch();return {incident:inc};
+  }
+  if(action==="setIncidentRole" && inc){
+    const cs=String(data.callsign||"").trim().toUpperCase();inc.assignedRoles||={};inc.assignedRoles[cs]=String(data.role||"");
+    coreTimeline(inc,`${cs} role set to ${inc.assignedRoles[cs]}`,cs,"role");pushEvent("incidentUpdated",inc);touch();return {incident:inc};
+  }
+  if(action==="createResourceRequest" && inc){
+    inc.resourceRequests=Array.isArray(inc.resourceRequests)?inc.resourceRequests:[];
+    const rr={id:id(),...data,createdAt:now(),status:data.status||"REQUESTED"};inc.resourceRequests.push(rr);
+    coreTimeline(inc,`Resource request: ${data.type||data.resource||data.request||"Additional resource"}`,"","resourceRequest");pushEvent("incidentUpdated",inc);touch();return {incident:inc,resourceRequest:rr};
+  }
+  if(action==="sendMessage"||action==="webMdtMessage"){
+    const item={id:id(),sender:String(data.sender||data.callsign||"CONTROL"),target:String(data.target||data.to||"ALL"),to:String(data.target||data.to||"ALL"),text:String(data.message||data.text||""),time:new Date().toLocaleTimeString("en-GB",{hour12:false}),at:now(),direction:action==="webMdtMessage"?"mdt_to_control":"control_to_mdt"};
+    state.messages=Array.isArray(state.messages)?state.messages:[];state.messages.push(item);state.messages=state.messages.slice(-250);pushEvent("message",item);touch();return {message:item};
+  }
+  return {};
 }
 
 app.post("/api/command",(req,res)=>{
   let action=String(req.body?.action||"");
   const data=req.body?.data||{};
   action=aliases[action]||action;
-
-  if(action==="setStationMapLock"){
-    stationMapLocked=data.locked===true;
-    state.stationMapLocked=stationMapLocked;
-    saveStationMapLock();
-    pushEvent("stationMapLockChanged",{locked:stationMapLocked});
-    touch();
-    return res.json({ok:true,locked:stationMapLocked});
-  }
-
-  if(action==="setStationMapPosition"){
-    if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
-    const stationName=String(data.stationName||data.name||"").trim();
-    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
-    if(!stationName||!Number.isFinite(x)||!Number.isFinite(y)){
-      return res.status(400).json({ok:false,error:"Valid station and map position required"});
-    }
-    const pos={
-      mapXPercent:Math.max(0,Math.min(100,x)),
-      mapYPercent:Math.max(0,Math.min(100,y)),
-      mapAdjusted:true,
-      mapAdjustedAt:now(),
-      mapAdjustedBy:"CONTROL"
-    };
-    stationMapPositions[stationMapKey(stationName)]=pos;
-    state.stationMapPositions={...stationMapPositions};
-    saveStationMapPositions();
-    touch();
-    return res.json({ok:true,position:pos});
-  }
-
-  if(action==="resetStationMapPosition"){
-    if(stationMapLocked)return res.status(423).json({ok:false,error:"Station positions are locked"});
-    const stationName=String(data.stationName||data.name||"").trim();
-    if(!stationName)return res.status(400).json({ok:false,error:"Station required"});
-    delete stationMapPositions[stationMapKey(stationName)];
-    state.stationMapPositions={...stationMapPositions};
-    saveStationMapPositions();
-    touch();
-    return res.json({ok:true});
-  }
-
-  if(action==="set999MapPosition"){
-    const callId=String(data.callId||data.id||"");
-    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
-    if(!callId||!Number.isFinite(x)||!Number.isFinite(y)) return res.status(400).json({ok:false,error:"Valid call and map position required"});
-    const pos={mapXPercent:Math.max(0,Math.min(100,x)),mapYPercent:Math.max(0,Math.min(100,y)),mapAdjusted:true,mapAdjustedAt:now(),mapAdjustedBy:"CONTROL"};
-    manualMapPositions.calls.set(callId,pos);
-    const call=find999(callId);if(call)Object.assign(call,pos);
-    touch();
-    return res.json({ok:true,position:pos});
-  }
-
-  if(action==="setIncidentMapPosition"){
-    const incidentId=String(data.incidentId||data.id||"");
-    const x=Number(data.mapXPercent),y=Number(data.mapYPercent);
-    if(!incidentId||!Number.isFinite(x)||!Number.isFinite(y)) return res.status(400).json({ok:false,error:"Valid incident and map position required"});
-    const pos={mapXPercent:Math.max(0,Math.min(100,x)),mapYPercent:Math.max(0,Math.min(100,y)),mapAdjusted:true,mapAdjustedAt:now(),mapAdjustedBy:"CONTROL"};
-    manualMapPositions.incidents.set(incidentId,pos);
-    const inc=(state.incidents||[]).find(i=>String(i.id||"")===incidentId);if(inc)Object.assign(inc,pos);
-    touch();
-    return res.json({ok:true,position:pos});
-  }
 
   if(action==="createIncidentFrom999"){
     const call=find999(data.callId);
@@ -718,11 +480,6 @@ app.post("/api/command",(req,res)=>{
       phone:call.phone||call.telephone||"",
       notes:call.description||call.details||call.message||"",
       details:call.description||call.details||call.message||"",
-      mapXPercent:Number.isFinite(Number(call.mapXPercent))?Number(call.mapXPercent):undefined,
-      mapYPercent:Number.isFinite(Number(call.mapYPercent))?Number(call.mapYPercent):undefined,
-      mapAdjusted:call.mapAdjusted===true,
-      mapAdjustedAt:call.mapAdjustedAt,
-      mapAdjustedBy:call.mapAdjustedBy,
       enableMDT:true,
       enableTurnout:false,
       enablePager:false
@@ -733,10 +490,12 @@ app.post("/api/command",(req,res)=>{
     state.calls999=state.calls999.filter(c=>String(c.id)!==sourceId);
     touch();
 
+    incidentData.incidentNumber=coreIncidentId();
+    const local=applyCoreCommand("createIncident",incidentData);
     const create=queueCommand("createIncident",incidentData);
     const dismiss=queueCommand("dismiss999Call",{id:sourceId,callId:sourceId,reason:"Converted to incident"});
-    pushEvent("999Converted",{callId:sourceId,createCommandId:create.id});
-    return res.json({ok:true,command:create,dismissCommand:dismiss,converted:incidentData});
+    pushEvent("999Converted",{callId:sourceId,incidentId:local.incident?.id,createCommandId:create.id});
+    return res.json({ok:true,command:create,dismissCommand:dismiss,converted:incidentData,incident:local.incident});
   }
 
 
@@ -750,8 +509,7 @@ app.post("/api/command",(req,res)=>{
 
     const u=state.units?.[callsign]||{};
     const st=String(u.status||"").toLowerCase();
-    const canReceiveStandbyWhileReturning=/mobile and available|available at incident|return to home station/.test(st);
-    if((u.incidentId && !canReceiveStandbyWhileReturning) || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
+    if(u.incidentId || /off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(st))
       return res.status(409).json({ok:false,error:`${callsign} is committed or unavailable`});
     if(activeStandby(callsign)) return res.status(409).json({ok:false,error:`${callsign} already has an active standby move`});
 
@@ -764,8 +522,6 @@ app.post("/api/command",(req,res)=>{
       state:"sent",status:"Standby Move Sent",sentAt:now()
     };
     state.standbyMoves.unshift(move);
-
-    // Guardian_control creates the authoritative numeric standby incident.
     pushEvent("standbyMoveCreated",move);
     touch();
 
@@ -804,77 +560,20 @@ app.post("/api/command",(req,res)=>{
   if(action==="ackStandbyMove"){
     const move=state.standbyMoves.find(m=>String(m.id)===String(data.id||data.moveId));
     if(!move) return res.status(404).json({ok:false,error:"Standby move not found"});
-
-    move.state="acknowledged";
-    move.status="Mobile to Standby Station";
-    move.acknowledgedAt=now();
-
-    if(state.units?.[move.callsign]){
-      state.units[move.callsign]={...state.units[move.callsign],status:"Mobile to Standby Station"};
-    }
-
-    const standbyIncident=resolveIncidentForCommand(null,move.id) || activeStandbyIncident(move.id);
+    move.state="acknowledged"; move.status="Mobile to Standby Station"; move.acknowledgedAt=now();
+    if(state.units?.[move.callsign]) state.units[move.callsign]={...state.units[move.callsign],status:"Mobile to Standby Station"};
+    const standbyIncident=activeStandbyIncident(move.id);
     if(standbyIncident){
-      persistLocalIncidentAck(standbyIncident,move.callsign);
       standbyIncident.sceneStatus="Mobile to Standby Station";
       standbyIncident.applianceStatuses ||= {};
       standbyIncident.applianceStatuses[move.callsign]="Mobile to Standby Station";
     }
-
-    pushEvent("standbyMoveAcknowledged",move);
-    touch();
-
-    return res.json({
-      ok:true,
-      move,
-      standbyIncident,
-      command:queueCommand("ackStandbyMove",{
-        id:move.id,
-        callsign:move.callsign,
-        incidentId:standbyIncident?.id
-      })
-    });
-  }
-
-
-  if(action==="webMdtAck"){
-    const cs=String(data.callsign||"").trim().toUpperCase();
-    const requestedId=data.incidentId||data.id;
-
-    let legacyStandbyMoveId=data.standbyMoveId;
-    if(!legacyStandbyMoveId && String(requestedId||"").startsWith("STBY-")){
-      const legacy=(state.standbyIncidents||[]).find(i=>String(i?.id||"")===String(requestedId));
-      legacyStandbyMoveId=legacy?.standbyMoveId;
-    }
-
-    const inc=resolveIncidentForCommand(requestedId,legacyStandbyMoveId);
-
-    if(inc){
-      persistLocalIncidentAck(inc,cs);
-
-      // ALWAYS send the real authoritative incident ID to FiveM.
-      data.incidentId=String(inc.id||requestedId||"");
-      if(inc.standbyMoveId) data.standbyMoveId=inc.standbyMoveId;
-
-      pushEvent("incidentAcknowledged",{
-        incidentId:inc.id,
-        standbyMoveId:inc.standbyMoveId,
-        callsign:cs,
-        acknowledgedAt:inc.acknowledgedAt?.[cs]
-      });
-      touch();
-    }
-  }
-  // A unit at either of these statuses may be remobilised to a new incident.
-  if(action==="assignAppliance" && data.assign !== false){
-    const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
-    if(canOverrideIncidentAssignment(cs)){
-      removeUnitFromOtherIncidents(cs,data.incidentId||data.id);
-    }
+    pushEvent("standbyMoveAcknowledged",move); touch();
+    return res.json({ok:true,move,command:queueCommand("ackStandbyMove",{id:move.id,callsign:move.callsign})});
   }
 
   // Emergency incident mobilisation automatically supersedes standby.
-  if(action==="assignAppliance" && data.assign !== false && !data.standby){
+  if(action==="assignAppliance" && !data.standby){
     const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
     const move=activeStandby(cs);
     if(move){
@@ -886,78 +585,7 @@ app.post("/api/command",(req,res)=>{
     }
   }
 
-
-  if(action==="assignAppliance" && data.assign === false){
-    const cs=String(data.callsign||data.appliance||"").trim().toUpperCase();
-    const current=resolveIncidentForCommand(data.incidentId,data.standbyMoveId);
-
-    if(current){
-      // Prefer the authoritative numeric incident ID for the FiveM command.
-      if(/^\d+$/.test(String(current.id||""))){
-        data.incidentId=String(current.id);
-      }
-
-      current.assignedUnits=Array.isArray(current.assignedUnits)?current.assignedUnits:[];
-      current.assignedUnits=current.assignedUnits.filter(x=>
-        String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
-      );
-
-      if(current.assignedAppliances&&Array.isArray(current.assignedAppliances)){
-        current.assignedAppliances=current.assignedAppliances.filter(x=>
-          String(typeof x==="string"?x:(x?.callsign||x?.unit||"")).trim().toUpperCase()!==cs
-        );
-      }
-
-      if(current.applianceStatuses) delete current.applianceStatuses[cs];
-      if(current.assignedRoles) delete current.assignedRoles[cs];
-
-      addLocalIncidentTimeline(current,`${cs} released from incident`,cs);
-      pushEvent("applianceReleased",{incidentId:current.id,callsign:cs});
-      touch();
-    }
-  }
-
-
-  if(action==="createIncident"){
-    data.dispatchMode=String(data.dispatchMode||"INCIDENT").toUpperCase()==="STANDBY"?"STANDBY":"INCIDENT";
-    data.isStandby=data.isStandby===true || data.dispatchMode==="STANDBY";
-    data.category=data.isStandby?"standby":String(data.category||"incident");
-    if(!String(data.type||"").trim()){
-      data.type=data.isStandby?"STANDBY DUTIES":"INCIDENT";
-    }
-  }
-
-  
-  if(action==="updateIncident"){
-    if(data.additionalDetails!=null && data.details==null) data.details=data.additionalDetails;
-    if(data.details!=null) data.notes=data.details;
-    const standbyType=String(data.type||"").trim().toUpperCase()==="STANDBY DUTIES";
-    data.isStandby=standbyType;
-    data.dispatchMode=standbyType?"STANDBY":"INCIDENT";
-    data.category=standbyType?"standby":"incident";
-    if(!standbyType) data.standbyDestination="";
-  }
-
-
-  if(action==="returnStandbyIncident"){
-    const cs=String(data.callsign||"").trim().toUpperCase();
-    const inc=resolveIncidentForCommand(data.incidentId,data.standbyMoveId);
-    if(!inc) return res.status(404).json({ok:false,error:"Standby incident not found"});
-    if(!(inc.isStandby || String(inc.type||"").toUpperCase()==="STANDBY DUTIES")){
-      return res.status(409).json({ok:false,error:"Incident is not a standby duty"});
-    }
-    data.incidentId=inc.id;
-    inc.sceneStatus="RETURN TO HOME STATION";
-    inc.applianceStatuses ||= {};
-    inc.applianceStatuses[cs]="Return to Home Station";
-    addLocalIncidentTimeline(inc,`Control instructed ${cs} to return to home station`,cs);
-    if(state.units?.[cs]) state.units[cs]={...state.units[cs],status:"Return to Home Station"};
-    if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:"Return to Home Station"};
-    pushEvent("standbyReturnHome",{incidentId:inc.id,callsign:cs});
-    touch();
-  }
-
-if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
+  if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupported action: ${action}`});
 
   if(action==="dismiss999Call"){
     const callId=String(data.id ?? data.callId ?? "");
@@ -1011,29 +639,49 @@ if(!allowed.has(action)) return res.status(400).json({ok:false,error:`Unsupporte
     touch();
   }else if(action==="webMdtStatus"){
     const cs=String(data.callsign||"").trim().toUpperCase();
-    const requested=String(data.status||"").trim();
-
-    if(cs && requested){
-      state.units ||= {};
-      state.units[cs]={
-        ...(state.units[cs]||{}),
-        callsign:cs,
-        status:requested,
-        webStatusPending:true,
-        webStatusPendingAt:Date.now()
-      };
-
-      if(state.bookings?.[cs]){
-        state.bookings[cs]={...state.bookings[cs],status:requested};
+    if(cs && state.units?.[cs]){
+      state.units[cs]={...state.units[cs],status:String(data.status||state.units[cs].status||"Home Station")};
+      const move=activeStandby(cs);
+      if(move){
+        const st=String(data.status||state.units[cs].status||"");
+        move.status=st;
+        if(/mobile to standby/i.test(st)) move.state="mobile";
+        if(/available standby/i.test(st)) move.state="available";
+        const standbyIncident=activeStandbyIncident(move.id);
+        if(standbyIncident){
+          standbyIncident.sceneStatus=st;
+          standbyIncident.applianceStatuses ||= {};
+          standbyIncident.applianceStatuses[cs]=st;
+        }
       }
-
-      pushEvent("webMdtStatusRequested",{callsign:cs,status:requested});
+      if(state.bookings?.[cs]) state.bookings[cs]={...state.bookings[cs],status:state.units[cs].status};
+      const finalStatus=String(state.units[cs].status||"").toLowerCase();
+      if(finalStatus==="home station" || finalStatus==="mobile and available"){
+        const move=activeStandby(cs);
+        if(move){move.state="completed";move.status="Standby Completed";move.completedAt=now();closeStandbyIncident(move,"Returned from standby");pushEvent("standbyMoveCompleted",move)}
+      }
+      for(const inc of state.incidents||[]){
+        if(String(inc.status||"").toUpperCase()==="CLOSED")continue;
+        if(coreAssigned(inc).map(x=>String(x).toUpperCase()).includes(cs)){
+          inc.applianceStatuses||={};inc.applianceStatuses[cs]=state.units[cs].status;
+          coreTimeline(inc,`${cs} status changed to ${state.units[cs].status}`,cs,"status");
+          if(/home station|mobile and available/i.test(state.units[cs].status||"")){
+            if(String(state.units[cs].incidentId||"")===String(inc.id))delete state.units[cs].incidentId;
+          }
+        }
+      }
+      pushEvent("webMdtStatus",{callsign:cs,status:state.units[cs].status});
       touch();
     }
   }
 
-  const command=queueCommand(action,data);
-  res.json({ok:true,command});
+  let coreData=data;
+  if(action==="createIncident" && !data.incidentNumber){
+    coreData={...data,incidentNumber:coreIncidentId()};
+  }
+  const localResult=applyCoreCommand(action,coreData);
+  const command=queueCommand(action,coreData);
+  res.json({ok:true,command,...localResult,coreMode:state.coreMode});
 });
 
 app.get("/api/fivem/commands",auth,(_req,res)=>{
@@ -1045,6 +693,13 @@ app.post("/api/fivem/commands/:id/ack",auth,(req,res)=>{
   if(c){ c.acknowledged = true; c.acknowledgedAt = now(); pushEvent("commandAcknowledged",{id:c.id,action:c.action}); }
   res.json({ok:true});
 });
+
+
+app.get("/api/core/status",(_req,res)=>{
+  refreshCoreMode();
+  res.json({ok:true,core:"ONLINE",mode:state.coreMode,fivemConnected:state.connected,lastHeartbeat:state.lastHeartbeat,updatedAt:state.updatedAt});
+});
+setInterval(()=>{const before=state.connected;refreshCoreMode();if(before!==state.connected)touch()},5000).unref?.();
 
 app.get("/api/operational/units",(_req,res)=>res.json({ok:true,units:state.units,tracking:state.tracking,bookings:state.bookings}));
 app.get("/api/operational/stations",(_req,res)=>res.json({ok:true,stations:state.stations,callSignStations:state.callSignStations,applianceSkills:state.applianceSkills}));
@@ -1074,4 +729,4 @@ app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 
 app.use(express.static(path.join(__dirname,"public")));
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7.0 Production Sync running on port ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.5.1.1 Turnout + Incident Fix running on port ${PORT}`));

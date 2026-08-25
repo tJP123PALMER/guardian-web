@@ -290,7 +290,7 @@
 
     // Never let the 2-second heartbeat erase a button the user has just
     // selected/sent. Give FiveM time to acknowledge the web command.
-    if (optimisticStatus && Date.now() - lastStatusSentAt < 2500) {
+    if (optimisticStatus && Date.now() - lastStatusSentAt < 6000) {
       if (force || lastStatusPosted !== optimisticStatus) {
         post({ type:"setStatus", status:optimisticStatus, preserveSelection:true });
         lastStatusPosted = optimisticStatus;
@@ -349,10 +349,37 @@
     const target = upper(p.callsign || p.target || "");
 
     if (evt.kind === "standbyMoveCreated") {
-      loadState().catch(() => {});
+      const move=p;
+      if(!callsign || upper(move.callsign)!==upper(callsign)) return;
+      const fake={
+        id:`STANDBY:${move.id}`,
+        type:"STANDBY COVER",
+        title:`Standby - ${move.destination||"Cover"}`,
+        priority:"Standby",
+        address:move.destination||"",
+        location:move.destination||"",
+        postal:"",
+        caller:"CONTROL",
+        description:move.note||"Proceed to standby station and acknowledge Control.",
+        notes:move.note||"Proceed to standby station and acknowledge Control.",
+        details:move.note||"",
+        assignedUnits:[upper(move.callsign)],
+        assignedAppliances:[upper(move.callsign)],
+        playAlert:true,
+        standbyMoveId:move.id,
+        standbySourceStation:move.sourceStation||"",
+        standbyDestination:move.destination||"",
+        isStandby:true,
+        isStandbyMove:true
+      };
+      pendingStandbyIncidents.set(String(move.id),fake);
+      post({type:"incident",item:fake});
+      post({type:"setCallsign",callsign:upper(callsign)});
+      post({type:"alert"});
+      post({type:"open"});
+      post({type:"mobilising"});
       return;
     }
-
 
     if (evt.kind === "mdtMobilise") {
       if (!callsign || target !== upper(callsign)) return;
@@ -442,16 +469,9 @@
       await command("webMdtMessage", { callsign, message:data.message });
     } else if (name === "ackIncident") {
       if(String(data.id||"").startsWith("STANDBY:")){
-        await command("ackStandbyMove",{
-          callsign,
-          moveId:String(data.id).slice(8),
-          incidentId:data.id
-        });
+        await command("ackStandbyMove",{callsign,moveId:String(data.id).slice(8)});
       }else{
-        await command("webMdtAck", {
-          callsign,
-          incidentId:data.id
-        });
+        await command("webMdtAck", { callsign, incidentId:data.id });
       }
     } else if (name === "setIncidentWaypoint") {
       console.info("[Guardian Web MDT] waypoint selected", data);
