@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian Settings</title>
+<link rel="stylesheet" href="/settings.css">
+</head><body>
+<div id="loginView" class="centerWrap">
+  <div class="loginCard">
+    <div class="eyebrow">GUARDIAN ADMINISTRATION</div>
+    <h1>Settings Access</h1>
+    <p>Protected administration area.</p>
+    <input id="loginUser" placeholder="Username" autocomplete="username">
+    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="loginBtn">SIGN IN</button>
+    <div id="loginError" class="error"></div>
+  </div>
+</div>
+
+<div id="appView" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand">GUARDIAN<br><span>ADMINISTRATION</span></div>
+    <button data-tab="overview" class="nav active">Overview</button>
+    <button data-tab="stations" class="nav">Stations</button>
+    <button data-tab="appliances" class="nav">Appliances</button>
+    <button data-tab="map" class="nav">Station Map</button>
+    <button data-tab="config" class="nav">Configuration</button>
+    <button data-tab="users" class="nav">Users & Access</button>
+    <button data-tab="backup" class="nav">Backup / Restore</button>
+    <button data-tab="audit" class="nav">Audit Log</button>
+    <button id="logoutBtn" class="logout">Sign out</button>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div><div class="eyebrow">GUARDIAN SETTINGS</div><h1 id="pageTitle">Overview</h1></div>
+      <div id="who" class="who"></div>
+    </header>
+    <section id="content"></section>
+  </main>
+</div>
+<script src="/settings.js"></script>
+</body></html>

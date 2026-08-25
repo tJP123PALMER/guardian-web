@@ -1,0 +1,18 @@
+
+*{box-sizing:border-box}body{margin:0;background:#06141e;color:#eaf7ff;font-family:Arial,sans-serif}
+.hidden{display:none!important}.centerWrap{min-height:100vh;display:grid;place-items:center}
+.loginCard{width:min(430px,calc(100% - 32px));background:#0b2331;border:1px solid #315365;border-radius:10px;padding:28px}
+.eyebrow{font-size:10px;letter-spacing:.16em;color:#62b9e7;font-weight:800}.loginCard h1,.topbar h1{margin:.25em 0}
+input,select,textarea{width:100%;background:#081c28;border:1px solid #315365;color:#eaf7ff;border-radius:5px;padding:10px;margin:6px 0}
+button{background:#11364a;color:#eaf7ff;border:1px solid #3b667d;border-radius:5px;padding:9px 12px;font-weight:800;cursor:pointer}
+button:hover{background:#17475f}.error{color:#ff9fa9;margin-top:8px}
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}.sidebar{background:#071923;border-right:1px solid #254353;padding:16px;display:flex;flex-direction:column;gap:7px}
+.brand{font-weight:900;letter-spacing:.08em;margin-bottom:18px}.brand span{font-size:9px;color:#70b8d9}
+.nav{text-align:left}.nav.active{background:#17516c}.logout{margin-top:auto}
+main{padding:20px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.who{font-size:11px;color:#9cc3d8}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{background:#0a2230;border:1px solid #29495b;border-radius:8px;padding:15px}
+.card h3{margin-top:0}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.listRow{display:grid;grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:center;border-top:1px solid #1e3b4a;padding:9px 0}
+.badge{display:inline-block;padding:4px 7px;border-radius:4px;background:#173a4d;font-size:10px}.owner{background:#5b4211;color:#ffe49a}
+.mapCanvas{position:relative;min-height:600px;background:#0a1b24 url('/control/assets/postal_map.png') center/contain no-repeat;border:1px solid #315365;border-radius:8px;overflow:hidden}
+.stationMarker{position:absolute;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:#1f9d68;border:2px solid white;color:white;font-size:9px;display:grid;place-items:center;cursor:grab}
+pre{white-space:pre-wrap;font-size:11px;color:#b8d3df}

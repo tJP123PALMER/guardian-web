@@ -12,6 +12,228 @@ const API_KEY = process.env.GUARDIAN_API_KEY || "";
 app.disable("x-powered-by");
 app.use(express.json({ limit: "4mb" }));
 
+
+
+// ============================================================
+// Guardian Administration v1
+// Server-side protected Settings / Users / Audit / Configuration
+// ============================================================
+const GUARDIAN_ADMIN_SESSION_SECRET=process.env.GUARDIAN_ADMIN_SESSION_SECRET||process.env.GUARDIAN_SESSION_SECRET||"";
+const GUARDIAN_OWNER_USERNAME=String(process.env.GUARDIAN_OWNER_USERNAME||"owner").trim();
+const GUARDIAN_OWNER_PASSWORD=String(process.env.GUARDIAN_OWNER_PASSWORD||"");
+
+const guardianAdminSessions=new Map();
+const guardianAdminAudit=[];
+const guardianAdminUsers=new Map();
+let guardianConfig={
+  stations:[],
+  appliances:[],
+  applianceTypes:["Pump","Aerial","Rescue","Specialist"],
+  skills:[],
+  statuses:[
+    "Available","Mobilised","Mobile to Incident","In Attendance at Incident",
+    "Available At Incident","Mobile And Available","Home Station",
+    "Mobile to Standby Station","Available Standby Station","Return to Home Station","Off Run"
+  ],
+  map:{stations:{}},
+  alerts:{},
+  general:{}
+};
+
+function guardianAdminCookieMap(req){
+  const out={};
+  for(const part of String(req.headers.cookie||"").split(";")){
+    const i=part.indexOf("=");
+    if(i>0) out[part.slice(0,i).trim()]=decodeURIComponent(part.slice(i+1).trim());
+  }
+  return out;
+}
+function guardianAdminSign(v){
+  if(!GUARDIAN_ADMIN_SESSION_SECRET)return "";
+  return crypto.createHmac("sha256",GUARDIAN_ADMIN_SESSION_SECRET).update(v).digest("hex");
+}
+function guardianAdminSetCookie(res,token){
+  const signed=`${token}.${guardianAdminSign(token)}`;
+  res.setHeader("Set-Cookie",`guardian_admin=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
+}
+function guardianAdminClearCookie(res){
+  res.setHeader("Set-Cookie","guardian_admin=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure");
+}
+function guardianAdminHashPassword(password,saltHex){
+  const salt=saltHex?Buffer.from(saltHex,"hex"):crypto.randomBytes(16);
+  const hash=crypto.scryptSync(String(password),salt,64);
+  return {salt:salt.toString("hex"),hash:hash.toString("hex")};
+}
+function guardianAdminVerify(password,user){
+  if(!user?.salt||!user?.passwordHash)return false;
+  const test=guardianAdminHashPassword(password,user.salt).hash;
+  try{return crypto.timingSafeEqual(Buffer.from(test,"hex"),Buffer.from(user.passwordHash,"hex"))}catch{return false}
+}
+function guardianAdminAuditLog(actor,action,details={}){
+  guardianAdminAudit.unshift({
+    id:crypto.randomUUID(),at:new Date().toISOString(),
+    actor:String(actor||"SYSTEM"),action:String(action||"UNKNOWN"),details
+  });
+  guardianAdminAudit.splice(500);
+}
+function guardianBootstrapOwner(){
+  if(guardianAdminUsers.has(GUARDIAN_OWNER_USERNAME))return;
+  if(!GUARDIAN_OWNER_PASSWORD)return;
+  const pw=guardianAdminHashPassword(GUARDIAN_OWNER_PASSWORD);
+  guardianAdminUsers.set(GUARDIAN_OWNER_USERNAME,{
+    username:GUARDIAN_OWNER_USERNAME,
+    role:"owner",
+    displayName:"Owner / Creator",
+    protected:true,
+    salt:pw.salt,
+    passwordHash:pw.hash,
+    createdAt:new Date().toISOString()
+  });
+  guardianAdminAuditLog("SYSTEM","OWNER_BOOTSTRAPPED",{username:GUARDIAN_OWNER_USERNAME});
+}
+guardianBootstrapOwner();
+
+function guardianAdminReadSession(req){
+  const raw=guardianAdminCookieMap(req).guardian_admin;
+  if(!raw)return null;
+  const dot=raw.lastIndexOf(".");
+  if(dot<1)return null;
+  const token=raw.slice(0,dot),sig=raw.slice(dot+1),expected=guardianAdminSign(token);
+  if(!expected||sig.length!==expected.length)return null;
+  try{if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null}catch{return null}
+  const s=guardianAdminSessions.get(token);
+  if(!s)return null;
+  if(Date.now()-s.createdAt>12*60*60*1000){guardianAdminSessions.delete(token);return null}
+  return s;
+}
+function guardianAdminCan(role,permission){
+  if(role==="owner")return true;
+  if(role==="admin")return permission!=="owner.manage";
+  if(role==="dev")return !["owner.manage","users.delete","security.manage"].includes(permission);
+  if(role==="readonly")return permission==="settings.view"||permission==="audit.view";
+  return false;
+}
+function guardianRequireAdmin(permission="settings.view"){
+  return (req,res,next)=>{
+    const s=guardianAdminReadSession(req);
+    if(!s)return res.status(401).json({ok:false,error:"Admin login required"});
+    if(!guardianAdminCan(s.role,permission))return res.status(403).json({ok:false,error:"Permission denied"});
+    req.guardianAdmin=s;
+    next();
+  };
+}
+
+app.post("/api/admin/login",(req,res)=>{
+  guardianBootstrapOwner();
+  const username=String(req.body?.username||"").trim();
+  const password=String(req.body?.password||"");
+  const user=guardianAdminUsers.get(username);
+  if(!user||!guardianAdminVerify(password,user)){
+    guardianAdminAuditLog(username||"UNKNOWN","LOGIN_FAILED");
+    return res.status(401).json({ok:false,error:"Invalid username or password"});
+  }
+  const token=crypto.randomBytes(32).toString("hex");
+  guardianAdminSessions.set(token,{username:user.username,role:user.role,createdAt:Date.now()});
+  guardianAdminSetCookie(res,token);
+  guardianAdminAuditLog(user.username,"LOGIN");
+  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role}});
+});
+
+app.post("/api/admin/logout",(req,res)=>{
+  const raw=guardianAdminCookieMap(req).guardian_admin;
+  if(raw){const dot=raw.lastIndexOf(".");if(dot>0)guardianAdminSessions.delete(raw.slice(0,dot))}
+  guardianAdminClearCookie(res);
+  res.json({ok:true});
+});
+
+app.get("/api/admin/me",(req,res)=>{
+  const s=guardianAdminReadSession(req);
+  if(!s)return res.status(401).json({ok:false,authenticated:false});
+  const u=guardianAdminUsers.get(s.username);
+  res.json({ok:true,authenticated:true,user:{username:s.username,displayName:u?.displayName||s.username,role:s.role}});
+});
+
+app.get("/api/admin/config",guardianRequireAdmin("settings.view"),(req,res)=>{
+  res.json({ok:true,config:guardianConfig});
+});
+
+app.post("/api/admin/config",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const incoming=req.body?.config;
+  if(!incoming||typeof incoming!=="object")return res.status(400).json({ok:false,error:"Invalid configuration"});
+  guardianConfig={
+    ...guardianConfig,
+    ...incoming,
+    map:{...(guardianConfig.map||{}),...(incoming.map||{})},
+    alerts:{...(guardianConfig.alerts||{}),...(incoming.alerts||{})},
+    general:{...(guardianConfig.general||{}),...(incoming.general||{})}
+  };
+  guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_UPDATED");
+  res.json({ok:true,config:guardianConfig});
+});
+
+app.get("/api/admin/users",guardianRequireAdmin("settings.view"),(req,res)=>{
+  const users=[...guardianAdminUsers.values()].map(u=>({
+    username:u.username,displayName:u.displayName,role:u.role,protected:!!u.protected,createdAt:u.createdAt
+  }));
+  res.json({ok:true,users});
+});
+
+app.post("/api/admin/users",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const username=String(req.body?.username||"").trim();
+  const password=String(req.body?.password||"");
+  const role=String(req.body?.role||"readonly");
+  const displayName=String(req.body?.displayName||username).trim();
+  if(!username||password.length<8)return res.status(400).json({ok:false,error:"Username and password (8+ chars) required"});
+  if(!["admin","dev","readonly"].includes(role))return res.status(400).json({ok:false,error:"Invalid role"});
+  if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"Username already exists"});
+  const pw=guardianAdminHashPassword(password);
+  guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString()});
+  guardianAdminAuditLog(req.guardianAdmin.username,"USER_CREATED",{username,role});
+  res.json({ok:true});
+});
+
+app.post("/api/admin/users/:username/password",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const username=String(req.params.username||"");
+  const user=guardianAdminUsers.get(username);
+  if(!user)return res.status(404).json({ok:false,error:"User not found"});
+  if(user.protected && req.guardianAdmin.role!=="owner")return res.status(403).json({ok:false,error:"Only Owner can change Owner password"});
+  const password=String(req.body?.password||"");
+  if(password.length<8)return res.status(400).json({ok:false,error:"Password must be at least 8 characters"});
+  const pw=guardianAdminHashPassword(password);
+  user.salt=pw.salt;user.passwordHash=pw.hash;
+  guardianAdminAuditLog(req.guardianAdmin.username,"PASSWORD_RESET",{username});
+  res.json({ok:true});
+});
+
+app.delete("/api/admin/users/:username",guardianRequireAdmin("users.delete"),(req,res)=>{
+  const username=String(req.params.username||"");
+  const user=guardianAdminUsers.get(username);
+  if(!user)return res.status(404).json({ok:false,error:"User not found"});
+  if(user.protected||user.role==="owner")return res.status(403).json({ok:false,error:"Owner / Creator account cannot be deleted"});
+  guardianAdminUsers.delete(username);
+  guardianAdminAuditLog(req.guardianAdmin.username,"USER_DELETED",{username});
+  res.json({ok:true});
+});
+
+app.get("/api/admin/audit",guardianRequireAdmin("audit.view"),(req,res)=>{
+  res.json({ok:true,audit:guardianAdminAudit});
+});
+
+app.get("/api/admin/export",guardianRequireAdmin("settings.view"),(req,res)=>{
+  const payload={version:1,exportedAt:new Date().toISOString(),config:guardianConfig};
+  guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_EXPORTED");
+  res.setHeader("Content-Disposition",'attachment; filename="guardian-config-backup.json"');
+  res.type("application/json").send(JSON.stringify(payload,null,2));
+});
+
+app.post("/api/admin/import",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const payload=req.body;
+  if(!payload?.config||typeof payload.config!=="object")return res.status(400).json({ok:false,error:"Invalid backup"});
+  guardianConfig=payload.config;
+  guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_IMPORTED");
+  res.json({ok:true,config:guardianConfig});
+});
+
 const clients = new Set();
 const commands = new Map();
 const suppressed999 = new Map();
