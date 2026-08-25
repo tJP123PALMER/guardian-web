@@ -174,11 +174,23 @@ function setMode(){
  document.title=mode==="control"?"Guardian Control Centre":"Guardian Player MDT";
 }
 function statusClass(s){s=upper(s);if(s.includes("AVAILABLE")||s.includes("HOME STATION"))return"available";if(s.includes("MOBILE"))return"mobile";if(s.includes("ATTENDANCE")||s.includes("ON SCENE"))return"scene";return""}
-function liveUnits(){return Object.entries(state.units||{}).map(([callsign,u])=>({callsign:upper(callsign),...(u||{})}))}
-function currentStatus(cs){return state.units?.[upper(cs)]?.status||"OFF RUN"}
-function availableUnit(u){return /AVAILABLE|HOME STATION/i.test(u.status||"")}
+function unitSignedOn(cs,u=state.units?.[upper(cs)]){
+ const key=upper(cs);
+ if(!u)return false;
+ // FiveM unit snapshots are live operational units. In standalone/web mode,
+ // a configured callsign becomes live only after an explicit book-on.
+ if(state.connected===true && u.webOnly!==true)return true;
+ return !!state.bookings?.[key] || u.webBooked===true || u.signedOn===true || u.bookedOn===true;
+}
+function liveUnits(){
+ return Object.entries(state.units||{})
+   .filter(([callsign,u])=>unitSignedOn(callsign,u))
+   .map(([callsign,u])=>({callsign:upper(callsign),...(u||{})}));
+}
+function currentStatus(cs){return unitSignedOn(cs)?(state.units?.[upper(cs)]?.status||"AVAILABLE"):"OFF RUN"}
+function availableUnit(u){return !!u?.callsign && unitSignedOn(u.callsign,u) && /AVAILABLE|HOME STATION/i.test(u.status||"")}
 function assignedUnits(inc){return Array.isArray(inc.assignedUnits)?inc.assignedUnits.map(upper):[]}
-function assignedToOther(callsign,incidentId){return state.incidents.some(i=>String(i.id)!==String(incidentId)&&assignedUnits(i).includes(upper(callsign)))}
+function assignedToOther(callsign,incidentId){return state.incidents.some(i=>String(i.status||"").toUpperCase()!=="CLOSED"&&String(i.id)!==String(incidentId)&&assignedUnits(i).includes(upper(callsign)))}
 function incidentById(id){return state.incidents.find(i=>String(i.id)===String(id))}
 async function command(action,data){
  const r=await fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,data})});
@@ -1056,17 +1068,18 @@ function renderUnits(){
  configured.map(cs=>{
    const home=stationFor(cs)||"—";
    const move=activeStandbyMove(cs);
-   const current=move?(move.destination||"Standby"):(state.units?.[cs]?home:"—");
-   const live=!!state.units?.[cs];
+   const live=unitSignedOn(cs,state.units?.[cs]);
+   const moveLive=live?move:null;
+   const current=moveLive?(moveLive.destination||"Standby"):(live?home:"—");
    const status=currentStatus(cs);
    const inc=currentOpenIncidentForUnit(cs);
    const incNo=displayIncidentNumber(inc);
    const ack=inc?incidentAckInfo(inc,cs):{acked:false,time:""};
 
    return `<div class="tableRow applianceBoardRow">
-     <div><strong>${esc(cs)}</strong>${move?'<span class="standbyFlag">STANDBY</span>':""}</div>
+     <div><strong>${esc(cs)}</strong>${moveLive?'<span class="standbyFlag">STANDBY</span>':""}</div>
      <div>${esc(home)}</div>
-     <div>${move?`<strong>${esc(current)}</strong><small class="standbySub">${esc(move.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
+     <div>${moveLive?`<strong>${esc(current)}</strong><small class="standbySub">${esc(moveLive.status||"Standby Move")} · still mobilisable</small>`:esc(current)}</div>
      <div>${esc(skillText(state.applianceSkills?.[cs])||"—")}</div>
      <div>
        <div class="boardStatusLine">
@@ -1074,9 +1087,9 @@ function renderUnits(){
          ${inc&&incNo?`<span class="incidentNoTag">INC #${esc(incNo)}</span>`:""}
          ${inc?`<span class="boardAckTag ${ack.acked?"acked":"waiting"}">${ack.acked?`ACK${ack.time?` ${esc(ack.time)}`:""}`:"AWAITING ACK"}</span>`:""}
        </div>
-       ${move?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
+       ${moveLive?'<small class="standbySub">Emergency mobilisation takes priority</small>':""}
      </div>
-     <div>${live?"SIGNED ON":"OFF RUN"}</div>
+     <div>${live?"SIGNED ON":"OFF DUTY"}</div>
    </div>`;
  }).join("");
 }
@@ -1200,7 +1213,7 @@ function renderCover(force=false){
  suggestions.innerHTML=`
  <div class="sectionTitle"><span>Manual Standby Move</span><span class="small">Complete the turnout brief before dispatch</span></div>
  <div class="formGrid standbyTurnoutEditor">
-  <div class="field"><label>Appliance</label><select id="standbyUnit"><option value="">Select appliance...</option>${Object.entries(state.units||{}).filter(([cs,u])=>{const s=String(u.status||"").toLowerCase();return !u.incidentId&&!/off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(s)}).map(([cs,u])=>`<option value="${esc(cs)}" ${String(standbyDraft.callsign)===String(cs)?"selected":""}>${esc(cs)} — ${esc(u.status||"Available")}</option>`).join("")}</select></div>
+  <div class="field"><label>Appliance</label><select id="standbyUnit"><option value="">Select appliance...</option>${Object.entries(state.units||{}).filter(([cs,u])=>{const s=String(u.status||"").toLowerCase();return unitSignedOn(cs,u)&&!u.incidentId&&!/off run|unavailable|mobile to incident|in attendance|on scene|committed/.test(s)}).map(([cs,u])=>`<option value="${esc(cs)}" ${String(standbyDraft.callsign)===String(cs)?"selected":""}>${esc(cs)} — ${esc(u.status||"Available")}</option>`).join("")}</select></div>
   <div class="field"><label>Destination Station</label><select id="standbyDestination"><option value="">Select station...</option>${Object.keys(state.stations||{}).sort().map(st=>`<option value="${esc(st)}" ${String(standbyDraft.destination)===String(st)?"selected":""}>${esc(st)}</option>`).join("")}</select></div>
   <div class="field"><label>Postal<input id="standbyPostal" value="${esc(standbyDraft.postal)}"></label></div>
   <div class="field"><label>Map Ref<input id="standbyMapRef" value="${esc(standbyDraft.mapRef)}" placeholder="387534,656222"></label></div>

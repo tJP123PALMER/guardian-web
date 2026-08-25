@@ -49,3 +49,5 @@ td input,td select{width:100%;min-width:110px}.pill{display:inline-block;padding
 .saveBar{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:20px}
 .saveBar h3{margin-bottom:4px}.saveBar p{margin:0;color:#8aa9bb}
 @media(max-width:1000px){.configGrid,.formGrid,.toggleList{grid-template-columns:1fr}.configSummary{grid-template-columns:repeat(2,1fr)}.saveBar{display:block}.saveBar button{margin-top:12px}}
+
+.statusBadge.off{color:#9aabb5;border-color:#4d5d66;background:#101b21}

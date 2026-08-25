@@ -6,7 +6,7 @@ async function api(url,opt={}){
   const r=await fetch(url,{cache:"no-store",headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});
   const data=await r.json().catch(()=>({}));
   if(!r.ok){
-    if(r.status===401 && !url.endsWith("/api/admin/login") && !url.endsWith("/api/admin/me")){
+    if(r.status===401 && !url.includes("/api/admin/login") && !url.includes("/api/admin/me")){
       $("appView")?.classList.add("hidden");
       $("loginView")?.classList.remove("hidden");
       $("loginError").textContent="Your admin session expired. Please sign in again.";
@@ -90,8 +90,9 @@ function renderAppliances(){
     <td><select data-ap-type="${i}">${types.map(x=>`<option ${x===a.type?"selected":""}>${esc(x)}</option>`).join("")}</select></td>
     <td><input data-ap-skills="${i}" value="${esc((a.skills||[]).join(", "))}" placeholder="BA, Aerial, Rescue"></td>
     <td>${esc(a.status||"—")}</td>
+    <td><span class="statusBadge ${a.signedOn?"ok":"off"}">${a.signedOn?"SIGNED ON":"OFF DUTY"}</span></td>
     <td><button class="danger" data-ap-del="${i}">DELETE</button></td></tr>`).join("");
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Appliances</h3><p>Callsign, home station, type and skills used throughout Guardian.</p></div><button id="addAppliance">ADD APPLIANCE</button></div><div class="tableWrap"><table><thead><tr><th>Callsign</th><th>Home Station</th><th>Type</th><th>Skills</th><th>Live Status</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6">No appliances found.</td></tr>`}</tbody></table></div><button id="saveAppliances">SAVE APPLIANCES</button></div>`);
+  setContent(`<div class="card"><div class="sectionHead"><div><h3>Appliances</h3><p>Callsign, home station, type and skills used throughout Guardian.</p></div><button id="addAppliance">ADD APPLIANCE</button></div><div class="tableWrap"><table><thead><tr><th>Callsign</th><th>Home Station</th><th>Type</th><th>Skills</th><th>Live Status</th><th>Live</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="7">No appliances found.</td></tr>`}</tbody></table></div><button id="saveAppliances">SAVE APPLIANCES</button></div>`);
   $("addAppliance").onclick=()=>{config.appliances.push({callsign:"NEW",station:stations[0]||"",type:types[0]||"Pump",skills:[],active:true});renderAppliances()};
   document.querySelectorAll("[data-ap-del]").forEach(b=>b.onclick=()=>{config.appliances.splice(+b.dataset.apDel,1);renderAppliances()});
   $("saveAppliances").onclick=async()=>{
@@ -178,7 +179,7 @@ function renderConfig(){
 
         <label>Default Appliance Status
           <select id="cfgDefaultStatus">
-            ${(config.statuses||[]).map(x=>`<option ${String(g.defaultApplianceStatus||"Home Station")===x?"selected":""}>${esc(x)}</option>`).join("")}
+            ${(config.statuses||[]).map(x=>`<option ${String(g.defaultApplianceStatus||"Available")===x?"selected":""}>${esc(x)}</option>`).join("")}
           </select>
         </label>
       </div>
