@@ -230,6 +230,15 @@ function formatMapDistance(d){
  return d<1000?`${Math.round(d)} m`:`${(d/1000).toFixed(2)} km`;
 }
 
+
+function savedStationMapPosition(name){
+ const key=String(name||"").trim().toLowerCase();
+ const p=state?.stationMapPositions?.[key];
+ if(!p)return null;
+ const x=Number(p.mapXPercent),y=Number(p.mapYPercent);
+ return Number.isFinite(x)&&Number.isFinite(y)?{x,y,adjusted:true}:null;
+}
+
 function controlMapItemPoint(item,index){
  if(Number.isFinite(Number(item?.mapXPercent))&&Number.isFinite(Number(item?.mapYPercent))){
    return {x:Number(item.mapXPercent),y:Number(item.mapYPercent),adjusted:item.mapAdjusted===true};
@@ -376,10 +385,12 @@ async function renderControlMap(){
  }
 
  const stationMarkers=CONTROL_MAP_STATIONS.map(s=>{
-   const p=index.get(String(s.postal));if(!p)return "";
-   const pt=controlMapPoint(p.x,p.y);
+   const saved=savedStationMapPosition(s.name);
+   const p=index.get(String(s.postal));
+   const pt=saved||(p?{...controlMapPoint(p.x,p.y),adjusted:false}:null);
+   if(!pt)return "";
    return `<button class="mapMarker mapStationMarker ${pt.adjusted?"mapAdjusted":""}" style="left:${pt.x}%;top:${pt.y}%"
-     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)}">
+     data-map-station="${esc(s.name)}" title="${esc(s.name)} · Postal ${esc(s.postal)} · Drag to position">
      <span>FS</span></button>`;
  }).join("");
 
@@ -444,24 +455,28 @@ async function renderControlMap(){
 
  
  function addStationPositionControls(stationName){
-   const st=(state.stations||[]).find(v=>String(v.name||"")===String(stationName||""));
-   if(!st||!selection)return;
+   const saved=savedStationMapPosition(stationName);
+   if(!selection)return;
    selection.querySelector(".stationPositionControls")?.remove();
+
    const box=document.createElement("div");
-   box.className=`mapPositionState stationPositionControls ${st.mapAdjusted?"adjusted":""}`;
-   box.innerHTML=st.mapAdjusted
+   box.className=`mapPositionState stationPositionControls ${saved?"adjusted":""}`;
+   box.innerHTML=saved
      ? `CONTROL POSITION SAVED<br><button type="button" class="smallBtn" data-reset-station-position>RESET TO POSTAL</button>`
      : `POSTAL POSITION · DRAG GREEN FS MARKER TO SET EXACT LOCATION`;
    selection.appendChild(box);
+
    const reset=box.querySelector("[data-reset-station-position]");
    if(reset)reset.onclick=async()=>{
      await command("resetStationMapPosition",{stationName});
-     delete st.mapXPercent;delete st.mapYPercent;delete st.mapAdjusted;
-     renderControlMap();
+     const key=String(stationName||"").trim().toLowerCase();
+     if(state.stationMapPositions)delete state.stationMapPositions[key];
+     await renderControlMap();
      showStation(stationName);
      addStationPositionControls(stationName);
    };
  }
+
 
 const showIncident=id=>{
    const inc=(state.incidents||[]).find(x=>String(x.id||"")===String(id||""));if(!inc)return;
@@ -471,12 +486,30 @@ const showIncident=id=>{
    onSelect:()=>{showStation(b.dataset.mapStation);addStationPositionControls(b.dataset.mapStation);},
    onDrop:async(x,y)=>{
      const stationName=String(b.dataset.mapStation||"");
-     const st=(state.stations||[]).find(v=>String(v.name||"")===stationName);
-     if(st)Object.assign(st,{mapXPercent:x,mapYPercent:y,mapAdjusted:true});
-     await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
-     renderControlMap();
+     const key=stationName.trim().toLowerCase();
+
+     state.stationMapPositions ||= {};
+     state.stationMapPositions[key]={
+       mapXPercent:x,
+       mapYPercent:y,
+       mapAdjusted:true,
+       mapAdjustedBy:"CONTROL",
+       mapAdjustedAt:new Date().toISOString()
+     };
+
+     b.style.left=`${x}%`;
+     b.style.top=`${y}%`;
+     b.classList.add("mapAdjusted");
+
      showStation(stationName);
      addStationPositionControls(stationName);
+
+     try{
+       await command("setStationMapPosition",{stationName,mapXPercent:x,mapYPercent:y});
+     }catch(err){
+       console.error("Station position save failed",err);
+       alert(`Station position could not be saved: ${err?.message||err}`);
+     }
    }
  }));
  overlay.querySelectorAll("[data-map-call]").forEach(b=>dragMapMarker(b,{

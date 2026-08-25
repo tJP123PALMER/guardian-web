@@ -145,11 +145,7 @@ function saveStationMapPositions(){
   catch(e){console.error("[Guardian Web] station map positions save failed:",e.message);}
 }
 function applySavedStationPositions(){
-  if(!Array.isArray(state?.stations))return;
-  state.stations=state.stations.map(st=>{
-    const pos=stationMapPositions[stationMapKey(st?.name)];
-    return pos?{...st,...pos,mapAdjusted:true}:st;
-  });
+  state.stationMapPositions={...stationMapPositions};
 }
 
 const manualMapPositions={calls:new Map(),incidents:new Map()};
@@ -169,7 +165,8 @@ let state = {
   bookings: {},
   eventLog: [],
   standbyMoves: [],
-  standbyIncidents: []
+  standbyIncidents: [],
+  stationMapPositions: {...stationMapPositions}
 };
 
 function auth(req,res,next){
@@ -621,9 +618,8 @@ app.post("/api/command",(req,res)=>{
       mapAdjustedBy:"CONTROL"
     };
     stationMapPositions[stationMapKey(stationName)]=pos;
+    state.stationMapPositions={...stationMapPositions};
     saveStationMapPositions();
-    const st=(state.stations||[]).find(s=>stationMapKey(s.name)===stationMapKey(stationName));
-    if(st)Object.assign(st,pos);
     touch();
     return res.json({ok:true,position:pos});
   }
@@ -632,12 +628,8 @@ app.post("/api/command",(req,res)=>{
     const stationName=String(data.stationName||data.name||"").trim();
     if(!stationName)return res.status(400).json({ok:false,error:"Station required"});
     delete stationMapPositions[stationMapKey(stationName)];
+    state.stationMapPositions={...stationMapPositions};
     saveStationMapPositions();
-    const st=(state.stations||[]).find(s=>stationMapKey(s.name)===stationMapKey(stationName));
-    if(st){
-      delete st.mapXPercent;delete st.mapYPercent;delete st.mapAdjusted;
-      delete st.mapAdjustedAt;delete st.mapAdjustedBy;
-    }
     touch();
     return res.json({ok:true});
   }
