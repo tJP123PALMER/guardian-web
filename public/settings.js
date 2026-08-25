@@ -5,7 +5,14 @@ let me=null,config=null,operational=null,active="overview";
 async function api(url,opt={}){
   const r=await fetch(url,{cache:"no-store",headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});
   const data=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
+  if(!r.ok){
+    if(r.status===401 && !url.endsWith("/api/admin/login") && !url.endsWith("/api/admin/me")){
+      $("appView")?.classList.add("hidden");
+      $("loginView")?.classList.remove("hidden");
+      $("loginError").textContent="Your admin session expired. Please sign in again.";
+    }
+    throw new Error(data.error||`HTTP ${r.status}`);
+  }
   return data;
 }
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
@@ -14,8 +21,14 @@ function errorView(title,e){setContent(`<div class="card errorCard"><h3>${esc(ti
 function notify(msg){const n=document.createElement("div");n.className="toast";n.textContent=msg;document.body.appendChild(n);setTimeout(()=>n.remove(),2400)}
 
 async function boot(){
-  try{me=(await api("/api/admin/me")).user;showApp();await refreshAll()}
-  catch(_){}
+  try{
+    me=(await api("/api/admin/me")).user;
+    showApp();
+    await refreshAll();
+  }catch(_){
+    $("appView").classList.add("hidden");
+    $("loginView").classList.remove("hidden");
+  }
 }
 $("loginBtn").onclick=async()=>{
   try{me=(await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("loginUser").value,password:$("loginPass").value})})).user;$("loginError").textContent="";showApp();await refreshAll()}

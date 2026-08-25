@@ -18,7 +18,13 @@ app.use(express.json({ limit: "4mb" }));
 // Guardian Administration v1
 // Server-side protected Settings / Users / Audit / Configuration
 // ============================================================
-const GUARDIAN_ADMIN_SESSION_SECRET=process.env.GUARDIAN_ADMIN_SESSION_SECRET||process.env.GUARDIAN_SESSION_SECRET||"";
+const GUARDIAN_ADMIN_SESSION_SECRET=String(
+  process.env.GUARDIAN_ADMIN_SESSION_SECRET ||
+  process.env.GUARDIAN_SESSION_SECRET ||
+  process.env.GUARDIAN_OWNER_PASSWORD ||
+  process.env.GUARDIAN_API_KEY ||
+  "guardian-admin-local-fallback"
+);
 const GUARDIAN_OWNER_USERNAME=String(process.env.GUARDIAN_OWNER_USERNAME||"owner").trim();
 const GUARDIAN_OWNER_PASSWORD=String(process.env.GUARDIAN_OWNER_PASSWORD||"");
 
@@ -66,8 +72,13 @@ function guardianAdminSign(v){
   if(!GUARDIAN_ADMIN_SESSION_SECRET)return "";
   return crypto.createHmac("sha256",GUARDIAN_ADMIN_SESSION_SECRET).update(v).digest("hex");
 }
-function guardianAdminSetCookie(res,token){
-  const signed=`${token}.${guardianAdminSign(token)}`;
+function guardianAdminSetCookie(res,session){
+  const payload=Buffer.from(JSON.stringify({
+    username:String(session.username),
+    role:String(session.role),
+    createdAt:Number(session.createdAt||Date.now())
+  }),"utf8").toString("base64url");
+  const signed=`${payload}.${guardianAdminSign(payload)}`;
   res.setHeader("Set-Cookie",`guardian_admin=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
 }
 function guardianAdminClearCookie(res){
@@ -121,13 +132,15 @@ function guardianAdminReadSession(req){
   if(!raw)return null;
   const dot=raw.lastIndexOf(".");
   if(dot<1)return null;
-  const token=raw.slice(0,dot),sig=raw.slice(dot+1),expected=guardianAdminSign(token);
+  const payload=raw.slice(0,dot),sig=raw.slice(dot+1),expected=guardianAdminSign(payload);
   if(!expected||sig.length!==expected.length)return null;
   try{if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null}catch{return null}
-  const s=guardianAdminSessions.get(token);
-  if(!s)return null;
-  if(Date.now()-s.createdAt>12*60*60*1000){guardianAdminSessions.delete(token);return null}
-  return s;
+  try{
+    const session=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));
+    if(!session?.username||!session?.role||!session?.createdAt)return null;
+    if(Date.now()-Number(session.createdAt)>12*60*60*1000)return null;
+    return session;
+  }catch{return null}
 }
 function guardianAdminCan(role,permission){
   if(role==="owner")return true;
@@ -155,16 +168,13 @@ app.post("/api/admin/login",(req,res)=>{
     guardianAdminAuditLog(username||"UNKNOWN","LOGIN_FAILED");
     return res.status(401).json({ok:false,error:"Invalid username or password"});
   }
-  const token=crypto.randomBytes(32).toString("hex");
-  guardianAdminSessions.set(token,{username:user.username,role:user.role,createdAt:Date.now()});
-  guardianAdminSetCookie(res,token);
+  const session={username:user.username,role:user.role,createdAt:Date.now()};
+  guardianAdminSetCookie(res,session);
   guardianAdminAuditLog(user.username,"LOGIN");
   res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role}});
 });
 
 app.post("/api/admin/logout",(req,res)=>{
-  const raw=guardianAdminCookieMap(req).guardian_admin;
-  if(raw){const dot=raw.lastIndexOf(".");if(dot>0)guardianAdminSessions.delete(raw.slice(0,dot))}
   guardianAdminClearCookie(res);
   res.json({ok:true});
 });
