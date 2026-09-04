@@ -138,6 +138,9 @@ function guardianAdminCan(role,permission){
   if(role==="owner")return true;
   if(role==="admin")return permission!=="owner.manage";
   if(role==="dev")return !["owner.manage","users.delete","security.manage"].includes(permission);
+  if(role==="supervisor")return ["vehicle.assign","control.access"].includes(permission);
+  if(role==="control")return ["vehicle.assign","control.access"].includes(permission);
+  if(role==="player")return permission==="mdt.access";
   if(role==="readonly")return permission==="settings.view"||permission==="audit.view";
   return false;
 }
@@ -150,6 +153,69 @@ function guardianRequireAdmin(permission="settings.view"){
     next();
   };
 }
+
+
+// ============================================================
+// Guardian operational user + IRL vehicle session layer
+// Keeps the existing FiveM/Control runtime intact while locking vehicle MDTs
+// to a server-assigned callsign.
+// ============================================================
+const guardianVehicleAssignmentsFile=path.join(guardianAdminDataDir,"guardian-vehicle-assignments.json");
+let guardianVehicleAssignments=guardianReadJson(guardianVehicleAssignmentsFile,{});
+if(!guardianVehicleAssignments||typeof guardianVehicleAssignments!=="object"||Array.isArray(guardianVehicleAssignments))guardianVehicleAssignments={};
+function guardianUserSetCookie(res,user){
+  const payload=Buffer.from(JSON.stringify({username:String(user.username),role:String(user.role),createdAt:Date.now()}),"utf8").toString("base64url");
+  const signed=`${payload}.${guardianAdminSign(payload)}`;
+  res.setHeader("Set-Cookie",`guardian_user=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
+}
+function guardianUserClearCookie(res){res.setHeader("Set-Cookie","guardian_user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure")}
+function guardianUserReadSession(req){
+  const raw=guardianAdminCookieMap(req).guardian_user;if(!raw)return null;
+  const dot=raw.lastIndexOf(".");if(dot<1)return null;
+  const payload=raw.slice(0,dot),sig=raw.slice(dot+1),expected=guardianAdminSign(payload);
+  if(!expected||sig.length!==expected.length)return null;
+  try{if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null}catch{return null}
+  try{const session=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));if(!session?.username||!session?.role||!session?.createdAt)return null;if(Date.now()-Number(session.createdAt)>12*60*60*1000)return null;return session}catch{return null}
+}
+function guardianVehicleAssignment(username){return String(guardianVehicleAssignments[String(username||"").trim()]||"").trim().toUpperCase()}
+function guardianVehicleSaveAssignments(){guardianWriteJson(guardianVehicleAssignmentsFile,guardianVehicleAssignments)}
+
+app.post("/api/login",(req,res)=>{
+  guardianBootstrapOwner();
+  const username=String(req.body?.username||"").trim(),password=String(req.body?.password||"");
+  const user=guardianAdminUsers.get(username);
+  if(!user||!guardianAdminVerify(password,user))return res.status(401).json({ok:false,error:"Invalid username or password"});
+  guardianUserSetCookie(res,user);
+  user.lastLoginAt=new Date().toISOString();guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
+  const vehicle=req.body?.vehicle===true||String(req.query?.vehicle||"")==="1";
+  const redirect=vehicle?"/vehicle/":(["control","supervisor","admin","dev","owner"].includes(user.role)?"/control/":"/mdt/");
+  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role},redirect});
+});
+app.post("/api/logout",(req,res)=>{guardianUserClearCookie(res);res.json({ok:true})});
+app.get("/api/session",(req,res)=>{
+  const session=guardianUserReadSession(req);if(!session)return res.status(401).json({ok:false,authenticated:false});
+  const user=guardianAdminUsers.get(session.username);
+  res.json({ok:true,authenticated:true,user:{username:session.username,displayName:user?.displayName||session.username,role:session.role},callsign:guardianVehicleAssignment(session.username)});
+});
+app.get("/api/vehicle/session",(req,res)=>{
+  const session=guardianUserReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Vehicle login required"});
+  const user=guardianAdminUsers.get(session.username);
+  res.json({ok:true,user:{username:session.username,displayName:user?.displayName||session.username,role:session.role},callsign:guardianVehicleAssignment(session.username),developer:["owner","admin","dev"].includes(session.role)});
+});
+app.get("/api/vehicle/assignments",(req,res)=>{
+  // Matches the current Control Centre trust model. Vehicle commands themselves are session-enforced.
+  const rows=Object.entries(guardianVehicleAssignments).map(([username,callsign])=>({username,callsign:String(callsign||"").toUpperCase()})).sort((a,b)=>a.username.localeCompare(b.username));
+  res.json({ok:true,assignments:rows});
+});
+app.post("/api/vehicle/assignments",(req,res)=>{
+  const username=String(req.body?.username||"").trim();
+  const callsign=String(req.body?.callsign||"").trim().toUpperCase();
+  if(!username)return res.status(400).json({ok:false,error:"Username required"});
+  if(!guardianAdminUsers.has(username))return res.status(404).json({ok:false,error:"Guardian user not found"});
+  if(callsign){guardianVehicleAssignments[username]=callsign}else delete guardianVehicleAssignments[username];
+  guardianVehicleSaveAssignments();guardianAdminAuditLog("CONTROL","VEHICLE_CALLSIGN_ASSIGNED",{username,callsign:callsign||null});
+  res.json({ok:true,username,callsign});
+});
 
 app.post("/api/admin/login",(req,res)=>{
   guardianBootstrapOwner();
@@ -273,7 +339,7 @@ app.post("/api/admin/users",guardianRequireAdmin("settings.edit"),(req,res)=>{
   const role=String(req.body?.role||"readonly");
   const displayName=String(req.body?.displayName||username).trim();
   if(!username||password.length<8)return res.status(400).json({ok:false,error:"Username and password (8+ chars) required"});
-  if(!["admin","dev","readonly"].includes(role))return res.status(400).json({ok:false,error:"Invalid role"});
+  if(!["player","control","supervisor","admin","dev","readonly"].includes(role))return res.status(400).json({ok:false,error:"Invalid role"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"Username already exists"});
   const pw=guardianAdminHashPassword(password);
   guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString()});
@@ -1206,6 +1272,17 @@ app.post("/api/command",(req,res)=>{
   const data=req.body?.data||{};
   action=aliases[action]||action;
 
+  const vehicleMode=String(req.headers["x-guardian-vehicle"]||"")==="1";
+  if(vehicleMode){
+    const session=guardianUserReadSession(req);
+    if(!session)return res.status(401).json({ok:false,error:"Vehicle login required"});
+    const assigned=guardianVehicleAssignment(session.username);
+    if(!assigned)return res.status(409).json({ok:false,error:"Awaiting callsign assignment — contact Control"});
+    const vehicleAllowed=new Set(["webBookOn","webBookOff","webMdtStatus","webMdtAck","webMdtMessage","ackStandbyMove"]);
+    if(!vehicleAllowed.has(action))return res.status(403).json({ok:false,error:"Action not available on vehicle MDT"});
+    data.callsign=assigned;
+  }
+
   if(action==="setStationMapLock"){
     stationMapLocked=data.locked===true;
     state.stationMapLocked=stationMapLocked;
@@ -1694,6 +1771,12 @@ app.get("/control",(_q,r)=>r.sendFile(controlFile));
 app.get("/control/",(_q,r)=>r.sendFile(controlFile));
 app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
 app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
+app.get("/vehicle",(q,r)=>r.redirect("/vehicle/"));
+app.get("/vehicle/",(q,r)=>{
+  const session=guardianUserReadSession(q);
+  if(!session)return r.redirect("/login.html?vehicle=1");
+  return r.redirect("/mdt/?vehicle=1");
+});
 
 app.use(express.static(path.join(__dirname,"public")));
 
