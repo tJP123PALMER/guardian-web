@@ -17,13 +17,13 @@ small{color:#6d8799}.muted{color:#6e8798}.danger{background:#4c2228;border-color
 <main>
 <section class="panel"><h2>Create Account</h2><div class="form">
 <input id="u" placeholder="Username"><input id="n" placeholder="Display name"><input id="p" type="password" placeholder="Password (8+)">
-<select id="r"><option value="player">Player / MDT</option><option value="control">Control</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select>
+<select id="r"><option value="player">Player / MDT</option><option value="control">Control</option><option value="supervisor">Supervisor</option><option value="dev">Developer</option><option value="admin">Admin</option><option value="readonly">Read only</option></select>
 <button id="create">CREATE</button></div></section>
 <section class="panel"><h2>Accounts</h2><table><thead><tr><th>USERNAME</th><th>DISPLAY NAME</th><th>ROLE</th><th>STATUS</th><th>LAST LOGIN</th></tr></thead><tbody id="rows"></tbody></table></section>
 </main>
 <script>
 async function api(url,opt){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||"Request failed");return j}
-async function load(){try{const j=await api("/api/admin/users");document.getElementById("rows").innerHTML=j.users.map(x=>`<tr><td><strong>${x.username}</strong></td><td>${x.display_name}</td><td>${x.role}</td><td>${x.enabled?"Enabled":"Disabled"}</td><td><small>${x.last_login_at?new Date(x.last_login_at).toLocaleString():"Never"}</small></td></tr>`).join("")}catch(e){if(e.message==="Forbidden")location.href="/control/";}}
+async function load(){try{const j=await api("/api/admin/users");document.getElementById("rows").innerHTML=j.users.map(x=>`<tr><td><strong>${x.username}</strong></td><td>${x.displayName}</td><td>${x.role}</td><td>${x.enabled?"Enabled":"Disabled"}</td><td><small>${x.lastLoginAt?new Date(x.lastLoginAt).toLocaleString():"Never"}</small></td></tr>`).join("")}catch(e){if(e.message==="Forbidden")location.href="/control/";}}
 document.getElementById("create").onclick=async()=>{try{await api("/api/admin/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,displayName:n.value,password:p.value,role:r.value})});u.value=n.value=p.value="";load()}catch(e){alert(e.message)}};
 document.getElementById("logout").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
 load();

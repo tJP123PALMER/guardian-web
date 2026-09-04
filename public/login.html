@@ -25,7 +25,7 @@ button:hover{background:#1f79ad}button:disabled{opacity:.6;cursor:wait}
 <div class="card">
   <div class="brand">
     <div class="brandTop"><div class="mark">G</div><div><strong>GUARDIAN OPERATIONS</strong><span>FIRE & RESCUE COMMAND PLATFORM</span></div></div>
-    <p>Sign in to your authorised Control Centre or Player MDT account.</p>
+    <p>Sign in to your authorised Guardian account.</p>
   </div>
   <form id="loginForm">
     <label>USERNAME<input id="username" autocomplete="username" autofocus></label>
@@ -43,7 +43,8 @@ document.getElementById("loginForm").addEventListener("submit",async e=>{
  try{
    const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
      username:document.getElementById("username").value,
-     password:document.getElementById("password").value
+     password:document.getElementById("password").value,
+     vehicle:new URLSearchParams(location.search).get("vehicle")==="1"
    })});
    const j=await r.json();
    if(!r.ok) throw new Error(j.error||"Sign in failed");

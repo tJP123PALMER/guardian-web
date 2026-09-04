@@ -2,10 +2,11 @@
 (() => {
   const nativeFetch = window.fetch.bind(window);
   const RESOURCE = "guardian_mdt_browser";
+  const vehicleMode = new URLSearchParams(location.search).get("vehicle") === "1";
   window.GetParentResourceName = () => RESOURCE;
 
   let state = { connected:false, units:{}, incidents:[], messages:[], callsigns:[] };
-  let callsign = String(localStorage.getItem("guardianExactMdtCallsign") || "").toUpperCase();
+  let callsign = vehicleMode ? "" : String(localStorage.getItem("guardianExactMdtCallsign") || "").toUpperCase();
   let lastEventId = Number(sessionStorage.getItem("guardianMdtLastEventId") || 0);
   let deliveredMessages = new Set();
   let deliveredMobilisations = new Set(
@@ -82,8 +83,7 @@
         <div><strong>GUARDIAN OPERATIONS</strong><span>LIVE PLAYER MDT</span></div>
       </div>
       <nav class="guardianWebMode">
-        <a href="/control/">CONTROL CENTRE</a>
-        <a class="active" href="/mdt/">PLAYER MDT</a>
+        ${vehicleMode ? '<span class="vehicleModeLabel">VEHICLE MDT</span>' : '<a href="/control/">CONTROL CENTRE</a><a class="active" href="/mdt/">PLAYER MDT</a>'}
       </nav>
       <div class="guardianWebSession" id="guardianWebSession">
         <span class="guardianWebLive" id="guardianWebBookDot"></span>
@@ -91,23 +91,18 @@
           <span>PLAYER SESSION</span>
           <strong id="guardianBookState">NOT BOOKED ON</strong>
         </div>
-        <select id="guardianWebCallsign" aria-label="Select appliance">
-          <option value="">Select appliance…</option>
-        </select>
+        ${vehicleMode ? '<div id="guardianWebAssignedCallsign" class="guardianAssignedCallsign">AWAITING CALLSIGN</div>' : '<select id="guardianWebCallsign" aria-label="Select appliance"><option value="">Select appliance…</option></select>'}
         <button type="button" id="guardianSessionAction">BOOK ON</button>
       </div>`;
     document.body.appendChild(bar);
 
     const select = bar.querySelector("#guardianWebCallsign");
-    select.addEventListener("change", () => {
+    if(select) select.addEventListener("change", () => {
       callsign = upper(select.value);
       localStorage.setItem("guardianExactMdtCallsign", callsign);
-      optimisticStatus = "";
-      lastStatusPosted = "";
+      optimisticStatus = "";lastStatusPosted = "";
       knownAssignments = new Set(assignedIncidents().map(i => incidentKey(i)));
-      post({ type:"setCallsign", callsign:callsign || "UNSET" });
-      post({ type:"loadIncidents", incidents:assignedIncidents() });
-      syncStateToMdt(true);
+      post({ type:"setCallsign", callsign:callsign || "UNSET" });post({ type:"loadIncidents", incidents:assignedIncidents() });syncStateToMdt(true);
     });
 
     document.getElementById("guardianSessionAction")?.addEventListener("click",()=>{
@@ -152,7 +147,7 @@
     const dot=document.getElementById("guardianWebBookDot");
     const select=document.getElementById("guardianWebCallsign");
     const session=document.getElementById("guardianWebSession");
-    if(!action||!label||!dot||!select||!session)return;
+    if(!action||!label||!dot||!session)return;
 
     const u=bookedUnit();
     const booked=!!u;
@@ -165,18 +160,18 @@
       action.textContent="BOOK OFF";
       action.classList.add("danger");
       action.disabled=false;
-      select.disabled=true;
+      if(select)select.disabled=true;
     }else{
       label.textContent=callsign ? `${upper(callsign)} · READY TO BOOK ON` : "NOT BOOKED ON";
       action.textContent="BOOK ON";
       action.classList.remove("danger");
       action.disabled=!callsign;
-      select.disabled=false;
+      if(select)select.disabled=false;
     }
   }
 
   async function bookOn() {
-    if(!callsign) return alert("Select an appliance first.");
+    if(!callsign) return alert(vehicleMode ? "Awaiting callsign assignment — contact Control." : "Select an appliance first.");
     optimisticStatus="Home Station";
     lastStatusSentAt=Date.now();
     state.units={...(state.units||{}),[upper(callsign)]:{
@@ -206,6 +201,7 @@
   }
 
   function updatePicker() {
+    if(vehicleMode) return;
     const sel = document.getElementById("guardianWebCallsign");
     if (!sel) return;
 
@@ -396,7 +392,7 @@
   async function command(action, data) {
     const r = await nativeFetch("/api/command", {
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json",...(vehicleMode?{"X-Guardian-Vehicle":"1"}:{})},
       body:JSON.stringify({ action, data:data || {} })
     });
     if (!r.ok) throw new Error(await r.text());
@@ -494,6 +490,19 @@
     makeShell();
     setTimeout(async () => {
       post({ type:"open" });
+      if(vehicleMode){
+        document.body.classList.add("guardianVehicleMode");
+        try{
+          const r=await nativeFetch("/api/vehicle/session",{cache:"no-store"});
+          if(r.status===401){location.href="/login.html?vehicle=1";return}
+          const j=await r.json();callsign=upper(j.callsign||"");
+          const assigned=document.getElementById("guardianWebAssignedCallsign");
+          if(assigned)assigned.textContent=callsign||"AWAITING CALLSIGN";
+          const label=document.getElementById("guardianBookState");if(label&&!callsign)label.textContent="CONTACT CONTROL FOR ASSIGNMENT";
+          post({type:"setCallsign",callsign:callsign||"UNASSIGNED"});
+          if(j.developer){document.body.classList.add("guardianVehicleDeveloper")}
+        }catch(e){console.error(e)}
+      }
       await loadState().catch(console.error);
       connectEvents();
       await replayRecentEvents();

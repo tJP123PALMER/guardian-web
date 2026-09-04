@@ -33,6 +33,7 @@
     <button data-view="units" class="railBtn">Appliances</button>
     <button data-view="calls" class="railBtn">999 Queue <b id="callBadge">0</b></button>
     <button data-view="messages" class="railBtn">Messages</button>
+    <button data-view="vehicles" class="railBtn">Vehicle MDTs</button>
     <div class="sectionLabel">RESOURCES</div>
     <button data-view="stations" class="railBtn">Stations</button>
     <button data-view="cover" class="railBtn">Standby Cover</button>
@@ -146,6 +147,11 @@
       <div class="coverLegend"><span><i class="coverDot green"></i> Good cover</span><span><i class="coverDot amber"></i> Limited cover</span><span><i class="coverDot red"></i> No immediately available appliance</span></div>
       <section class="panel"><div id="coverSummary" class="coverSummary"></div></section>
       <section class="panel coverMovesPanel"><header><div><span class="panelKicker">CONTROL RECOMMENDATIONS</span><h2>Standby Suggestions</h2></div></header><div id="coverSuggestions" class="rows"></div></section>
+    </section>
+
+    <section id="view-vehicles" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">IRL VEHICLE OPERATIONS</span><h1>Vehicle MDT Assignments</h1><p>Assign a callsign to a Guardian username. The vehicle cannot choose or override it.</p></div></div>
+      <section class="panel"><header><div><span class="panelKicker">CALLSIGN AUTHORITY</span><h2>Assign vehicle</h2></div></header><div class="compose"><input id="vehicleUsername" placeholder="Guardian username"><input id="vehicleCallsign" placeholder="Callsign e.g. K02P1"><button class="primary" id="vehicleAssign">ASSIGN</button><button class="secondary" id="vehicleClear">CLEAR</button></div><div id="vehicleAssignments" class="rows"></div></section>
     </section>
   </main>
 </div>

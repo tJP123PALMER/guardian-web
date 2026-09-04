@@ -569,7 +569,7 @@ function render(){
  }).join(""):empty("No live appliances");
  renderIncidentList();
  if(!incidentEditorShouldHold())renderIncidentDetail();
- renderUnits();renderCalls();renderMessages();renderStations();renderCover();renderMdt();
+ renderUnits();renderCalls();renderMessages();renderStations();renderCover();renderVehicleAssignments();renderMdt();
 }
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
@@ -1284,3 +1284,23 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
 const guardianLiveIncidentRefresh=setInterval(()=>{
   if(document.visibilityState==="visible") load().catch(()=>{});
 },2000);
+
+
+// IRL vehicle MDT callsign assignment (Control authoritative)
+let guardianVehicleAssignmentsCache=[];
+async function loadVehicleAssignments(){
+  try{const r=await fetch('/api/vehicle/assignments',{cache:'no-store'});const j=await r.json();guardianVehicleAssignmentsCache=j.assignments||[];renderVehicleAssignments()}catch(e){console.error('[Guardian vehicle assignments]',e)}
+}
+function renderVehicleAssignments(){
+  const el=document.getElementById('vehicleAssignments');if(!el)return;
+  el.innerHTML=guardianVehicleAssignmentsCache.length?guardianVehicleAssignmentsCache.map(x=>`<div class="row"><div class="rowMeta"><strong>${esc(x.username)}</strong><span>Vehicle user</span></div><span class="status available">${esc(x.callsign||'UNASSIGNED')}</span></div>`).join(''):'<div class="emptyState"><strong>No vehicle assignments</strong><span>Assign a Guardian username to a callsign above.</span></div>';
+}
+async function setVehicleAssignment(clear=false){
+  const u=document.getElementById('vehicleUsername'),c=document.getElementById('vehicleCallsign');if(!u||!c)return;
+  const username=u.value.trim(),callsign=clear?'':c.value.trim().toUpperCase();if(!username)return alert('Enter the Guardian username first.');
+  const r=await fetch('/api/vehicle/assignments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,callsign})});const j=await r.json();if(!r.ok)return alert(j.error||'Assignment failed');
+  c.value='';await loadVehicleAssignments();
+}
+document.getElementById('vehicleAssign')?.addEventListener('click',()=>setVehicleAssignment(false));
+document.getElementById('vehicleClear')?.addEventListener('click',()=>setVehicleAssignment(true));
+loadVehicleAssignments();
