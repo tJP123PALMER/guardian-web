@@ -64,16 +64,31 @@
   async function powerOn(){
     if(powered){
       if(micIsLive()){setMic('MIC READY');hint('MIC READY — SELECT CONTACTS / TALKGROUP');return;}
-      setMic('RETRYING MIC…');hint('RELEASING AUDIO DEVICE AND RETRYING…');releaseMic();await sleep(650);
-      try{await ensureMic();if(localTrack)localTrack.enabled=false;setMic('MIC READY');state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
-      catch(e){console.error('[Guardian vehicle mic retry]',e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error');}
+      setMic('RETRYING MIC…');hint('RELEASING AUDIO DEVICE AND RETRYING…');releaseMic();
+      await sleep(450);
+      try{await ensureMic();if(localTrack)localTrack.enabled=false;setMic('MIC READY');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
+      catch(e){console.error('[Guardian vehicle mic retry]',e);setMic('MIC ERROR');hint(friendlyMicError(e),'error');}
       return;
     }
-    powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');
-    setMic('CHECKING MIC…');state('REGISTERING…');hint('INITIALISING RADIO AUDIO');
-    // Open the microphone from the user's green-button gesture. Android WebView is
-    // much more reliable when getUserMedia starts from an explicit tap instead of
-    // waiting for a later SSE/WebRTC event from Control.
+
+    // Power/register immediately. Microphone acquisition must never prevent the
+    // radio UI from switching on; some Android head units take several seconds
+    // to return getUserMedia().
+    powered=true;
+    tab.classList.remove('radioOff');
+    $('radioPowerOn')?.classList.add('on');
+    setLink('REGISTERING');
+    setCallsign();
+    setMic('CHECKING MIC…');
+    state('RADIO ON — REGISTERING…');
+    hint('OPEN CONTACTS AND SELECT A TALKGROUP');
+    menuLevel='main';cursor=1;renderMenu();
+
+    // Start backend registration immediately, independently of the microphone.
+    ensureRadio(true).catch(e=>console.error('[Guardian radio register]',e));
+
+    // The physical green-key gesture also primes the microphone, but any audio
+    // failure is reported separately and does not switch the radio back off.
     try{
       await ensureMic();
       if(localTrack)localTrack.enabled=false;
@@ -82,11 +97,8 @@
     }catch(e){
       console.error('[Guardian vehicle mic]',e);
       setMic('MIC ERROR');
-      state('MIC / AUDIO ERROR','error');
       hint(friendlyMicError(e),'error');
-      // Keep the radio UI usable so the operator can retry after connecting/changing a mic.
     }
-    menuLevel='main';cursor=1;renderMenu();await ensureRadio(true);
   }
   async function powerOff(){
     if(activeCall)await endCall();powered=false;clearTimeout(reconnectTimer);eventSource?.close();eventSource=null;clientId='';identity=null;lastIdentityKey='';selectedChannel=null;selectedService=null;menuLevel='main';cursor=1;
@@ -193,17 +205,33 @@
     else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer(false);resetCallSoon()}}
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
-  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic()activeCall=null}
+  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic();activeCall=null}
   function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RADIO ON':'RADIO OFF');if(powered){state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH')}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
   function resetCallSoon(){setTimeout(resetCall,1300)}
 
   function bindControls(){
-    remoteAudio=$('radioVehicleRemote');$('radioPowerOn')?.addEventListener('click',powerOn);$('radioPowerOff')?.addEventListener('click',powerOff);
+    remoteAudio=$('radioVehicleRemote');
+    // Android aftermarket WebViews do not all synthesize click reliably from
+    // touch. Listen to pointer/touch directly and de-duplicate the later click.
+    let lastPowerGesture=0;
+    const invokePower=(fn,e)=>{
+      if(e){try{e.preventDefault()}catch{}}
+      const now=Date.now();
+      if(now-lastPowerGesture<500)return;
+      lastPowerGesture=now;
+      fn();
+    };
+    const onBtn=$('radioPowerOn'), offBtn=$('radioPowerOff');
+    ['pointerdown','touchstart','click'].forEach(ev=>onBtn?.addEventListener(ev,e=>invokePower(powerOn,e),{passive:false}));
+    ['pointerdown','touchstart','click'].forEach(ev=>offBtn?.addEventListener(ev,e=>invokePower(powerOff,e),{passive:false}));
+    // Capture fallback in case the head unit dispatches the event to a child/text node.
+    tab.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true});
+    tab.addEventListener('touchstart',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true,passive:false});
     $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',goBack);$('radioNavRight')?.addEventListener('click',selectMenuItem);$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
   }
   function watchIdentity(){
-    const reauth=()=>{if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};
+    const reauth=()=>{setCallsign();if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};
     const box=$('callsignBox');if(box)new MutationObserver(reauth).observe(box,{childList:true,subtree:true,characterData:true});
     const assigned=$('guardianWebAssignedCallsign');if(assigned)new MutationObserver(reauth).observe(assigned,{childList:true,subtree:true,characterData:true});
     const select=$('guardianWebCallsign');if(select)select.addEventListener('change',()=>setTimeout(reauth,100));
