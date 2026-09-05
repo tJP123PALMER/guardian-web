@@ -229,17 +229,27 @@ function guardianRadioClientId(v){return String(v||"").replace(/[^a-zA-Z0-9:_-]/
 function guardianRadioControlRole(role){return ["control","supervisor","admin","dev","owner"].includes(String(role||"").toLowerCase())}
 function guardianRadioIdentity(req,requestedRole){
   const role=String(requestedRole||"").toLowerCase();
+
+  // FiveM / browser MDT identity comes from the appliance that is already
+  // booked on. It deliberately does not require a second Guardian web login.
+  if(role==="mdt"){
+    const callsign=String(req.query?.callsign||req.body?.callsign||"").trim().toUpperCase();
+    if(!callsign||callsign==="UNSET"||callsign==="UNASSIGNED")return {error:"Book on to the MDT before using Radio Call",status:409};
+    // The browser/FiveM MDT already owns its identity through the existing booking flow.
+    // Accept a callsign when it is operationally live OR is a configured active appliance.
+    // This avoids a race where the radio tab starts before the newest FiveM snapshot/booking
+    // has reached the web process, while still refusing arbitrary unknown callsigns.
+    const configured=(guardianConfig.appliances||[]).some(a=>a?.active!==false&&String(a.callsign||"").trim().toUpperCase()===callsign);
+    if(!configured&&!guardianUnitOperationallyLive(callsign))return {error:"This callsign is not recognised by Guardian",status:409};
+    return {role:"mdt",username:`mdt:${callsign}`,callsign};
+  }
+
+  // IRL vehicle and Control sessions remain authenticated separately.
   const session=guardianUserReadSession(req) || (role==="control" ? guardianAdminReadSession(req) : null);
   if(!session)return null;
   if(role==="vehicle"){
     const callsign=guardianVehicleAssignment(session.username);if(!callsign)return {error:"Awaiting callsign assignment — contact Control",status:409};
     return {role:"vehicle",username:session.username,callsign};
-  }
-  if(role==="mdt"){
-    const callsign=String(req.query?.callsign||req.body?.callsign||"").trim().toUpperCase();
-    if(!callsign)return {error:"Book on to the MDT before using Radio Call",status:409};
-    if(!guardianUnitOperationallyLive(callsign))return {error:"This callsign is not currently booked on",status:409};
-    return {role:"mdt",username:`mdt:${callsign}`,callsign};
   }
   if(role==="control"){
     if(!guardianRadioControlRole(session.role))return {error:"Control radio permission required",status:403};
@@ -2008,11 +2018,22 @@ app.get("/control/",(_q,r)=>r.sendFile(controlFile));
 app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
 app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 app.get(["/vehicle","/vehicle/"],(q,r)=>{
+  r.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
   const session=guardianUserReadSession(q);
   if(!session)return r.redirect("/login.html?vehicle=1");
-  return r.redirect("/mdt/?vehicle=1");
+  return r.redirect("/mdt/?vehicle=1&build=5");
 });
 
-app.use(express.static(path.join(__dirname,"public")));
+// MDT/Control are operational screens: never leave an Android WebView stuck on an old
+// JavaScript/CSS build after a Render deployment.
+app.use((req,res,next)=>{
+  if(req.path.startsWith("/mdt/")||req.path.startsWith("/control/")||req.path.startsWith("/vehicle")){
+    res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma","no-cache");
+    res.setHeader("Expires","0");
+  }
+  next();
+});
+app.use(express.static(path.join(__dirname,"public"),{etag:true,maxAge:0}));
 
 app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7.0 Production Sync running on port ${PORT}`));
