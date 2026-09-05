@@ -59,7 +59,24 @@
   }
 
   async function powerOn(){
-    if(powered)return;powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');setMic('RADIO ON');state('REGISTERING…');hint('SELECT CONTACTS AND AN OPEN TALKGROUP');
+    if(powered)return;
+    powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');
+    setMic('CHECKING MIC…');state('REGISTERING…');hint('INITIALISING RADIO AUDIO');
+    // Open the microphone from the user's green-button gesture. Android WebView is
+    // much more reliable when getUserMedia starts from an explicit tap instead of
+    // waiting for a later SSE/WebRTC event from Control.
+    try{
+      await ensureMic();
+      if(localTrack)localTrack.enabled=false;
+      setMic('MIC READY');
+      hint('SELECT CONTACTS AND AN OPEN TALKGROUP');
+    }catch(e){
+      console.error('[Guardian vehicle mic]',e);
+      setMic('MIC ERROR');
+      state('MIC / AUDIO ERROR','error');
+      hint(friendlyMicError(e),'error');
+      // Keep the radio UI usable so the operator can retry after connecting/changing a mic.
+    }
     menuLevel='main';cursor=1;renderMenu();await ensureRadio(true);
   }
   async function powerOff(){
@@ -111,16 +128,50 @@
     catch(e){state(e.message||'CALL REQUEST FAILED','error');hint('TRY AGAIN','error')}
   }
   function handleCallEvent(m){const c=m.call;if(!c)return;if(activeCall&&c.id!==activeCall.id)return;
-    if(m.action==='answered'){activeCall=c;state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected');setMic('MIC LIVE');beginPeer(true).catch(e=>{console.error(e);state('MIC / AUDIO ERROR','error');hint(e.message||'CHECK MICROPHONE PERMISSION','error')})}
+    if(m.action==='answered'){activeCall=c;state('CONNECTING AUDIO…','connected');hint('CONTROL ANSWERED — OPENING VOICE LINK','connected');beginPeer(true).then(()=>{setMic('MIC LIVE')}).catch(e=>{console.error(e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error')})}
     else if(m.action==='rejected'){state('CALL REJECTED','error');hint('CONTROL REJECTED REQUEST','error');resetCallSoon()}
     else if(m.action==='ended'){state('CALL ENDED');hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');teardownPeer(false);resetCallSoon()}
   }
 
-  async function ensureMic(){
-    if(localStream)return localStream;if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');
-    localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});localTrack=localStream.getAudioTracks()[0]||null;if(!localTrack)throw new Error('No microphone detected');return localStream;
+  function friendlyMicError(e){
+    const n=String(e?.name||'');
+    if(n==='NotAllowedError'||n==='SecurityError')return 'MICROPHONE PERMISSION DENIED — ALLOW GUARDIAN MICROPHONE ACCESS';
+    if(n==='NotFoundError'||n==='DevicesNotFoundError')return 'NO MICROPHONE DETECTED — CONNECT MIC THEN PRESS GREEN AGAIN';
+    if(n==='NotReadableError'||n==='TrackStartError')return 'MICROPHONE BUSY — CLOSE OTHER AUDIO APPS AND RETRY';
+    if(n==='OverconstrainedError'||n==='ConstraintNotSatisfiedError')return 'MIC SETTINGS NOT SUPPORTED — RETRYING DEFAULT MIC';
+    return e?.message||'COULD NOT START AUDIO SOURCE';
   }
-  function makePeer(){if(pc)return pc;pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId)};pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0];remoteAudio.play().catch(()=>{})}};pc.onconnectionstatechange=()=>{if(!pc)return;if(pc.connectionState==='connected'){state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected')}else if(['failed','disconnected'].includes(pc.connectionState)){state('VOICE LINK INTERRUPTED','error')}};return pc}
+  async function openDefaultMic(){
+    // Start with the broadest possible request. Some Android head units reject
+    // Chromium audio-processing constraints even though their microphone works.
+    try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}catch(first){
+      // If the platform default points at a stale/disconnected device, enumerate the
+      // actual inputs and try the first current input explicitly.
+      try{
+        const devs=await navigator.mediaDevices.enumerateDevices();
+        const inputs=devs.filter(d=>d.kind==='audioinput'&&d.deviceId);
+        for(const d of inputs){
+          try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}catch{}
+        }
+      }catch{}
+      throw first;
+    }
+  }
+  async function ensureMic(){
+    if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live'))return localStream;
+    if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');
+    localStream=await openDefaultMic();
+    localTrack=localStream.getAudioTracks()[0]||null;
+    if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
+    return localStream;
+  }
+  async function playRemote(){
+    if(!remoteAudio)return;
+    remoteAudio.autoplay=true;remoteAudio.muted=false;remoteAudio.volume=1;
+    try{await remoteAudio.play()}catch(e){console.warn('[Guardian remote audio autoplay]',e);hint('TAP RADIO SCREEN ONCE TO ENABLE SPEAKER AUDIO','error')}
+  }
+  function makePeer(){if(pc)return pc;pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId)};pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0]||new MediaStream([e.track]);playRemote()}};pc.onconnectionstatechange=()=>{if(!pc)return;if(pc.connectionState==='connected'){state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected');playRemote()}else if(['failed','disconnected'].includes(pc.connectionState)){state('VOICE LINK INTERRUPTED','error')}};return pc}
   async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=true;const peer=makePeer();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
   async function handleSignal(m){if(!activeCall||!m.from)return;if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;const peer=makePeer();await ensureMic();if(localTrack)localTrack.enabled=true;if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
     if(m.kind==='answer')await peer.setRemoteDescription(new RTCSessionDescription(m.data));
@@ -136,7 +187,7 @@
   function bindControls(){
     remoteAudio=$('radioVehicleRemote');$('radioPowerOn')?.addEventListener('click',powerOn);$('radioPowerOff')?.addEventListener('click',powerOff);
     $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',goBack);$('radioNavRight')?.addEventListener('click',selectMenuItem);$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
-    $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu()});
+    $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
   }
   function watchIdentity(){
     const reauth=()=>{if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};

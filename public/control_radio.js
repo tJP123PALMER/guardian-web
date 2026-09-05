@@ -102,24 +102,49 @@
       await ensureMic();
       const j=await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'answer',callId:id})});
       activeCall=j.call; calls=calls.filter(c=>c.id!==id); renderCalls(); renderActive();
-    }catch(e){alert(`Unable to answer: ${e.message}`)}
+    }catch(e){alert(`Unable to answer: ${friendlyMicError(e)}`)}
   }
   async function rejectCall(id){
     try{await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'reject',callId:id})});calls=calls.filter(c=>c.id!==id);renderCalls()}catch(e){alert(e.message)}
   }
 
+  function friendlyMicError(e){
+    const n=String(e?.name||'');
+    if(n==='NotAllowedError'||n==='SecurityError')return 'Microphone permission denied. Allow microphone access for Guardian Control.';
+    if(n==='NotFoundError'||n==='DevicesNotFoundError')return 'No microphone detected by the browser. Plug in/enable a mic and refresh Control.';
+    if(n==='NotReadableError'||n==='TrackStartError')return 'Microphone is busy or unavailable. Close other audio apps and try again.';
+    return e?.message||'Could not start microphone';
+  }
+  async function openDefaultMic(){
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not support microphone capture');
+    try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}catch(first){
+      try{
+        const devs=await navigator.mediaDevices.enumerateDevices();
+        const inputs=devs.filter(d=>d.kind==='audioinput'&&d.deviceId);
+        for(const d of inputs){try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}catch{}}
+      }catch{}
+      throw first;
+    }
+  }
   async function ensureMic(){
-    if(localStream)return localStream;
-    localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+    if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live')){localTrack=localStream.getAudioTracks()[0]||null;if(localTrack)localTrack.enabled=true;return localStream}
+    if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}
+    localStream=await openDefaultMic();
     localTrack=localStream.getAudioTracks()[0]||null;
-    if(localTrack)localTrack.enabled=true;
+    if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
+    localTrack.enabled=true;
     return localStream;
+  }
+  async function playRemote(){
+    if(!remoteAudio)return;
+    remoteAudio.autoplay=true;remoteAudio.muted=false;remoteAudio.volume=1;
+    try{await remoteAudio.play()}catch(e){console.warn('[Guardian control remote audio]',e)}
   }
   function makePeer(){
     if(pc)return pc;
     pc=new RTCPeerConnection({iceServers});
     pc.onicecandidate=e=>{if(e.candidate&&activeCall?.vehicleClientId)signal('ice',e.candidate,activeCall.vehicleClientId)};
-    pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0];remoteAudio.play().catch(()=>{})}};
+    pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0]||new MediaStream([e.track]);playRemote()}};
     return pc;
   }
   async function beginPeer(offerer){
