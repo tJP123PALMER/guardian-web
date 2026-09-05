@@ -89,7 +89,7 @@
     const ringing=calls.filter(c=>c.status==='ringing');
     if($('radioCallBadge')) $('radioCallBadge').textContent=String(ringing.length);
     box.innerHTML=ringing.length?ringing.map(c=>`<div class="radioCallCard">
-      <div><strong>${esc(c.callsign)}</strong><span>${esc(c.serviceName)} · ${esc(c.channelName)}${c.dialed?` · Dial ${esc(c.dialed)}`:''}</span><span>Incoming Guardian radio call</span></div>
+      <div><strong>${esc(c.callsign)}</strong><span>${esc(c.serviceName)} · ${esc(c.channelName)} · URGENCY ${esc(c.urgency||'1')}</span><span>Incoming Guardian radio call</span></div>
       <div class="radioCallActions"><button class="radioAnswer" data-radio-answer="${esc(c.id)}">ANSWER</button><button class="radioReject" data-radio-reject="${esc(c.id)}">REJECT</button></div>
     </div>`).join(''):`<div class="emptyState"><strong>No incoming radio calls</strong><span>Vehicle call requests will ring here.</span></div>`;
     box.querySelectorAll('[data-radio-answer]').forEach(b=>b.onclick=()=>answerCall(b.dataset.radioAnswer));
@@ -112,7 +112,7 @@
     if(localStream)return localStream;
     localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
     localTrack=localStream.getAudioTracks()[0]||null;
-    if(localTrack)localTrack.enabled=false;
+    if(localTrack)localTrack.enabled=true;
     return localStream;
   }
   function makePeer(){
@@ -143,22 +143,8 @@
   function renderActive(){
     const box=$('radioActiveCall');if(!box)return;
     if(!activeCall){box.innerHTML='';return}
-    box.innerHTML=`<div class="radioConnectedCard"><div class="radioConnectedTop"><div><span class="panelKicker">CONNECTED RADIO CALL</span><h3>${esc(activeCall.callsign)}</h3><div class="radioConnectedMeta">${esc(activeCall.serviceName)} · ${esc(activeCall.channelName)}</div></div><strong id="radioTxState">READY</strong></div><div class="radioConnectedActions"><button id="radioControlPtt" class="radioPtt">HOLD TO TALK</button><button id="radioEndCall" class="radioEnd">END</button></div></div>`;
-    const ptt=$('radioControlPtt');
-    const down=e=>{e.preventDefault();startPtt(ptt)};const up=e=>{e.preventDefault();stopPtt(ptt)};
-    ptt.addEventListener('pointerdown',down);ptt.addEventListener('pointerup',up);ptt.addEventListener('pointercancel',up);ptt.addEventListener('pointerleave',e=>{if(e.buttons)up(e)});
+    box.innerHTML=`<div class="radioConnectedCard"><div class="radioConnectedTop"><div><span class="panelKicker">CONNECTED RADIO CALL</span><h3>${esc(activeCall.callsign)}</h3><div class="radioConnectedMeta">${esc(activeCall.serviceName)} · ${esc(activeCall.channelName)} · URGENCY ${esc(activeCall.urgency||'1')}</div></div><strong id="radioTxState">LIVE VOICE</strong></div><div class="radioConnectedActions"><div class="radioLiveVoice">MICROPHONES OPEN — SPEAK NORMALLY</div><button id="radioEndCall" class="radioEnd">END CALL</button></div></div>`;
     $('radioEndCall').onclick=endCall;
-  }
-  async function startPtt(btn){
-    if(!activeCall||floorHeld)return;
-    try{await ensureMic();const j=await radioFetch('/api/radio/floor',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'request'})});if(!j.granted)return;
-      floorHeld=true;if(localTrack)localTrack.enabled=true;btn.classList.add('tx');btn.textContent='TRANSMITTING';if($('radioTxState'))$('radioTxState').textContent='TX';
-    }catch(e){console.error(e)}
-  }
-  async function stopPtt(btn){
-    if(localTrack)localTrack.enabled=false;if(!floorHeld)return;floorHeld=false;
-    try{await radioFetch('/api/radio/floor',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'release'})})}catch{}
-    btn?.classList.remove('tx');if(btn)btn.textContent='HOLD TO TALK';if($('radioTxState'))$('radioTxState').textContent='READY';
   }
   async function endCall(){
     if(!activeCall)return;const id=activeCall.id;const target=activeCall.vehicleClientId;

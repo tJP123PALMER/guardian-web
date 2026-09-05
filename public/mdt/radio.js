@@ -1,153 +1,150 @@
 (() => {
   const $ = id => document.getElementById(id);
-  if (!$('tab-radio')) return;
+  const tab = $('tab-radio');
+  if (!tab) return;
 
-  let identity = null, clientId = '', eventSource = null, config = { services: [] };
   const vehicleMode = new URLSearchParams(location.search).get('vehicle') === '1';
   const radioRole = vehicleMode ? 'vehicle' : 'mdt';
-  let selectedService = null, selectedChannel = null, dial = '';
-  let activeCall = null, pc = null, localStream = null, localTrack = null, remoteAudio = null;
-  let iceServers = [], floorHeld = false, callHoldTimer = null;
-  let reconnectTimer = null, connecting = false, bound = false, lastIdentityKey = '';
+  let powered = false, connecting = false, identity = null, clientId = '', eventSource = null;
+  let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null;
+  let menuLevel = 'main', cursor = 0, activeCall = null, pc = null, localStream = null, localTrack = null;
+  let remoteAudio = null, keyHoldTimer = null, keyHoldFired = false, reconnectTimer = null, lastIdentityKey = '';
+  const mainItems = [
+    {id:'messages', label:'Messages', icon:'✉', disabled:true},
+    {id:'contacts', label:'Contacts', icon:'▣'},
+    {id:'radio-info', label:'Radio Info', icon:'ⓘ', disabled:true}
+  ];
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const currentCallsign = () => {
-    const vals = [
-      $('guardianWebAssignedCallsign')?.textContent,
-      $('callsignBox')?.textContent,
-      $('guardianWebCallsign')?.value
-    ].map(v => String(v || '').trim().toUpperCase());
-    return vals.find(v => v && !['UNSET','UNASSIGNED','AWAITING CALLSIGN','SELECT APPLIANCE…'].includes(v)) || '';
+    const vals = [$('guardianWebAssignedCallsign')?.textContent,$('callsignBox')?.textContent,$('guardianWebCallsign')?.value]
+      .map(v=>String(v||'').trim().toUpperCase());
+    return vals.find(v=>v && !['UNSET','UNASSIGNED','AWAITING CALLSIGN','SELECT APPLIANCE…'].includes(v)) || '';
   };
-  const roleQs = () => `role=${encodeURIComponent(radioRole)}${radioRole === 'mdt' ? `&callsign=${encodeURIComponent(currentCallsign())}` : ''}`;
-  const withIdentity = (obj = {}) => ({ ...obj, role: radioRole, ...(radioRole === 'mdt' ? { callsign: currentCallsign() } : {}) });
-  const api = async (url, opts = {}) => {
-    const r = await fetch(url, { credentials:'same-origin', cache:'no-store', headers:{'Content-Type':'application/json', ...(opts.headers||{})}, ...opts });
-    let j = {}; try { j = await r.json(); } catch {}
-    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    return j;
+  const roleQs = () => `role=${encodeURIComponent(radioRole)}${radioRole==='mdt'?`&callsign=${encodeURIComponent(currentCallsign())}`:''}`;
+  const withIdentity = obj => ({...(obj||{}),role:radioRole,...(radioRole==='mdt'?{callsign:currentCallsign()}:{})});
+  const api = async (url,opts={}) => {
+    const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});
+    let j={};try{j=await r.json()}catch{};if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j;
   };
+  const state=(text,cls='')=>{const e=$('radioCallState');if(e){e.className='mtmLcdState'+(cls?' '+cls:'');e.textContent=text}};
+  const hint=(text,cls='')=>{const e=$('radioUrgencyState');if(e){e.className=cls;e.textContent=text}};
+  const setLink=t=>{if($('radioLinkState'))$('radioLinkState').textContent=t};
+  const setCallsign=()=>{if($('radioVehicleCallsign'))$('radioVehicleCallsign').textContent=identity?.callsign||currentCallsign()||'UNSET'};
+  const setMic=t=>{if($('radioMicState'))$('radioMicState').textContent=t};
 
-  function state(text, cls='') { const el=$('radioCallState'); if(el){el.className='radioCallState'+(cls?' '+cls:'');el.textContent=text;} }
-  function setLink(text) { if($('radioLinkState')) $('radioLinkState').textContent=text; }
-  function setCallsign() { if($('radioVehicleCallsign')) $('radioVehicleCallsign').textContent=identity?.callsign || currentCallsign() || 'UNSET'; }
-  function renderDial(){ if($('radioDialDisplay')) $('radioDialDisplay').textContent=dial || '\u00a0'; }
-
-  function bindControlsOnce(){
-    if(bound) return; bound=true; remoteAudio=$('radioVehicleRemote');
-    document.querySelectorAll('[data-radio-key]').forEach(b=>b.addEventListener('click',()=>{if(activeCall)return;dial=(dial+b.dataset.radioKey).slice(0,24);renderDial();}));
-    $('radioClearDial')?.addEventListener('click',()=>{if(activeCall)return;dial='';renderDial();});
-    $('radioRedEnd')?.addEventListener('click',endCall);
-    const btn=$('radioGreenCall');
-    if(btn){
-      btn.addEventListener('pointerdown',e=>{e.preventDefault();if(activeCall?.status==='connected'){startPtt();return;}if(activeCall)return;beginCallHold();});
-      const up=e=>{e.preventDefault();if(activeCall?.status==='connected'){stopPtt();return;}cancelCallHold();};
-      btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',e=>{if(e.buttons)up(e);});
-    }
-    $('radioStatusBtn')?.addEventListener('click',()=>ensureRadio(true));
+  function services(){return (config.services||[]).filter(s=>(s.channels||[]).some(c=>c.open===true));}
+  function openChannels(s){return (s?.channels||[]).filter(c=>c.open===true);}
+  function currentMenu(){
+    if(menuLevel==='main')return mainItems;
+    if(menuLevel==='services')return services().map(s=>({id:s.id,label:s.name,icon:'▸',raw:s}));
+    if(menuLevel==='channels')return openChannels(selectedService).map(c=>({id:c.id,label:c.name,icon:'•',raw:c}));
+    return mainItems;
+  }
+  function renderMenu(){
+    const title=$('radioMenuTitle'),list=$('radioMenuList');if(!title||!list)return;
+    title.textContent=menuLevel==='main'?'Main Menu':menuLevel==='services'?'Contacts':(selectedService?.name||'Talkgroups');
+    const items=currentMenu();if(cursor>=items.length)cursor=Math.max(0,items.length-1);
+    list.innerHTML=items.length?items.map((x,i)=>`<div class="mtmMenuItem${i===cursor?' selected':''}${x.disabled?' disabled':''}" data-mi="${i}"><span class="mtmMenuIcon">${x.icon||'•'}</span><span>${String(x.label||'')}</span></div>`).join(''):'<div class="mtmMenuItem selected">NO OPEN TALKGROUPS</div>';
+    list.querySelectorAll('[data-mi]').forEach(el=>el.addEventListener('click',()=>{cursor=Number(el.dataset.mi);renderMenu();selectMenuItem()}));
+    if($('radioSelectedService'))$('radioSelectedService').textContent=selectedService?.name||'CONTACTS';
+    if($('radioSelectedChannel'))$('radioSelectedChannel').textContent=selectedChannel?.name||'NONE';
+  }
+  function moveCursor(delta){if(!powered)return;const items=currentMenu();if(!items.length)return;cursor=(cursor+delta+items.length)%items.length;renderMenu()}
+  function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='main';cursor=1;}renderMenu()}
+  async function selectMenuItem(){
+    if(!powered)return;const item=currentMenu()[cursor];if(!item||item.disabled)return;
+    if(menuLevel==='main'&&item.id==='contacts'){menuLevel='services';cursor=0;renderMenu();return;}
+    if(menuLevel==='services'){selectedService=item.raw;menuLevel='channels';cursor=0;renderMenu();return;}
+    if(menuLevel==='channels'){await selectChannel(item.raw);}
   }
 
-  function scheduleRetry(message){
-    clearTimeout(reconnectTimer);
-    if(message) state(message);
-    reconnectTimer=setTimeout(()=>ensureRadio(false),1500);
+  async function powerOn(){
+    if(powered)return;powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');setMic('RADIO ON');state('REGISTERING…');hint('SELECT CONTACTS AND AN OPEN TALKGROUP');
+    menuLevel='main';cursor=1;renderMenu();await ensureRadio(true);
   }
-
+  async function powerOff(){
+    if(activeCall)await endCall();powered=false;clearTimeout(reconnectTimer);eventSource?.close();eventSource=null;clientId='';identity=null;lastIdentityKey='';selectedChannel=null;selectedService=null;menuLevel='main';cursor=1;
+    teardownPeer(true);tab.classList.add('radioOff');$('radioPowerOn')?.classList.remove('on');setLink('OFF');setMic('RADIO OFF');state('PRESS GREEN TO START RADIO');hint('RADIO OFF');setCallsign();renderMenu();
+  }
+  function scheduleRetry(msg){clearTimeout(reconnectTimer);if(!powered)return;if(msg)state(msg,'error');reconnectTimer=setTimeout(()=>ensureRadio(false),1800)}
   async function ensureRadio(force=false){
-    if(connecting)return;
-    const cs=currentCallsign();
-    const key=`${radioRole}:${cs}`;
-    if(!force && identity && clientId && lastIdentityKey===key) return;
-    if(radioRole==='mdt'&&!cs){ setLink('WAITING FOR BOOK ON'); setCallsign(); scheduleRetry('BOOK ON TO USE RADIO'); return; }
-    connecting=true; setLink('RADIO CONNECTING');
+    if(!powered||connecting)return;const cs=currentCallsign(),key=`${radioRole}:${cs}`;
+    if(!force&&identity&&clientId&&lastIdentityKey===key)return;
+    if(radioRole==='mdt'&&!cs){setLink('WAITING');setCallsign();scheduleRetry('BOOK ON TO USE RADIO');return;}
+    connecting=true;setLink('CONNECTING');
     try{
-      // Load the directory independently on normal MDTs so open channels are visible
-      // even while the realtime client is reconnecting.
-      try{const cfg=await api(`/api/radio/config?${roleQs()}`);config=cfg.config||{services:[]};renderDirectory();}catch{}
-      const sess=await api(`/api/radio/session?${roleQs()}`);
-      identity=sess.identity; iceServers=sess.iceServers||[]; lastIdentityKey=key; setCallsign();
-      if(vehicleMode && !identity?.callsign) throw new Error('Awaiting callsign assignment — contact Control');
-      await connectEvents();
-      const cfg=await api(`/api/radio/config?${roleQs()}`); config=cfg.config||{services:[]};renderDirectory();
-      setLink('RADIO ONLINE'); if(!activeCall) state(selectedChannel?'READY':'SELECT AN OPEN CHANNEL');
-    }catch(e){
-      identity=null;clientId='';eventSource?.close();eventSource=null;setCallsign();setLink('RADIO RECONNECTING');
-      const msg=e.message||'RADIO UNAVAILABLE';state(msg);scheduleRetry(msg);
-    }finally{connecting=false;}
+      const sess=await api(`/api/radio/session?${roleQs()}`);identity=sess.identity;iceServers=sess.iceServers||[];lastIdentityKey=key;setCallsign();
+      const cfg=await api(`/api/radio/config?${roleQs()}`);config=cfg.config||{services:[]};renderMenu();
+      await connectEvents();setLink('REGISTERED');state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');
+    }catch(e){identity=null;clientId='';eventSource?.close();eventSource=null;setLink('RECONNECTING');scheduleRetry(e.message||'RADIO UNAVAILABLE');}
+    finally{connecting=false}
   }
-
-  function renderDirectory(){
-    const sf=$('radioServiceFolders'),cl=$('radioChannelList');if(!sf||!cl)return;
-    const services=(config.services||[]).filter(s=>(s.channels||[]).length);
-    if(selectedService&&!services.some(s=>s.id===selectedService.id))selectedService=null;
-    if(!selectedService&&services.length)selectedService=services[0];
-    sf.innerHTML=services.map(s=>`<button type="button" data-service="${esc(s.id)}" class="${selectedService?.id===s.id?'active':''}">${esc(s.name)}</button>`).join('')||'<div class="radioEmpty">NO OPEN SERVICES</div>';
-    sf.querySelectorAll('[data-service]').forEach(b=>b.onclick=()=>{selectedService=services.find(s=>s.id===b.dataset.service)||null;selectedChannel=null;renderDirectory();updateSelected();});
-    const channels=selectedService?.channels||[];
-    cl.innerHTML=channels.map(c=>`<button type="button" data-channel="${esc(c.id)}" class="${selectedChannel?.id===c.id?'active':''}">${esc(c.name)}</button>`).join('')||'<div class="radioEmpty">NO OPEN CHANNELS</div>';
-    cl.querySelectorAll('[data-channel]').forEach(b=>b.onclick=()=>selectChannel(channels.find(c=>c.id===b.dataset.channel)));
-    updateSelected();
-  }
-
+  function connectEvents(){return new Promise((resolve,reject)=>{
+    eventSource?.close();clientId='';const temp=`radio-${Math.random().toString(36).slice(2)}`;const es=new EventSource(`/api/radio/events?${roleQs()}&clientId=${encodeURIComponent(temp)}`);eventSource=es;let done=false;
+    const timer=setTimeout(()=>{if(!done){done=true;es.close();reject(new Error('Radio connection timed out'))}},7000);
+    es.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}
+      if(m.type==='hello'){clientId=m.client?.id||'';setLink('REGISTERED');if(!done){done=true;clearTimeout(timer);resolve()}}
+      else if(m.type==='radio_config'){config=m.config||config;renderMenu()}
+      else if(m.type==='radio_call')handleCallEvent(m)
+      else if(m.type==='signal')handleSignal(m).catch(err=>{console.error(err);state('AUDIO LINK ERROR','error')});
+    };
+    es.onerror=()=>{setLink('RECONNECTING');if(!done){done=true;clearTimeout(timer);es.close();reject(new Error('Radio realtime connection failed'))}}
+  })}
   async function selectChannel(ch){
-    if(activeCall||!ch)return;
-    if(!clientId){state('RADIO CONNECTING');await ensureRadio(true);if(!clientId)return;}
-    try{await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});selectedChannel=ch;renderDirectory();state('READY');}
-    catch(e){state(e.message||'CHANNEL UNAVAILABLE');ensureRadio(true);}
-  }
-  function updateSelected(){
-    if($('radioSelectedService'))$('radioSelectedService').textContent=selectedService?.name||'SELECT SERVICE';
-    if($('radioSelectedChannel'))$('radioSelectedChannel').textContent=selectedChannel?.name||'SELECT OPEN CHANNEL';
+    if(!ch||activeCall)return;if(!clientId){await ensureRadio(true);if(!clientId)return}
+    try{const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});selectedChannel={id:j.channel.id,name:j.channel.name};state(`REGISTERED ${selectedChannel.name}`);hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');renderMenu()}
+    catch(e){state(e.message||'TALKGROUP UNAVAILABLE','error')}
   }
 
-  function connectEvents(){
-    return new Promise((resolve,reject)=>{
-      eventSource?.close();clientId='';
-      const temp=`radio-${Math.random().toString(36).slice(2)}`;
-      const es=new EventSource(`/api/radio/events?${roleQs()}&clientId=${encodeURIComponent(temp)}`);eventSource=es;
-      let settled=false;
-      const timer=setTimeout(()=>{if(!settled){settled=true;es.close();reject(new Error('Radio realtime connection timed out'));}},7000);
-      es.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch{return;}
-        if(m.type==='hello'){clientId=m.client?.id||'';setLink('RADIO ONLINE');if(!settled){settled=true;clearTimeout(timer);resolve();}}
-        else if(m.type==='radio_config'){config=m.config||config;renderDirectory();}
-        else if(m.type==='radio_call')handleCallEvent(m);
-        else if(m.type==='signal')handleSignal(m).catch(console.error);
-        else if(m.type==='floor')handleFloor(m.floor);
-      };
-      es.onerror=()=>{setLink('RADIO RECONNECTING');if(!settled){settled=true;clearTimeout(timer);es.close();reject(new Error('Radio realtime connection failed'));}};
+  function bindNumberKeys(){
+    document.querySelectorAll('[data-radio-key]').forEach(btn=>{
+      const key=btn.dataset.radioKey;
+      const down=e=>{e.preventDefault();if(!powered||activeCall||!/^[0-9]$/.test(key))return;keyHoldFired=false;btn.classList.add('holding');hint(`HOLDING ${key}…`);clearTimeout(keyHoldTimer);keyHoldTimer=setTimeout(()=>{keyHoldFired=true;btn.classList.add('sent');requestSpeech(key).finally(()=>setTimeout(()=>btn.classList.remove('sent'),500))},2000)};
+      const up=e=>{e.preventDefault();clearTimeout(keyHoldTimer);keyHoldTimer=null;btn.classList.remove('holding');if(!keyHoldFired&&powered&&!activeCall){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}keyHoldFired=false};
+      btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',e=>{if(e.buttons)up(e)});
     });
   }
-
-  function beginCallHold(){
-    if(!selectedChannel){state('SELECT AN OPEN CHANNEL');return;}
-    if(!clientId){state('RADIO CONNECTING');ensureRadio(true);return;}
-    const btn=$('radioGreenCall');btn?.classList.add('holding');if(btn)btn.textContent='KEEP HOLDING…';state('HOLD TO CALL');
-    clearTimeout(callHoldTimer);callHoldTimer=setTimeout(()=>{callHoldTimer=null;placeCall().catch(e=>{state(e.message||'CALL FAILED');ensureRadio(true);});},850);
+  async function requestSpeech(urgency){
+    if(!selectedChannel){state('SELECT A TALKGROUP FIRST','error');hint('CONTACTS → SERVICE → TALKGROUP');return}
+    if(!clientId){await ensureRadio(true);if(!clientId)return}
+    try{const j=await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'request',channelId:selectedChannel.id,urgency:String(urgency)}))});activeCall=j.call;state('CALL REQUEST SENT','ringing');hint(`WAITING FOR CONTROL — URGENCY ${urgency}`,'ringing');setMic('MIC STANDBY')}
+    catch(e){state(e.message||'CALL REQUEST FAILED','error');hint('TRY AGAIN','error')}
   }
-  function cancelCallHold(){if(callHoldTimer){clearTimeout(callHoldTimer);callHoldTimer=null;state(selectedChannel?'READY':'SELECT AN OPEN CHANNEL');}const btn=$('radioGreenCall');btn?.classList.remove('holding');if(btn&&!activeCall)btn.textContent='HOLD TO CALL';}
-  async function placeCall(){const btn=$('radioGreenCall');btn?.classList.remove('holding');if(btn)btn.textContent='CALLING…';const j=await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'request',channelId:selectedChannel.id,dialed:dial}))});activeCall=j.call;state('RINGING CONTROL','ringing');$('radioRedEnd').disabled=false;}
-  function handleCallEvent(m){const c=m.call;if(!c)return;if(activeCall&&c.id!==activeCall.id)return;if(m.action==='answered'){activeCall=c;state('CONNECTED — READY','connected');const btn=$('radioGreenCall');if(btn)btn.textContent='HOLD TO TALK';$('radioRedEnd').disabled=false;beginPeer(true).catch(e=>{console.error(e);state('MIC / AUDIO ERROR');});}else if(m.action==='rejected'){state('CALL REJECTED');resetCallSoon();}else if(m.action==='ended'){state('CALL ENDED');teardownPeer();resetCallSoon();}}
+  function handleCallEvent(m){const c=m.call;if(!c)return;if(activeCall&&c.id!==activeCall.id)return;
+    if(m.action==='answered'){activeCall=c;state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected');setMic('MIC LIVE');beginPeer(true).catch(e=>{console.error(e);state('MIC / AUDIO ERROR','error');hint(e.message||'CHECK MICROPHONE PERMISSION','error')})}
+    else if(m.action==='rejected'){state('CALL REJECTED','error');hint('CONTROL REJECTED REQUEST','error');resetCallSoon()}
+    else if(m.action==='ended'){state('CALL ENDED');hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');teardownPeer(false);resetCallSoon()}
+  }
 
-  async function ensureMic(){if(localStream)return localStream;if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});localTrack=localStream.getAudioTracks()[0]||null;if(localTrack)localTrack.enabled=false;return localStream;}
-  function makePeer(){if(pc)return pc;pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId);};pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0];remoteAudio.play().catch(()=>{});}};pc.onconnectionstatechange=()=>{if(pc&&['failed','disconnected'].includes(pc.connectionState))state('RADIO LINK INTERRUPTED');};return pc;}
-  async function beginPeer(offerer){await ensureMic();const peer=makePeer();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId);}}
-  async function handleSignal(m){if(!activeCall||!m.from)return;if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;const peer=makePeer();await ensureMic();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(m.kind==='answer')await peer.setRemoteDescription(new RTCSessionDescription(m.data));else if(m.kind==='offer'){await peer.setRemoteDescription(new RTCSessionDescription(m.data));const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,m.from.id);}else if(m.kind==='ice'&&m.data)try{await peer.addIceCandidate(new RTCIceCandidate(m.data));}catch{}else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer();resetCallSoon();}}
-  async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))});}
-  async function startPtt(){if(!activeCall||floorHeld)return;try{await ensureMic();const j=await api('/api/radio/floor',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'request'}))});if(!j.granted){state('CHANNEL BUSY','rx');return;}floorHeld=true;if(localTrack)localTrack.enabled=true;const btn=$('radioGreenCall');btn?.classList.add('tx');if(btn)btn.textContent='TRANSMITTING';state(`TX — ${identity?.callsign||currentCallsign()}`,'tx');}catch(e){state(e.message||'PTT FAILED');}}
-  async function stopPtt(){if(localTrack)localTrack.enabled=false;if(!floorHeld)return;floorHeld=false;try{await api('/api/radio/floor',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'release'}))});}catch{}const btn=$('radioGreenCall');btn?.classList.remove('tx');if(btn)btn.textContent='HOLD TO TALK';state('CONNECTED — READY','connected');}
-  function handleFloor(f){if(!activeCall)return;if(f?.holder&&f.holder!==clientId)state(`RX — ${f.callsign||'CONTROL'}`,'rx');else if(!floorHeld)state('CONNECTED — READY','connected');}
-  async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target);}catch{}try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))});}catch{}teardownPeer();resetCall();}
-  function teardownPeer(){if(localTrack)localTrack.enabled=false;floorHeld=false;try{pc?.close();}catch{}pc=null;activeCall=null;}
-  function resetCall(){activeCall=null;const btn=$('radioGreenCall');btn?.classList.remove('tx','holding');if(btn)btn.textContent='HOLD TO CALL';if($('radioRedEnd'))$('radioRedEnd').disabled=true;state(selectedChannel?'READY':'SELECT AN OPEN CHANNEL');}
-  function resetCallSoon(){setTimeout(resetCall,1400);}
+  async function ensureMic(){
+    if(localStream)return localStream;if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');
+    localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});localTrack=localStream.getAudioTracks()[0]||null;if(!localTrack)throw new Error('No microphone detected');return localStream;
+  }
+  function makePeer(){if(pc)return pc;pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId)};pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0];remoteAudio.play().catch(()=>{})}};pc.onconnectionstatechange=()=>{if(!pc)return;if(pc.connectionState==='connected'){state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected')}else if(['failed','disconnected'].includes(pc.connectionState)){state('VOICE LINK INTERRUPTED','error')}};return pc}
+  async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=true;const peer=makePeer();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
+  async function handleSignal(m){if(!activeCall||!m.from)return;if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;const peer=makePeer();await ensureMic();if(localTrack)localTrack.enabled=true;if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
+    if(m.kind==='answer')await peer.setRemoteDescription(new RTCSessionDescription(m.data));
+    else if(m.kind==='offer'){await peer.setRemoteDescription(new RTCSessionDescription(m.data));const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,m.from.id)}
+    else if(m.kind==='ice'&&m.data)try{await peer.addIceCandidate(new RTCIceCandidate(m.data))}catch{}
+    else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer(false);resetCallSoon()}}
+  async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
+  async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
+  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream&&localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}activeCall=null}
+  function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RADIO ON':'RADIO OFF');if(powered){state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH')}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
+  function resetCallSoon(){setTimeout(resetCall,1300)}
 
+  function bindControls(){
+    remoteAudio=$('radioVehicleRemote');$('radioPowerOn')?.addEventListener('click',powerOn);$('radioPowerOff')?.addEventListener('click',powerOff);
+    $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',goBack);$('radioNavRight')?.addEventListener('click',selectMenuItem);$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
+    $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu()});
+  }
   function watchIdentity(){
-    const box=$('callsignBox');if(box)new MutationObserver(()=>{const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true);}}).observe(box,{childList:true,subtree:true,characterData:true});
-    const assigned=$('guardianWebAssignedCallsign');if(assigned)new MutationObserver(()=>ensureRadio(true)).observe(assigned,{childList:true,subtree:true,characterData:true});
-    const select=$('guardianWebCallsign');if(select)select.addEventListener('change',()=>setTimeout(()=>ensureRadio(true),150));
+    const reauth=()=>{if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};
+    const box=$('callsignBox');if(box)new MutationObserver(reauth).observe(box,{childList:true,subtree:true,characterData:true});
+    const assigned=$('guardianWebAssignedCallsign');if(assigned)new MutationObserver(reauth).observe(assigned,{childList:true,subtree:true,characterData:true});
+    const select=$('guardianWebCallsign');if(select)select.addEventListener('change',()=>setTimeout(reauth,100));
   }
-
-  window.addEventListener('beforeunload',()=>{clearTimeout(reconnectTimer);try{eventSource?.close();}catch{}try{localStream?.getTracks().forEach(t=>t.stop());}catch{}});
-  const start=()=>{bindControlsOnce();watchIdentity();renderDial();ensureRadio(true);};
+  window.addEventListener('beforeunload',()=>{clearTimeout(reconnectTimer);clearTimeout(keyHoldTimer);try{eventSource?.close()}catch{};teardownPeer(true)});
+  const start=()=>{tab.classList.add('radioOff');bindControls();watchIdentity();cursor=1;renderMenu();setCallsign();setLink('OFF');state('PRESS GREEN TO START RADIO');hint('RADIO OFF')};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();

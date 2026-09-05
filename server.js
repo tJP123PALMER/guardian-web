@@ -339,39 +339,86 @@ app.post("/api/radio/floor",(req,res)=>{
 // ============================================================
 const guardianRadioConfigFile=path.join(guardianAdminDataDir,"guardian-radio-config.json");
 const guardianRadioCalls=new Map();
-const guardianUkServiceFolders=[
-  "FLAB","Northumberland","Lothian & Borders","Scottish Fire and Rescue Service",
-  "Tyne and Wear","County Durham and Darlington","Cumbria","Cleveland","Lancashire",
-  "Greater Manchester","Merseyside","Cheshire","West Yorkshire","South Yorkshire",
-  "Humberside","North Yorkshire","Derbyshire","Nottinghamshire","Lincolnshire",
-  "Leicestershire","Northamptonshire","Warwickshire","West Midlands","Staffordshire",
-  "Shropshire","Hereford & Worcester","Gloucestershire","Avon","Devon & Somerset",
-  "Dorset & Wiltshire","Cornwall","Isles of Scilly","Hampshire & Isle of Wight",
-  "Royal Berkshire","Oxfordshire","Buckinghamshire","Bedfordshire","Cambridgeshire",
-  "Norfolk","Suffolk","Essex","Hertfordshire","Kent","Surrey","East Sussex",
-  "West Sussex","London","Northern Ireland","Mid and West Wales","North Wales",
-  "South Wales"
+const guardianRadioServiceBlueprints=[
+  ["East Scotland / L&B","FLAB"],
+  ["Northumberland","NFRS"],
+  ["Scottish Fire and Rescue Service","SFRS"],
+  ["Tyne and Wear","TWFRS"],
+  ["County Durham and Darlington","CDDFRS"],
+  ["Cumbria","CUMFRS"],
+  ["Cleveland","CFRS"],
+  ["Lancashire","LFRS"],
+  ["Greater Manchester","GMFRS"],
+  ["Merseyside","MFRS"],
+  ["Cheshire","CFRS-CH"],
+  ["West Yorkshire","WYFRS"],
+  ["South Yorkshire","SYFRS"],
+  ["Humberside","HFRS"],
+  ["North Yorkshire","NYFRS"],
+  ["Derbyshire","DFRS"],
+  ["Nottinghamshire","NFRS-NOTTS"],
+  ["Lincolnshire","LFR"],
+  ["Leicestershire","LFRS-LEI"],
+  ["Northamptonshire","NFRS-NTH"],
+  ["Warwickshire","WFRS"],
+  ["West Midlands","WMFS"],
+  ["Staffordshire","SFRS-STAFFS"],
+  ["Shropshire","SFRS-SHROPS"],
+  ["Hereford & Worcester","HWFRS"],
+  ["Gloucestershire","GFRS"],
+  ["Avon","AFRS"],
+  ["Devon & Somerset","DSFRS"],
+  ["Dorset & Wiltshire","DWFRS"],
+  ["Cornwall","CFRS-CORN"],
+  ["Isles of Scilly","IOSFRS"],
+  ["Hampshire & Isle of Wight","HIWFRS"],
+  ["Royal Berkshire","RBFRS"],
+  ["Oxfordshire","OFRS"],
+  ["Buckinghamshire","BFRS"],
+  ["Bedfordshire","BFRS-BEDS"],
+  ["Cambridgeshire","CFRS-CAMB"],
+  ["Norfolk","NFRS-NORF"],
+  ["Suffolk","SFRS-SUFF"],
+  ["Essex","ECFRS"],
+  ["Hertfordshire","HFRS-HERTS"],
+  ["Kent","KFRS"],
+  ["Surrey","SFRS-SURREY"],
+  ["East Sussex","ESFRS"],
+  ["West Sussex","WSFRS"],
+  ["London","LFB"],
+  ["Northern Ireland","NIFRS"],
+  ["Mid and West Wales","MAWWFRS"],
+  ["North Wales","NWFRS"],
+  ["South Wales","SWFRS"]
 ];
-let guardianRadioConfig=guardianReadJson(guardianRadioConfigFile,null);
-if(!guardianRadioConfig||!Array.isArray(guardianRadioConfig.services)){
-  guardianRadioConfig={services:guardianUkServiceFolders.map((name,idx)=>({
-    id:`svc-${idx+1}`,name,
-    channels:name==="FLAB"?[
-      {id:"flab-ops-1",name:"FLAB OPS 1",open:true},
-      {id:"flab-ops-8",name:"FLAB OPS 8",open:true},
-      {id:"flab-command",name:"FLAB COMMAND",open:false}
-    ]:name==="Northumberland"?[
-      {id:"northumberland-ops-1",name:"OPS 1",open:true},
-      {id:"northumberland-ops-8",name:"OPS 8",open:false},
-      {id:"northumberland-command",name:"COMMAND",open:false}
-    ]:name==="Lothian & Borders"?[
-      {id:"lb-ops-1",name:"OPS 1",open:true},
-      {id:"lb-ops-8",name:"OPS 8",open:true},
-      {id:"lb-command",name:"COMMAND",open:false}
-    ]:[]
+function guardianRadioDefaultConfig(){
+  return {services:guardianRadioServiceBlueprints.map(([name,prefix],si)=>({
+    id:`svc-${si+1}-${prefix.toLowerCase().replace(/[^a-z0-9]+/g,"-")}`,
+    name,prefix,
+    channels:Array.from({length:10},(_,i)=>({
+      id:`${prefix.toLowerCase().replace(/[^a-z0-9]+/g,"-")}-ops-${i+1}`,
+      name:`${prefix}-OPS${i+1}`,
+      open:(prefix==="FLAB"&&i===0)||(prefix==="NFRS"&&i===0)
+    }))
   }))};
-  guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
 }
+function guardianRadioNormaliseConfig(existing){
+  const defaults=guardianRadioDefaultConfig();
+  if(!existing||!Array.isArray(existing.services))return defaults;
+  const oldServices=existing.services||[];
+  for(const def of defaults.services){
+    const aliases=def.prefix==="FLAB"?["FLAB","Lothian & Borders","East Scotland / L&B"]:[def.name];
+    const old=oldServices.find(s=>aliases.some(a=>String(s?.name||"").toLowerCase()===a.toLowerCase())||String(s?.prefix||"").toUpperCase()===def.prefix);
+    if(!old)continue;
+    def.channels=def.channels.map((ch,i)=>{
+      const prior=(old.channels||[]).find(c=>String(c?.name||"").replace(/\s+/g,"").toUpperCase()===ch.name.replace(/\s+/g,"").toUpperCase())||(old.channels||[])[i];
+      return prior?{...ch,open:prior.open===true}:ch;
+    });
+  }
+  return defaults;
+}
+let guardianRadioConfig=guardianRadioNormaliseConfig(guardianReadJson(guardianRadioConfigFile,null));
+guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
 function guardianRadioFindChannel(id){
   for(const service of guardianRadioConfig.services||[]){
     const ch=(service.channels||[]).find(c=>String(c.id)===String(id));
@@ -433,7 +480,7 @@ app.post("/api/radio/call",(req,res)=>{
     const found=guardianRadioFindChannel(req.body?.channelId||client.channelId);
     if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Select an open channel first"});
     client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
-    const call={id:crypto.randomUUID(),status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,dialed:String(req.body?.dialed||"").replace(/[^0-9*#]/g,"").slice(0,24),createdAt:new Date().toISOString(),controlClientId:null};
+    const call={id:crypto.randomUUID(),status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,urgency:String(req.body?.urgency||req.body?.dialed||"1").replace(/[^0-9]/g,"").slice(0,2)||"1",createdAt:new Date().toISOString(),controlClientId:null};
     guardianRadioCalls.set(call.id,call);
     guardianRadioBroadcast({type:"radio_call",action:"ringing",call},c=>c.role==="control");
     return res.json({ok:true,call});
@@ -2021,7 +2068,7 @@ app.get(["/vehicle","/vehicle/"],(q,r)=>{
   r.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
   const session=guardianUserReadSession(q);
   if(!session)return r.redirect("/login.html?vehicle=1");
-  return r.redirect("/mdt/?vehicle=1&build=5");
+  return r.redirect("/mdt/?vehicle=1&build=6");
 });
 
 // MDT/Control are operational screens: never leave an Android WebView stuck on an old
