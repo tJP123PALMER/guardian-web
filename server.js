@@ -235,6 +235,12 @@ function guardianRadioIdentity(req,requestedRole){
     const callsign=guardianVehicleAssignment(session.username);if(!callsign)return {error:"Awaiting callsign assignment — contact Control",status:409};
     return {role:"vehicle",username:session.username,callsign};
   }
+  if(role==="mdt"){
+    const callsign=String(req.query?.callsign||req.body?.callsign||"").trim().toUpperCase();
+    if(!callsign)return {error:"Book on to the MDT before using Radio Call",status:409};
+    if(!guardianUnitOperationallyLive(callsign))return {error:"This callsign is not currently booked on",status:409};
+    return {role:"mdt",username:`mdt:${callsign}`,callsign};
+  }
   if(role==="control"){
     if(!guardianRadioControlRole(session.role))return {error:"Control radio permission required",status:403};
     return {role:"control",username:session.username,callsign:"CONTROL"};
@@ -293,7 +299,7 @@ app.post("/api/radio/signal",(req,res)=>{
   if(!["offer","answer","ice","ptt","hangup","call_request","call_accept","call_reject"].includes(kind))return res.status(400).json({ok:false,error:"Invalid radio signal"});
   const packet={type:"signal",kind,data,from:{id:from.id,role:from.role,username:from.username,callsign:from.callsign}};
   let delivered=0;
-  if(target==="control"&&ident.role==="vehicle"){
+  if(target==="control"&&["vehicle","mdt"].includes(ident.role)){
     for(const c of guardianRadioClients.values())if(c.role==="control"&&guardianRadioSend(c,packet))delivered++;
   }else{
     const c=guardianRadioClients.get(target);if(c&&guardianRadioSend(c,packet))delivered++;
@@ -376,6 +382,7 @@ app.get("/api/radio/config",(req,res)=>{
     if(!guardianRadioControlSession(req))return res.status(403).json({ok:false,error:"Control login required"});
     return res.json({ok:true,config:guardianRadioConfig});
   }
+  if(requestedRole==="mdt")return res.json({ok:true,config:guardianRadioConfigForVehicle()});
   const s=guardianUserReadSession(req);if(!s)return res.status(401).json({ok:false,error:"Vehicle login required"});
   res.json({ok:true,config:guardianRadioConfigForVehicle()});
 });
@@ -412,7 +419,7 @@ app.post("/api/radio/call",(req,res)=>{
   const clientId=guardianRadioClientId(req.body?.clientId),action=String(req.body?.action||"").toLowerCase();
   const client=guardianRadioClients.get(clientId);if(!client||client.username!==ident.username||client.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
   if(action==="request"){
-    if(ident.role!=="vehicle")return res.status(400).json({ok:false,error:"Only vehicles initiate this call type"});
+    if(!["vehicle","mdt"].includes(ident.role))return res.status(400).json({ok:false,error:"Only MDT clients initiate this call type"});
     const found=guardianRadioFindChannel(req.body?.channelId||client.channelId);
     if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Select an open channel first"});
     client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
