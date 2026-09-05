@@ -217,6 +217,235 @@ app.post("/api/vehicle/assignments",(req,res)=>{
   res.json({ok:true,username,callsign});
 });
 
+
+// ============================================================
+// Guardian IRL Radio v1 — authenticated WebRTC signalling + PTT floor control
+// Audio stays peer-to-peer between the vehicle and Control. The server only
+// handles presence, SDP/ICE signalling and a single-transmitter floor lock.
+// ============================================================
+const guardianRadioClients=new Map(); // id -> {id,role,username,callsign,res,lastSeen}
+let guardianRadioFloor={holder:null,role:null,callsign:null,username:null,expiresAt:0};
+function guardianRadioClientId(v){return String(v||"").replace(/[^a-zA-Z0-9:_-]/g,"").slice(0,96)}
+function guardianRadioControlRole(role){return ["control","supervisor","admin","dev","owner"].includes(String(role||"").toLowerCase())}
+function guardianRadioIdentity(req,requestedRole){
+  const role=String(requestedRole||"").toLowerCase();
+  const session=guardianUserReadSession(req) || (role==="control" ? guardianAdminReadSession(req) : null);
+  if(!session)return null;
+  if(role==="vehicle"){
+    const callsign=guardianVehicleAssignment(session.username);if(!callsign)return {error:"Awaiting callsign assignment — contact Control",status:409};
+    return {role:"vehicle",username:session.username,callsign};
+  }
+  if(role==="control"){
+    if(!guardianRadioControlRole(session.role))return {error:"Control radio permission required",status:403};
+    return {role:"control",username:session.username,callsign:"CONTROL"};
+  }
+  return {error:"Invalid radio role",status:400};
+}
+function guardianRadioSend(client,payload){
+  try{client.res.write(`data: ${JSON.stringify(payload)}\n\n`);return true}catch{return false}
+}
+function guardianRadioBroadcast(payload,predicate=()=>true){
+  for(const [id,c] of [...guardianRadioClients]){
+    if(!predicate(c))continue;
+    if(!guardianRadioSend(c,payload))guardianRadioClients.delete(id);
+  }
+}
+function guardianRadioPresence(){
+  const rows=[...guardianRadioClients.values()].map(c=>({id:c.id,role:c.role,username:c.username,callsign:c.callsign,channelId:c.channelId||null,channelName:c.channelName||null,serviceName:c.serviceName||null}));
+  guardianRadioBroadcast({type:"presence",clients:rows});
+}
+function guardianRadioReleaseFloor(id){
+  if(guardianRadioFloor.holder!==id)return;
+  guardianRadioFloor={holder:null,role:null,callsign:null,username:null,expiresAt:0};
+  guardianRadioBroadcast({type:"floor",floor:guardianRadioFloor});
+}
+setInterval(()=>{if(guardianRadioFloor.holder&&Date.now()>guardianRadioFloor.expiresAt)guardianRadioReleaseFloor(guardianRadioFloor.holder)},1000).unref?.();
+
+app.get("/api/radio/session",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.query?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
+  if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
+  const iceServers=[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}];
+  const turnUrl=String(process.env.GUARDIAN_TURN_URL||"").trim();
+  if(turnUrl)iceServers.push({urls:turnUrl,username:String(process.env.GUARDIAN_TURN_USERNAME||""),credential:String(process.env.GUARDIAN_TURN_CREDENTIAL||"")});
+  res.setHeader("Cache-Control","no-store");
+  res.json({ok:true,identity:ident,iceServers,turnConfigured:!!turnUrl});
+});
+
+app.get("/api/radio/events",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.query?.role);if(!ident)return res.status(401).end();
+  if(ident.error)return res.status(ident.status||400).end();
+  const suffix=guardianRadioClientId(req.query?.clientId)||crypto.randomUUID();
+  const id=`${ident.role}:${guardianRadioClientId(ident.username)}:${suffix}`;
+  res.setHeader("Content-Type","text/event-stream");res.setHeader("Cache-Control","no-cache, no-transform");res.setHeader("Connection","keep-alive");res.setHeader("X-Accel-Buffering","no");res.flushHeaders?.();
+  const client={id,...ident,res,lastSeen:Date.now()};guardianRadioClients.set(id,client);
+  guardianRadioSend(client,{type:"hello",client:{id,role:ident.role,username:ident.username,callsign:ident.callsign},floor:guardianRadioFloor});
+  guardianRadioPresence();
+  const cleanup=()=>{guardianRadioClients.delete(id);guardianRadioReleaseFloor(id);guardianRadioPresence()};
+  req.on("close",cleanup);req.on("aborted",cleanup);res.on("error",cleanup);
+});
+
+app.post("/api/radio/signal",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.body?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
+  if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
+  const fromId=guardianRadioClientId(req.body?.fromId),target=guardianRadioClientId(req.body?.target),kind=String(req.body?.kind||"").slice(0,32),data=req.body?.data;
+  const from=guardianRadioClients.get(fromId);
+  if(!from||from.username!==ident.username||from.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
+  if(!["offer","answer","ice","ptt","hangup","call_request","call_accept","call_reject"].includes(kind))return res.status(400).json({ok:false,error:"Invalid radio signal"});
+  const packet={type:"signal",kind,data,from:{id:from.id,role:from.role,username:from.username,callsign:from.callsign}};
+  let delivered=0;
+  if(target==="control"&&ident.role==="vehicle"){
+    for(const c of guardianRadioClients.values())if(c.role==="control"&&guardianRadioSend(c,packet))delivered++;
+  }else{
+    const c=guardianRadioClients.get(target);if(c&&guardianRadioSend(c,packet))delivered++;
+  }
+  res.json({ok:true,delivered});
+});
+
+app.post("/api/radio/floor",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.body?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
+  if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
+  const id=guardianRadioClientId(req.body?.clientId),action=String(req.body?.action||"");
+  const client=guardianRadioClients.get(id);if(!client||client.username!==ident.username||client.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
+  if(action==="release"){
+    guardianRadioReleaseFloor(id);return res.json({ok:true,granted:true,floor:guardianRadioFloor});
+  }
+  if(action!=="request")return res.status(400).json({ok:false,error:"Invalid floor action"});
+  if(guardianRadioFloor.holder&&guardianRadioFloor.holder!==id&&Date.now()<=guardianRadioFloor.expiresAt)return res.json({ok:true,granted:false,floor:guardianRadioFloor});
+  guardianRadioFloor={holder:id,role:ident.role,callsign:ident.callsign,username:ident.username,expiresAt:Date.now()+20000};
+  guardianRadioBroadcast({type:"floor",floor:guardianRadioFloor});
+  res.json({ok:true,granted:true,floor:guardianRadioFloor});
+});
+
+
+// ============================================================
+// Guardian Radio directory, open channels and call queue
+// These are Guardian IP talkgroups. They do not connect to public-safety TETRA.
+// ============================================================
+const guardianRadioConfigFile=path.join(guardianAdminDataDir,"guardian-radio-config.json");
+const guardianRadioCalls=new Map();
+const guardianUkServiceFolders=[
+  "FLAB","Northumberland","Lothian & Borders","Scottish Fire and Rescue Service",
+  "Tyne and Wear","County Durham and Darlington","Cumbria","Cleveland","Lancashire",
+  "Greater Manchester","Merseyside","Cheshire","West Yorkshire","South Yorkshire",
+  "Humberside","North Yorkshire","Derbyshire","Nottinghamshire","Lincolnshire",
+  "Leicestershire","Northamptonshire","Warwickshire","West Midlands","Staffordshire",
+  "Shropshire","Hereford & Worcester","Gloucestershire","Avon","Devon & Somerset",
+  "Dorset & Wiltshire","Cornwall","Isles of Scilly","Hampshire & Isle of Wight",
+  "Royal Berkshire","Oxfordshire","Buckinghamshire","Bedfordshire","Cambridgeshire",
+  "Norfolk","Suffolk","Essex","Hertfordshire","Kent","Surrey","East Sussex",
+  "West Sussex","London","Northern Ireland","Mid and West Wales","North Wales",
+  "South Wales"
+];
+let guardianRadioConfig=guardianReadJson(guardianRadioConfigFile,null);
+if(!guardianRadioConfig||!Array.isArray(guardianRadioConfig.services)){
+  guardianRadioConfig={services:guardianUkServiceFolders.map((name,idx)=>({
+    id:`svc-${idx+1}`,name,
+    channels:name==="FLAB"?[
+      {id:"flab-ops-1",name:"FLAB OPS 1",open:true},
+      {id:"flab-ops-8",name:"FLAB OPS 8",open:true},
+      {id:"flab-command",name:"FLAB COMMAND",open:false}
+    ]:name==="Northumberland"?[
+      {id:"northumberland-ops-1",name:"OPS 1",open:true},
+      {id:"northumberland-ops-8",name:"OPS 8",open:false},
+      {id:"northumberland-command",name:"COMMAND",open:false}
+    ]:name==="Lothian & Borders"?[
+      {id:"lb-ops-1",name:"OPS 1",open:true},
+      {id:"lb-ops-8",name:"OPS 8",open:true},
+      {id:"lb-command",name:"COMMAND",open:false}
+    ]:[]
+  }))};
+  guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
+}
+function guardianRadioFindChannel(id){
+  for(const service of guardianRadioConfig.services||[]){
+    const ch=(service.channels||[]).find(c=>String(c.id)===String(id));
+    if(ch)return {service,ch};
+  }
+  return null;
+}
+function guardianRadioConfigForVehicle(){
+  return {services:(guardianRadioConfig.services||[]).map(s=>({id:s.id,name:s.name,channels:(s.channels||[]).filter(c=>c.open===true)}))};
+}
+function guardianRadioControlSession(req){
+  const s=guardianUserReadSession(req)||guardianAdminReadSession(req);
+  return s&&guardianRadioControlRole(s.role)?s:null;
+}
+app.get("/api/radio/config",(req,res)=>{
+  const requestedRole=String(req.query?.role||"vehicle").toLowerCase();
+  if(requestedRole==="control"){
+    if(!guardianRadioControlSession(req))return res.status(403).json({ok:false,error:"Control login required"});
+    return res.json({ok:true,config:guardianRadioConfig});
+  }
+  const s=guardianUserReadSession(req);if(!s)return res.status(401).json({ok:false,error:"Vehicle login required"});
+  res.json({ok:true,config:guardianRadioConfigForVehicle()});
+});
+app.post("/api/radio/config",(req,res)=>{
+  const s=guardianRadioControlSession(req);if(!s)return res.status(403).json({ok:false,error:"Control radio permission required"});
+  const incoming=req.body?.config;
+  if(!incoming||!Array.isArray(incoming.services))return res.status(400).json({ok:false,error:"Invalid radio configuration"});
+  guardianRadioConfig={services:incoming.services.map((svc,si)=>({
+    id:guardianRadioClientId(svc.id)||`svc-${si+1}`,
+    name:String(svc.name||`Service ${si+1}`).trim().slice(0,80),
+    channels:(Array.isArray(svc.channels)?svc.channels:[]).map((ch,ci)=>({
+      id:guardianRadioClientId(ch.id)||`ch-${si+1}-${ci+1}`,
+      name:String(ch.name||`Channel ${ci+1}`).trim().slice(0,80),
+      open:ch.open===true
+    }))
+  }))};
+  guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
+  guardianRadioBroadcast({type:"radio_config",config:guardianRadioConfigForVehicle()});
+  res.json({ok:true,config:guardianRadioConfig});
+});
+app.post("/api/radio/channel",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.body?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
+  if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
+  const clientId=guardianRadioClientId(req.body?.clientId),channelId=guardianRadioClientId(req.body?.channelId);
+  const client=guardianRadioClients.get(clientId);if(!client||client.username!==ident.username||client.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
+  const found=guardianRadioFindChannel(channelId);if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Channel is not open"});
+  client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceId=found.service.id;client.serviceName=found.service.name;
+  guardianRadioPresence();
+  res.json({ok:true,channel:{id:found.ch.id,name:found.ch.name,serviceId:found.service.id,serviceName:found.service.name}});
+});
+app.post("/api/radio/call",(req,res)=>{
+  const ident=guardianRadioIdentity(req,req.body?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
+  if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
+  const clientId=guardianRadioClientId(req.body?.clientId),action=String(req.body?.action||"").toLowerCase();
+  const client=guardianRadioClients.get(clientId);if(!client||client.username!==ident.username||client.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
+  if(action==="request"){
+    if(ident.role!=="vehicle")return res.status(400).json({ok:false,error:"Only vehicles initiate this call type"});
+    const found=guardianRadioFindChannel(req.body?.channelId||client.channelId);
+    if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Select an open channel first"});
+    client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
+    const call={id:crypto.randomUUID(),status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,dialed:String(req.body?.dialed||"").replace(/[^0-9*#]/g,"").slice(0,24),createdAt:new Date().toISOString(),controlClientId:null};
+    guardianRadioCalls.set(call.id,call);
+    guardianRadioBroadcast({type:"radio_call",action:"ringing",call},c=>c.role==="control");
+    return res.json({ok:true,call});
+  }
+  const call=guardianRadioCalls.get(String(req.body?.callId||""));if(!call)return res.status(404).json({ok:false,error:"Call not found"});
+  if(action==="answer"){
+    if(ident.role!=="control")return res.status(403).json({ok:false,error:"Control only"});
+    call.status="connected";call.controlClientId=client.id;call.answeredAt=new Date().toISOString();
+    guardianRadioSend(guardianRadioClients.get(call.vehicleClientId),{type:"radio_call",action:"answered",call});
+    guardianRadioBroadcast({type:"radio_call",action:"answered",call},c=>c.role==="control");
+    return res.json({ok:true,call});
+  }
+  if(action==="reject"||action==="end"){
+    const allowed=ident.role==="control"||client.id===call.vehicleClientId;if(!allowed)return res.status(403).json({ok:false,error:"Not permitted"});
+    call.status=action==="reject"?"rejected":"ended";call.endedAt=new Date().toISOString();
+    const evt={type:"radio_call",action:call.status,call};
+    guardianRadioSend(guardianRadioClients.get(call.vehicleClientId),evt);
+    if(call.controlClientId)guardianRadioSend(guardianRadioClients.get(call.controlClientId),evt);
+    guardianRadioBroadcast(evt,c=>c.role==="control");
+    guardianRadioCalls.delete(call.id);guardianRadioReleaseFloor(call.vehicleClientId);if(call.controlClientId)guardianRadioReleaseFloor(call.controlClientId);
+    return res.json({ok:true});
+  }
+  return res.status(400).json({ok:false,error:"Invalid call action"});
+});
+app.get("/api/radio/calls",(req,res)=>{
+  if(!guardianRadioControlSession(req))return res.status(403).json({ok:false,error:"Control login required"});
+  res.json({ok:true,calls:[...guardianRadioCalls.values()]});
+});
+
 app.post("/api/admin/login",(req,res)=>{
   guardianBootstrapOwner();
   const username=String(req.body?.username||"").trim();

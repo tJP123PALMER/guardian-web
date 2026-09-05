@@ -33,6 +33,7 @@
     <button data-view="units" class="railBtn">Appliances</button>
     <button data-view="calls" class="railBtn">999 Queue <b id="callBadge">0</b></button>
     <button data-view="messages" class="railBtn">Messages</button>
+    <button data-view="radio" class="railBtn">Radio <b id="radioCallBadge">0</b></button>
     <div class="sectionLabel">RESOURCES</div>
     <button data-view="stations" class="railBtn">Stations</button>
     <button data-view="cover" class="railBtn">Standby Cover</button>
@@ -136,6 +137,15 @@
       <section class="panel messagePanel"><div id="messageList"></div><div class="compose"><select id="messageTarget"><option value="ALL">All units</option></select><input id="messageText" placeholder="Type operational message"><button class="primary" id="sendMessage">SEND</button></div></section>
     </section>
 
+
+    <section id="view-radio" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">GUARDIAN RADIO CONTROL</span><h1>Radio Channels & Calls</h1><p>Open Guardian IP channels, manage the directory and answer vehicle radio calls.</p></div><div class="radioControlState"><span id="radioControlDot"></span><strong id="radioControlState">CONNECTING</strong></div></div>
+      <div class="radioControlLayout">
+        <section class="panel radioCallsPanel"><header><div><span class="panelKicker">INCOMING RADIO</span><h2>Call Queue</h2></div></header><div id="radioIncomingCalls" class="radioIncomingCalls"></div><div id="radioActiveCall" class="radioActiveCall"></div><audio id="radioControlRemote" autoplay></audio></section>
+        <section class="panel radioDirectoryPanel"><header><div><span class="panelKicker">CHANNEL MANAGEMENT</span><h2>Open Channels</h2></div><button id="radioAddChannel" class="secondary">ADD CHANNEL</button></header><div id="radioDirectoryAdmin" class="radioDirectoryAdmin"></div></section>
+      </div>
+    </section>
+
     <section id="view-stations" class="view">
       <div class="pageHeader"><div><span class="eyebrow">RESOURCE DIRECTORY</span><h1>Stations</h1><p>Configured appliance locations.</p></div></div>
       <section class="panel"><div id="stationGrid" class="stationGrid"></div></section>
@@ -205,4 +215,5 @@
   </div>
 </div>
 <script src="/control.js"></script>
+<script src="/control_radio.js?v=1"></script>
 <script src="/core_status.js" defer></script><a href="/settings.html" style="position:fixed;right:12px;top:12px;z-index:9999;background:#0d2a3a;color:#eaf7ff;border:1px solid #3b667d;border-radius:5px;padding:8px 11px;text-decoration:none;font:800 10px Arial">SETTINGS</a></body></html>
