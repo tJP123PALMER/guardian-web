@@ -108,6 +108,9 @@
     try{await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'reject',callId:id})});calls=calls.filter(c=>c.id!==id);renderCalls()}catch(e){alert(e.message)}
   }
 
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  function releaseMic(){if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{}}localStream=null;localTrack=null;}
+
   function friendlyMicError(e){
     const n=String(e?.name||'');
     if(n==='NotAllowedError'||n==='SecurityError')return 'Microphone permission denied. Allow microphone access for Guardian Control.';
@@ -117,18 +120,22 @@
   }
   async function openDefaultMic(){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not support microphone capture');
-    try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}catch(first){
-      try{
-        const devs=await navigator.mediaDevices.enumerateDevices();
-        const inputs=devs.filter(d=>d.kind==='audioinput'&&d.deviceId);
-        for(const d of inputs){try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}catch{}}
-      }catch{}
-      throw first;
+    let firstErr=null;
+    for(let attempt=0;attempt<3;attempt++){
+      try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}
+      catch(e){if(!firstErr)firstErr=e;if(!['NotReadableError','TrackStartError','AbortError'].includes(String(e?.name||'')))break;await sleep(600+attempt*300)}
     }
+    try{
+      const devs=await navigator.mediaDevices.enumerateDevices();
+      for(const d of devs.filter(d=>d.kind==='audioinput'&&d.deviceId)){
+        try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}catch(e){if(!firstErr)firstErr=e;await sleep(200)}
+      }
+    }catch{}
+    throw firstErr||new DOMException('Could not start microphone','NotReadableError');
   }
   async function ensureMic(){
     if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live')){localTrack=localStream.getAudioTracks()[0]||null;if(localTrack)localTrack.enabled=true;return localStream}
-    if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}
+    releaseMic();await sleep(250);
     localStream=await openDefaultMic();
     localTrack=localStream.getAudioTracks()[0]||null;
     if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');

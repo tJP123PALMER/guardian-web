@@ -31,6 +31,9 @@
   const setLink=t=>{if($('radioLinkState'))$('radioLinkState').textContent=t};
   const setCallsign=()=>{if($('radioVehicleCallsign'))$('radioVehicleCallsign').textContent=identity?.callsign||currentCallsign()||'UNSET'};
   const setMic=t=>{if($('radioMicState'))$('radioMicState').textContent=t};
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const micIsLive=()=>!!(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live'));
+  function releaseMic(){if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{}}localStream=null;localTrack=null;}
 
   function services(){return (config.services||[]).filter(s=>(s.channels||[]).some(c=>c.open===true));}
   function openChannels(s){return (s?.channels||[]).filter(c=>c.open===true);}
@@ -59,7 +62,13 @@
   }
 
   async function powerOn(){
-    if(powered)return;
+    if(powered){
+      if(micIsLive()){setMic('MIC READY');hint('MIC READY — SELECT CONTACTS / TALKGROUP');return;}
+      setMic('RETRYING MIC…');hint('RELEASING AUDIO DEVICE AND RETRYING…');releaseMic();await sleep(650);
+      try{await ensureMic();if(localTrack)localTrack.enabled=false;setMic('MIC READY');state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
+      catch(e){console.error('[Guardian vehicle mic retry]',e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error');}
+      return;
+    }
     powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');
     setMic('CHECKING MIC…');state('REGISTERING…');hint('INITIALISING RADIO AUDIO');
     // Open the microphone from the user's green-button gesture. Android WebView is
@@ -142,28 +151,32 @@
     return e?.message||'COULD NOT START AUDIO SOURCE';
   }
   async function openDefaultMic(){
-    // Start with the broadest possible request. Some Android head units reject
-    // Chromium audio-processing constraints even though their microphone works.
-    try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}catch(first){
-      // If the platform default points at a stale/disconnected device, enumerate the
-      // actual inputs and try the first current input explicitly.
-      try{
-        const devs=await navigator.mediaDevices.enumerateDevices();
-        const inputs=devs.filter(d=>d.kind==='audioinput'&&d.deviceId);
-        for(const d of inputs){
-          try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}catch{}
-        }
-      }catch{}
-      throw first;
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');
+    let firstErr=null;
+    // Head units sometimes leave the audio device in a transient busy state after
+    // Bluetooth/phone/WebView activity. Retry the platform default before pinning a deviceId.
+    for(let attempt=0;attempt<3;attempt++){
+      try{return await navigator.mediaDevices.getUserMedia({audio:true,video:false})}
+      catch(e){if(!firstErr)firstErr=e;if(!['NotReadableError','TrackStartError','AbortError'].includes(String(e?.name||'')))break;await sleep(650+attempt*350)}
     }
+    try{
+      const devs=await navigator.mediaDevices.enumerateDevices();
+      const inputs=devs.filter(d=>d.kind==='audioinput'&&d.deviceId);
+      for(const d of inputs){
+        try{return await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:d.deviceId}},video:false})}
+        catch(e){if(!firstErr)firstErr=e;await sleep(250)}
+      }
+    }catch{}
+    throw firstErr||new DOMException('Could not start audio source','NotReadableError');
   }
   async function ensureMic(){
-    if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live'))return localStream;
-    if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}
-    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone unavailable on this device');
+    if(micIsLive()){localTrack=localStream.getAudioTracks()[0]||null;return localStream;}
+    releaseMic();
+    await sleep(300);
     localStream=await openDefaultMic();
     localTrack=localStream.getAudioTracks()[0]||null;
     if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
+    localTrack.onended=()=>{setMic('MIC DISCONNECTED');};
     return localStream;
   }
   async function playRemote(){
@@ -180,7 +193,7 @@
     else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer(false);resetCallSoon()}}
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
-  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream&&localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{};localStream=null;localTrack=null}activeCall=null}
+  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic()activeCall=null}
   function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RADIO ON':'RADIO OFF');if(powered){state(selectedChannel?`REGISTERED ${selectedChannel.name}`:'REGISTERED — OPEN CONTACTS');hint('HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH')}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
   function resetCallSoon(){setTimeout(resetCall,1300)}
 
