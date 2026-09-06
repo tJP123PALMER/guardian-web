@@ -223,6 +223,15 @@ app.post("/api/vehicle/assignments",(req,res)=>{
 // Audio stays peer-to-peer between the vehicle and Control. The server only
 // handles presence, SDP/ICE signalling and a single-transmitter floor lock.
 // ============================================================
+const guardianRadioControlRuntimeToken=crypto.randomBytes(24).toString("hex");
+function guardianRadioControlRuntimeSession(req){
+  const token=guardianAdminCookieMap(req).guardian_control_runtime;
+  if(token&&token===guardianRadioControlRuntimeToken)return {username:"web-control",role:"control",createdAt:Date.now(),runtime:true};
+  return null;
+}
+function guardianRadioSetControlRuntimeCookie(res){
+  res.setHeader("Set-Cookie",`guardian_control_runtime=${guardianRadioControlRuntimeToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
+}
 const guardianRadioClients=new Map(); // id -> {id,role,username,callsign,res,lastSeen}
 let guardianRadioFloor={holder:null,role:null,callsign:null,username:null,expiresAt:0};
 function guardianRadioClientId(v){return String(v||"").replace(/[^a-zA-Z0-9:_-]/g,"").slice(0,96)}
@@ -245,7 +254,7 @@ function guardianRadioIdentity(req,requestedRole){
   }
 
   // IRL vehicle and Control sessions remain authenticated separately.
-  const session=guardianUserReadSession(req) || (role==="control" ? guardianAdminReadSession(req) : null);
+  const session=guardianUserReadSession(req) || (role==="control" ? (guardianAdminReadSession(req)||guardianRadioControlRuntimeSession(req)) : null);
   if(!session)return null;
   if(role==="vehicle"){
     const callsign=guardianVehicleAssignment(session.username);if(!callsign)return {error:"Awaiting callsign assignment — contact Control",status:409};
@@ -430,7 +439,7 @@ function guardianRadioConfigForVehicle(){
   return {services:(guardianRadioConfig.services||[]).map(s=>({id:s.id,name:s.name,channels:(s.channels||[]).filter(c=>c.open===true)}))};
 }
 function guardianRadioControlSession(req){
-  const s=guardianUserReadSession(req)||guardianAdminReadSession(req);
+  const s=guardianUserReadSession(req)||guardianAdminReadSession(req)||guardianRadioControlRuntimeSession(req);
   return s&&guardianRadioControlRole(s.role)?s:null;
 }
 app.get("/api/radio/config",(req,res)=>{
@@ -2061,7 +2070,7 @@ const controlFile = path.join(__dirname,"public","control","index.html");
 const mdtFile = path.join(__dirname,"public","mdt","index.html");
 app.get("/",(_q,r)=>r.sendFile(controlFile));
 app.get("/control",(_q,r)=>r.sendFile(controlFile));
-app.get("/control/",(_q,r)=>r.sendFile(controlFile));
+app.get("/control/",(_q,r)=>{guardianRadioSetControlRuntimeCookie(r);r.sendFile(controlFile)});
 app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
 app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 app.get(["/vehicle","/vehicle/"],(q,r)=>{

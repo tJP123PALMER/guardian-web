@@ -124,7 +124,7 @@
       if(m.type==='hello'){clientId=m.client?.id||'';setLink('REGISTERED');if(!done){done=true;clearTimeout(timer);resolve()}}
       else if(m.type==='radio_config'){config=m.config||config;renderMenu()}
       else if(m.type==='radio_call')handleCallEvent(m)
-      else if(m.type==='signal')handleSignal(m).catch(err=>{console.error(err);state('AUDIO LINK ERROR','error')});
+      else if(m.type==='signal')handleSignal(m).catch(err=>{console.error('[Guardian signal]',err);state('AUDIO LINK ERROR','error');hint(`VOICE SETUP FAILED: ${String(err?.name||'ERROR')} — ${String(err?.message||err||'UNKNOWN').slice(0,110)}`,'error')});
     };
     es.onerror=()=>{setLink('RECONNECTING');if(!done){done=true;clearTimeout(timer);es.close();reject(new Error('Radio realtime connection failed'))}}
   })}
@@ -196,13 +196,49 @@
     remoteAudio.autoplay=true;remoteAudio.muted=false;remoteAudio.volume=1;
     try{await remoteAudio.play()}catch(e){console.warn('[Guardian remote audio autoplay]',e);hint('TAP RADIO SCREEN ONCE TO ENABLE SPEAKER AUDIO','error')}
   }
-  function makePeer(){if(pc)return pc;pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId)};pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0]||new MediaStream([e.track]);playRemote()}};pc.onconnectionstatechange=()=>{if(!pc)return;if(pc.connectionState==='connected'){state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected');playRemote()}else if(['failed','disconnected'].includes(pc.connectionState)){state('VOICE LINK INTERRUPTED','error')}};return pc}
+  let pendingIce=[];
+  function makePeer(){
+    if(pc)return pc;
+    pc=new RTCPeerConnection({iceServers});
+    pendingIce=[];
+    pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId).catch(console.error)};
+    pc.ontrack=e=>{
+      if(!remoteAudio)return;
+      const stream=e.streams&&e.streams[0];
+      remoteAudio.srcObject=stream||remoteAudio.srcObject;
+      if(!stream&&e.track){try{const ms=new MediaStream();ms.addTrack(e.track);remoteAudio.srcObject=ms}catch{}}
+      playRemote();
+    };
+    const update=()=>{
+      if(!pc)return;
+      const st=pc.connectionState||pc.iceConnectionState||'';
+      if(st==='connected'||st==='completed'){state('CONNECTED TO CONTROL','connected');hint('LIVE VOICE — SPEAK NORMALLY','connected');playRemote()}
+      else if(st==='failed'){state('VOICE LINK FAILED','error');hint('WEBRTC CONNECTION FAILED — CHECK NETWORK / TURN','error')}
+      else if(st==='disconnected'){state('VOICE LINK INTERRUPTED','error')}
+    };
+    pc.onconnectionstatechange=update;pc.oniceconnectionstatechange=update;
+    return pc;
+  }
+  async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian ICE]',e)}}}
   async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=true;const peer=makePeer();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
-  async function handleSignal(m){if(!activeCall||!m.from)return;if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;const peer=makePeer();await ensureMic();if(localTrack)localTrack.enabled=true;if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
-    if(m.kind==='answer')await peer.setRemoteDescription(new RTCSessionDescription(m.data));
-    else if(m.kind==='offer'){await peer.setRemoteDescription(new RTCSessionDescription(m.data));const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,m.from.id)}
-    else if(m.kind==='ice'&&m.data)try{await peer.addIceCandidate(new RTCIceCandidate(m.data))}catch{}
-    else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer(false);resetCallSoon()}}
+  async function handleSignal(m){
+    if(!activeCall||!m.from)return;
+    if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;
+    const peer=makePeer();
+    await ensureMic();
+    if(localTrack)localTrack.enabled=true;
+    if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
+    if(m.kind==='answer'){
+      await peer.setRemoteDescription(m.data);
+      await flushIce(peer);
+    }else if(m.kind==='offer'){
+      await peer.setRemoteDescription(m.data);
+      await flushIce(peer);
+      const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,m.from.id);
+    }else if(m.kind==='ice'&&m.data){
+      if(peer.remoteDescription){try{await peer.addIceCandidate(m.data)}catch(e){console.warn('[Guardian ICE]',e)}}else pendingIce.push(m.data);
+    }else if(m.kind==='hangup'){state('CALL ENDED');teardownPeer(false);resetCallSoon()}
+  }
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
   function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic();activeCall=null}

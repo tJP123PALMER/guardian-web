@@ -50,7 +50,7 @@
       if(m.type==='hello'){ clientId=m.client?.id||''; setOnline(true,'RADIO ONLINE'); }
       if(m.type==='radio_call') handleCallEvent(m);
       if(m.type==='radio_config'){ config=m.config||config; renderDirectory(); }
-      if(m.type==='signal') handleSignal(m).catch(console.error);
+      if(m.type==='signal') handleSignal(m).catch(err=>{console.error('[Guardian control signal]',err);const el=$('radioTxState');if(el)el.textContent=`AUDIO ERROR: ${String(err?.name||'ERROR')}`;});
       if(m.type==='floor') renderActive();
     };
     eventSource.onerror=()=>setOnline(false,'RECONNECTING');
@@ -147,13 +147,22 @@
     remoteAudio.autoplay=true;remoteAudio.muted=false;remoteAudio.volume=1;
     try{await remoteAudio.play()}catch(e){console.warn('[Guardian control remote audio]',e)}
   }
+  let pendingIce=[];
   function makePeer(){
     if(pc)return pc;
     pc=new RTCPeerConnection({iceServers});
-    pc.onicecandidate=e=>{if(e.candidate&&activeCall?.vehicleClientId)signal('ice',e.candidate,activeCall.vehicleClientId)};
-    pc.ontrack=e=>{if(remoteAudio){remoteAudio.srcObject=e.streams[0]||new MediaStream([e.track]);playRemote()}};
+    pendingIce=[];
+    pc.onicecandidate=e=>{if(e.candidate&&activeCall?.vehicleClientId)signal('ice',e.candidate,activeCall.vehicleClientId).catch(console.error)};
+    pc.ontrack=e=>{
+      if(!remoteAudio)return;
+      const stream=e.streams&&e.streams[0];
+      remoteAudio.srcObject=stream||remoteAudio.srcObject;
+      if(!stream&&e.track){try{const ms=new MediaStream();ms.addTrack(e.track);remoteAudio.srcObject=ms}catch{}}
+      playRemote();
+    };
     return pc;
   }
+  async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian control ICE]',e)}}}
   async function beginPeer(offerer){
     await ensureMic(); const peer=makePeer();
     if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack)) peer.addTrack(localTrack,localStream);
@@ -162,13 +171,13 @@
   async function handleSignal(m){
     const from=m.from;if(!activeCall||!from)return;
     if(from.id!==activeCall.vehicleClientId)return;
-    const peer=makePeer(); await ensureMic(); if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
+    const peer=makePeer();await ensureMic();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
     if(m.kind==='offer'){
-      await peer.setRemoteDescription(new RTCSessionDescription(m.data));
+      await peer.setRemoteDescription(m.data);await flushIce(peer);
       const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,from.id);
-    } else if(m.kind==='answer') await peer.setRemoteDescription(new RTCSessionDescription(m.data));
-    else if(m.kind==='ice'&&m.data) try{await peer.addIceCandidate(new RTCIceCandidate(m.data))}catch{}
-    else if(m.kind==='hangup') teardownPeer();
+    }else if(m.kind==='answer'){await peer.setRemoteDescription(m.data);await flushIce(peer);}
+    else if(m.kind==='ice'&&m.data){if(peer.remoteDescription){try{await peer.addIceCandidate(m.data)}catch(e){console.warn('[Guardian control ICE]',e)}}else pendingIce.push(m.data);}
+    else if(m.kind==='hangup')teardownPeer();
   }
   async function signal(kind,data,target){if(!clientId)return;await radioFetch('/api/radio/signal',{method:'POST',body:JSON.stringify({role:'control',fromId:clientId,target,kind,data})})}
 
