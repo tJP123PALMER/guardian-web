@@ -52,7 +52,9 @@
   <section class="guardianMtmBody" aria-label="Guardian digital radio terminal">
     <div class="mtmLeftRail">
       <div class="mtmVolumeKnob" aria-hidden="true"></div>
-      <div class="mtmSpeaker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <button class="mtmEmergency" type="button" aria-label="Emergency">△</button>
+      <button id="radioChannelPtt" class="mtmPttButton" type="button" aria-label="Push to talk">PTT</button>
+      <div class="mtmMicPort" aria-hidden="true"></div>
     </div>
     <div class="mtmDisplayWrap">
       <div class="mtmBrandRow"><span>GUARDIAN DIGITAL RADIO</span><span id="radioLinkState">OFF</span></div>
@@ -63,6 +65,7 @@
         <div class="mtmLcdState" id="radioCallState">PRESS GREEN TO START RADIO</div>
         <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NONE</b></div>
         <div class="mtmSignalBars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="mtmScreenSoftRail"><button type="button" id="radioScreenBack">Back</button><button type="button" id="radioScreenSelect">Select</button></div>
       </div>
       <div class="mtmSoftKeys"><button type="button" id="radioBackSoft">BACK</button><button type="button" id="radioSelectSoft">SELECT</button></div>
       <div class="mtmCallHint"><span id="radioSelectedService">CONTACTS</span><b id="radioUrgencyState">HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH</b></div>
@@ -70,6 +73,7 @@
     </div>
     <div class="mtmNavCluster">
       <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="Radio off">☎</button>
+      <button class="mtmMenuKey" type="button" aria-label="Menu">MENU</button>
       <div class="mtmDpad" aria-label="Radio navigation">
         <button id="radioNavUp" type="button" aria-label="Up">▲</button>
         <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
@@ -165,4 +169,4 @@
   </div>
 </div>
 <audio id="alert"><source src="assets/alert.mp3" type="audio/mpeg"></audio><audio id="ping"><source src="assets/ping.mp3" type="audio/mpeg"></audio><script src="ui.js?v=standby-live-details-3"></script><script src="/mdt/web_bridge.js?v=weback-incno-1"></script><script>if(location.protocol==="file:"){window.addEventListener("load",function(){setTimeout(function(){window.postMessage({type:"open"},"*")},50)})}</script>
-<script src="/mdt/radio.js?v=7"></script><script src="/core_status.js" defer></script></body></html>
+<script src="/mdt/radio.js?v=28"></script><script src="/core_status.js" defer></script></body></html>

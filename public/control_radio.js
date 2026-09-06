@@ -48,7 +48,7 @@
     eventSource.onmessage=e=>{
       let m; try{m=JSON.parse(e.data)}catch{return}
       if(m.type==='hello'){ clientId=m.client?.id||''; setOnline(true,'RADIO ONLINE'); }
-      if(m.type==='presence'){presence=(m.clients||[]).filter(c=>['vehicle','mdt'].includes(c.role));renderPresence();}
+      if(m.type==='presence'){presence=(m.clients||[]).filter(c=>['vehicle','mdt'].includes(c.role));renderPresence();renderDirectory();}
       if(m.type==='radio_call') handleCallEvent(m);
       if(m.type==='radio_config_admin'){ config=m.config||config; renderDirectory(); }
       if(m.type==='signal') handleSignal(m).catch(err=>{console.error('[Guardian control signal]',err);const el=$('radioTxState');if(el)el.textContent=`AUDIO ERROR: ${String(err?.name||'ERROR')}`;});
@@ -232,7 +232,7 @@
 
   function renderDirectory(){
     const box=$('radioDirectoryAdmin');if(!box)return;
-    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>`<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}</strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><span>${c.open?'AVAILABLE':'CLOSED'}</span></div>`).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
+    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>{const listeners=(presence||[]).filter(x=>x.channelId===c.id&&['mdt','vehicle'].includes(x.role)).length;return `<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}<small>${listeners} UNIT${listeners===1?'':'S'} ON CHANNEL</small></strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><span>${c.open?'ON AIR':'CLOSED'}</span></div>`}).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
     box.querySelectorAll('[data-ropen-id]').forEach(el=>el.onchange=async()=>{
       const id=el.dataset.ropenId,open=el.checked;
       el.disabled=true;

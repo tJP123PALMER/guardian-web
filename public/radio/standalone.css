@@ -10,3 +10,6 @@ body{padding:0!important}
 .standaloneRadioPane.controlIncoming .guardianMtmBody{animation:guardianIncomingFlash .75s ease-in-out infinite alternate}
 .standaloneRadioPane.controlIncoming .mtmLcd{box-shadow:inset 0 0 0 2px rgba(255,170,0,.55),0 0 18px rgba(255,120,0,.35)}
 @keyframes guardianIncomingFlash{from{filter:brightness(1)}to{filter:brightness(1.18)}}
+/* v28 standalone control-head tuning */
+.standaloneRadioPane .guardianMtmBody{grid-template-columns:54px minmax(290px,1fr) 78px 150px!important;gap:4px!important;padding:5px!important}
+.standaloneRadioPane .mtmEmergency{width:27px;height:27px;font-size:15px;line-height:20px}.standaloneRadioPane .mtmPttButton{width:32px;height:22px;font-size:6px}.standaloneRadioPane .mtmMicPort{width:30px;height:30px;margin-bottom:5px}.standaloneRadioPane .mtmLcd{padding-right:45px!important}.standaloneRadioPane .mtmScreenSoftRail{width:40px}.standaloneRadioPane .mtmMenuKey{left:-12px;width:15px;height:42px;font-size:5px}.standaloneRadioPane .mtmDpad{width:52px;height:52px}.standaloneRadioPane .mtmRedPhone,.standaloneRadioPane .mtmGreenPhone{width:32px;height:22px}.standaloneRadioPane .radioKeyGrid button{height:28px!important;font-size:10px!important}
