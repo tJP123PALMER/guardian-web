@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian Digital Radio</title>
+<link rel="stylesheet" href="/mdt/radio.css?v=23">
+<link rel="stylesheet" href="/radio/standalone.css?v=23">
+</head>
+<body>
+<div id="callsignBox" hidden>UNSET</div>
+<section id="tab-radio" class="standaloneRadioPane radioOff">
+  <div class="guardianRadioPage">
+    <section class="guardianMtmBody" aria-label="Guardian digital radio terminal">
+      <div class="mtmLeftRail">
+        <div class="mtmVolumeKnob" aria-hidden="true"></div>
+        <div class="mtmSpeaker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="mtmDisplayWrap">
+        <div class="mtmBrandRow"><span>GUARDIAN DIGITAL RADIO</span><span id="radioLinkState">OFF</span></div>
+        <div class="mtmLcd">
+          <div class="mtmLcdTop"><strong id="radioVehicleCallsign">UNSET</strong><span id="radioMicState">RADIO OFF</span></div>
+          <div class="mtmMenuTitle" id="radioMenuTitle">Main Menu</div>
+          <div class="mtmMenuList" id="radioMenuList"></div>
+          <div class="mtmLcdState" id="radioCallState">PRESS GREEN TO START RADIO</div>
+          <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NONE</b></div>
+          <div class="mtmSignalBars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="mtmSoftKeys"><button type="button" id="radioBackSoft">BACK</button><button type="button" id="radioSelectSoft">SELECT</button></div>
+        <div class="mtmCallHint"><span id="radioSelectedService">CONTACTS</span><b id="radioUrgencyState">HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH</b></div>
+        <audio id="radioVehicleRemote" autoplay playsinline></audio>
+      </div>
+      <div class="mtmNavCluster">
+        <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="Radio off">☎</button>
+        <div class="mtmDpad" aria-label="Radio navigation">
+          <button id="radioNavUp" type="button" aria-label="Up">▲</button>
+          <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
+          <button id="radioNavSelect" type="button" aria-label="Select">●</button>
+          <button id="radioNavRight" type="button" aria-label="Right">▶</button>
+          <button id="radioNavDown" type="button" aria-label="Down">▼</button>
+        </div>
+        <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Radio on">☎</button>
+      </div>
+      <aside class="guardianRadioKeypad" aria-label="Urgency keypad">
+        <div class="radioKeyGrid">
+          <button type="button" data-radio-key="1">1<small>CALL</small></button><button type="button" data-radio-key="2">2<small>ABC</small></button><button type="button" data-radio-key="3">3<small>DEF</small></button>
+          <button type="button" data-radio-key="4">4<small>GHI</small></button><button type="button" data-radio-key="5">5<small>JKL</small></button><button type="button" data-radio-key="6">6<small>MNO</small></button>
+          <button type="button" data-radio-key="7">7<small>PQRS</small></button><button type="button" data-radio-key="8">8<small>TUV</small></button><button type="button" data-radio-key="9">9<small>WXYZ</small></button>
+          <button type="button" data-radio-key="*">*</button><button type="button" data-radio-key="0">0<small>+</small></button><button type="button" data-radio-key="#">#</button>
+        </div>
+        <div class="radioKeyHelp">PRESS &amp; HOLD A NUMBER FOR 2 SECONDS<br><strong>1 = REQUEST SPEECH</strong></div>
+      </aside>
+    </section>
+  </div>
+</section>
+<script>
+(() => {
+  const p = new URLSearchParams(location.search);
+  const cs = String(p.get('callsign') || localStorage.getItem('guardianExactMdtCallsign') || '').trim().toUpperCase();
+  document.getElementById('callsignBox').textContent = cs || 'UNSET';
+  if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
+})();
+</script>
+<script src="/mdt/radio.js?v=23"></script>
+</body>
+</html>

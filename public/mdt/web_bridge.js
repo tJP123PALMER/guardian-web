@@ -511,3 +511,20 @@
     }, 80);
   });
 })();
+
+  // FiveM wrapper commands (v18): keep in-game NUI aligned with hosted MDT.
+  window.addEventListener("message", (event) => {
+    const m = event && event.data || {};
+    if (m && m.source === "guardian-fivem" && m.type === "openRadio") {
+      const radioBtn = document.getElementById("radioStatusBtn");
+      if (radioBtn) radioBtn.click();
+      else {
+        const radioPane = document.getElementById("tab-radio");
+        if (radioPane) {
+          document.querySelectorAll(".pane").forEach(p => p.classList.toggle("active", p === radioPane));
+          const title = document.getElementById("pageTitle");
+          if (title) title.textContent = "Radio Call";
+        }
+      }
+    }
+  });

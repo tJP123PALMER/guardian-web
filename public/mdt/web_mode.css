@@ -17,3 +17,7 @@
 .guardianWebLive{
   box-shadow:0 0 0 4px rgba(34,197,94,.10),0 0 12px rgba(34,197,94,.65);
 }
+
+/* FiveM parity v18: never hide the radio CALL footer. */
+#radioStatusBtn{display:flex !important;visibility:visible !important;opacity:1 !important;}
+body .bottom{display:grid !important;}
