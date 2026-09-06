@@ -452,13 +452,18 @@ app.get("/api/radio/config",(req,res)=>{
   const s=guardianUserReadSession(req);if(!s)return res.status(401).json({ok:false,error:"Vehicle login required"});
   res.json({ok:true,config:guardianRadioConfigForVehicle()});
 });
-app.post("/api/radio/config",(req,res)=>{
-  const s=guardianRadioControlSession(req);if(!s)return res.status(403).json({ok:false,error:"Control radio permission required"});
+// Full radio directory editing is an Administration/Settings function only.
+app.get("/api/admin/radio-config",guardianRequireAdmin("settings.view"),(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  res.json({ok:true,config:guardianRadioConfig});
+});
+app.post("/api/admin/radio-config",guardianRequireAdmin("settings.edit"),(req,res)=>{
   const incoming=req.body?.config;
   if(!incoming||!Array.isArray(incoming.services))return res.status(400).json({ok:false,error:"Invalid radio configuration"});
   guardianRadioConfig={services:incoming.services.map((svc,si)=>({
     id:guardianRadioClientId(svc.id)||`svc-${si+1}`,
     name:String(svc.name||`Service ${si+1}`).trim().slice(0,80),
+    prefix:String(svc.prefix||"").trim().slice(0,30),
     channels:(Array.isArray(svc.channels)?svc.channels:[]).map((ch,ci)=>({
       id:guardianRadioClientId(ch.id)||`ch-${si+1}-${ci+1}`,
       name:String(ch.name||`Channel ${ci+1}`).trim().slice(0,80),
@@ -466,9 +471,28 @@ app.post("/api/radio/config",(req,res)=>{
     }))
   }))};
   guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
+  guardianAdminAuditLog(req.guardianAdmin?.username||"ADMIN","RADIO_CONFIG_UPDATED",{services:guardianRadioConfig.services.length,channels:guardianRadioConfig.services.reduce((n,s)=>n+(s.channels||[]).length,0)});
   guardianRadioBroadcast({type:"radio_config",config:guardianRadioConfigForVehicle()});
+  guardianRadioBroadcast({type:"radio_config_admin",config:guardianRadioConfig},c=>c.role==="control");
   res.json({ok:true,config:guardianRadioConfig});
 });
+
+// Control can open/close already-configured talkgroups during operations, but
+// cannot create, delete or rename them. Those changes live in Settings -> Radio.
+app.post("/api/radio/open",(req,res)=>{
+  if(!guardianRadioControlSession(req))return res.status(403).json({ok:false,error:"Control radio permission required"});
+  const channelId=guardianRadioClientId(req.body?.channelId);
+  const found=guardianRadioFindChannel(channelId);
+  if(!found)return res.status(404).json({ok:false,error:"Channel not found"});
+  found.ch.open=req.body?.open===true;
+  guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
+  guardianRadioBroadcast({type:"radio_config",config:guardianRadioConfigForVehicle()});
+  guardianRadioBroadcast({type:"radio_config_admin",config:guardianRadioConfig},c=>c.role==="control");
+  res.json({ok:true,channel:{id:found.ch.id,name:found.ch.name,open:found.ch.open}});
+});
+
+// Legacy endpoint deliberately blocks structural edits from Control.
+app.post("/api/radio/config",(req,res)=>res.status(403).json({ok:false,error:"Edit radio channels in Settings -> Radio"}));
 app.post("/api/radio/channel",(req,res)=>{
   const ident=guardianRadioIdentity(req,req.body?.role);if(!ident)return res.status(401).json({ok:false,error:"Guardian login required"});
   if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
@@ -489,16 +513,34 @@ app.post("/api/radio/call",(req,res)=>{
     const found=guardianRadioFindChannel(req.body?.channelId||client.channelId);
     if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Select an open channel first"});
     client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
-    const call={id:crypto.randomUUID(),status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,urgency:String(req.body?.urgency||req.body?.dialed||"1").replace(/[^0-9]/g,"").slice(0,2)||"1",createdAt:new Date().toISOString(),controlClientId:null};
+    const call={id:crypto.randomUUID(),direction:"unit_to_control",status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,urgency:String(req.body?.urgency||req.body?.dialed||"1").replace(/[^0-9]/g,"").slice(0,2)||"1",createdAt:new Date().toISOString(),controlClientId:null};
     guardianRadioCalls.set(call.id,call);
     guardianRadioBroadcast({type:"radio_call",action:"ringing",call},c=>c.role==="control");
     return res.json({ok:true,call});
   }
+  if(action==="control_request"){
+    if(ident.role!=="control")return res.status(403).json({ok:false,error:"Control only"});
+    const targetId=guardianRadioClientId(req.body?.targetClientId);
+    const target=guardianRadioClients.get(targetId);
+    if(!target||!["vehicle","mdt"].includes(target.role))return res.status(404).json({ok:false,error:"Selected unit radio is not online"});
+    const call={id:crypto.randomUUID(),direction:"control_to_unit",status:"ringing",vehicleClientId:target.id,callsign:target.callsign,username:target.username,serviceId:target.serviceId||null,serviceName:target.serviceName||"CONTROL",channelId:target.channelId||null,channelName:target.channelName||"DIRECT CONTROL",urgency:"CONTROL",createdAt:new Date().toISOString(),controlClientId:client.id};
+    guardianRadioCalls.set(call.id,call);
+    guardianRadioSend(target,{type:"radio_call",action:"control_ringing",call});
+    guardianRadioBroadcast({type:"radio_call",action:"control_ringing",call},c=>c.role==="control");
+    return res.json({ok:true,call});
+  }
   const call=guardianRadioCalls.get(String(req.body?.callId||""));if(!call)return res.status(404).json({ok:false,error:"Call not found"});
   if(action==="answer"){
-    if(ident.role!=="control")return res.status(403).json({ok:false,error:"Control only"});
-    call.status="connected";call.controlClientId=client.id;call.answeredAt=new Date().toISOString();
+    const controlInitiated=call.direction==="control_to_unit";
+    if(controlInitiated){
+      if(!["vehicle","mdt"].includes(ident.role)||client.id!==call.vehicleClientId)return res.status(403).json({ok:false,error:"Called unit only"});
+    }else{
+      if(ident.role!=="control")return res.status(403).json({ok:false,error:"Control only"});
+      call.controlClientId=client.id;
+    }
+    call.status="connected";call.answeredAt=new Date().toISOString();
     guardianRadioSend(guardianRadioClients.get(call.vehicleClientId),{type:"radio_call",action:"answered",call});
+    if(call.controlClientId)guardianRadioSend(guardianRadioClients.get(call.controlClientId),{type:"radio_call",action:"answered",call});
     guardianRadioBroadcast({type:"radio_call",action:"answered",call},c=>c.role==="control");
     return res.json({ok:true,call});
   }

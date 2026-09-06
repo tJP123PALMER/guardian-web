@@ -53,7 +53,7 @@ async function refreshAll(){
 function render(){
   if(!config||!operational)return;
   try{
-    ({overview:renderOverview,stations:renderStations,appliances:renderAppliances,map:renderMap,config:renderConfig,users:renderUsers,backup:renderBackup,audit:renderAudit}[active]||renderOverview)()
+    ({overview:renderOverview,stations:renderStations,appliances:renderAppliances,map:renderMap,config:renderConfig,radio:renderRadio,users:renderUsers,backup:renderBackup,audit:renderAudit}[active]||renderOverview)()
   }catch(e){errorView("This Settings page failed to render",e)}
 }
 
@@ -264,6 +264,34 @@ function renderConfig(){
     notify("Guardian configuration saved");
     await refreshAll();
   };
+}
+
+
+async function renderRadio(){
+  setContent(`<div class="card"><h3>Loading radio configuration…</h3></div>`);
+  try{
+    const data=await api('/api/admin/radio-config');
+    const radio=data.config||{services:[]};
+    const redraw=()=>{
+      setContent(`<div class="card"><div class="sectionHead"><div><div class="eyebrow">GUARDIAN RADIO</div><h3>Services & Talkgroups</h3><p>This is the only place where services and radio channels can be created, renamed or removed. Control can only open/close existing channels during operations.</p></div><button id="radioAddService">ADD SERVICE</button></div><div id="radioSettingsServices" class="radioSettingsServices"></div></div><div class="card saveBar"><div><h3>Save Radio Configuration</h3><p>Changes update the web MDT, standalone FiveM radio and Control immediately.</p></div><button id="radioSaveAll">SAVE RADIO SETTINGS</button></div>`);
+      const box=$('radioSettingsServices');
+      box.innerHTML=(radio.services||[]).map((svc,si)=>`<section class="radioSettingsService"><div class="radioSettingsServiceHead"><input data-rsvc-name="${si}" value="${esc(svc.name||'')}" placeholder="Service name"><input data-rsvc-prefix="${si}" value="${esc(svc.prefix||'')}" placeholder="Prefix e.g. FLAB"><button class="danger" data-rsvc-del="${si}">DELETE SERVICE</button></div><div class="radioSettingsChannels">${(svc.channels||[]).map((ch,ci)=>`<div class="radioSettingsChannel"><input data-rch-name="${si}:${ci}" value="${esc(ch.name||'')}" placeholder="Talkgroup"><label><input type="checkbox" data-rch-open="${si}:${ci}" ${ch.open?'checked':''}> OPEN</label><button class="danger" data-rch-del="${si}:${ci}">DELETE</button></div>`).join('')||'<p class="small">No talkgroups configured.</p>'}</div><button data-rch-add="${si}">ADD TALKgroup</button></section>`).join('')||'<p>No radio services configured.</p>';
+      document.querySelectorAll('[data-rsvc-name]').forEach(el=>el.oninput=()=>radio.services[+el.dataset.rsvcName].name=el.value);
+      document.querySelectorAll('[data-rsvc-prefix]').forEach(el=>el.oninput=()=>radio.services[+el.dataset.rsvcPrefix].prefix=el.value.toUpperCase());
+      document.querySelectorAll('[data-rch-name]').forEach(el=>el.oninput=()=>{const [si,ci]=el.dataset.rchName.split(':').map(Number);radio.services[si].channels[ci].name=el.value});
+      document.querySelectorAll('[data-rch-open]').forEach(el=>el.onchange=()=>{const [si,ci]=el.dataset.rchOpen.split(':').map(Number);radio.services[si].channels[ci].open=el.checked});
+      document.querySelectorAll('[data-rsvc-del]').forEach(b=>b.onclick=()=>{if(confirm(`Delete ${radio.services[+b.dataset.rsvcDel]?.name||'this service'} and all its talkgroups?`)){radio.services.splice(+b.dataset.rsvcDel,1);redraw()}});
+      document.querySelectorAll('[data-rch-del]').forEach(b=>b.onclick=()=>{const [si,ci]=b.dataset.rchDel.split(':').map(Number);radio.services[si].channels.splice(ci,1);redraw()});
+      document.querySelectorAll('[data-rch-add]').forEach(b=>b.onclick=()=>{const si=+b.dataset.rchAdd,svc=radio.services[si],prefix=String(svc.prefix||'OPS').trim().toUpperCase()||'OPS';const next=(svc.channels||[]).length+1;svc.channels=svc.channels||[];svc.channels.push({id:`${prefix.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-ops-${Date.now().toString(36)}`,name:`${prefix}-OPS${next}`,open:false});redraw()});
+      $('radioAddService').onclick=()=>{const n=(radio.services||[]).length+1;radio.services.push({id:`svc-${Date.now().toString(36)}`,name:`New Service ${n}`,prefix:`SVC${n}`,channels:[]});redraw()};
+      $('radioSaveAll').onclick=async()=>{
+        for(const svc of radio.services||[]){svc.name=String(svc.name||'').trim();svc.prefix=String(svc.prefix||'').trim().toUpperCase();for(const ch of svc.channels||[])ch.name=String(ch.name||'').trim()}
+        const bad=(radio.services||[]).find(svc=>!svc.name||(svc.channels||[]).some(ch=>!ch.name));if(bad)return alert('Every service and talkgroup needs a name.');
+        const j=await api('/api/admin/radio-config',{method:'POST',body:JSON.stringify({config:radio})});Object.assign(radio,j.config||radio);notify('Radio configuration saved');redraw();
+      };
+    };
+    redraw();
+  }catch(e){errorView('Radio Settings',e)}
 }
 
 async function renderUsers(){

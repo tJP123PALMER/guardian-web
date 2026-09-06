@@ -11,7 +11,7 @@
   let remoteAudio = null;
   let iceServers = [];
   let floorHeld = false;
-  let ringTimer=null; let audioCtx=null;
+  let ringTimer=null; let audioCtx=null; let presence=[]; let outboundRinging=null;
 
   const esc = s => String(s ?? "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
   const radioFetch = async (url, opts={}) => {
@@ -34,7 +34,7 @@
       iceServers=sess.iceServers||[];
       const cfg=await radioFetch('/api/radio/config?role=control'); config=cfg.config||{services:[]};
       const cq=await radioFetch('/api/radio/calls'); calls=cq.calls||[];
-      renderDirectory(); renderCalls(); connectEvents(); setOnline(true,'RADIO ONLINE');
+      renderDirectory(); renderCalls(); bindOutbound(); connectEvents(); setOnline(true,'RADIO ONLINE');
     }catch(e){
       console.warn('[Guardian radio control]',e); setOnline(false,'LOGIN REQUIRED');
       if($('radioIncomingCalls')) $('radioIncomingCalls').innerHTML=`<div class="emptyState"><strong>Radio unavailable</strong><span>${esc(e.message)}</span></div>`;
@@ -48,8 +48,9 @@
     eventSource.onmessage=e=>{
       let m; try{m=JSON.parse(e.data)}catch{return}
       if(m.type==='hello'){ clientId=m.client?.id||''; setOnline(true,'RADIO ONLINE'); }
+      if(m.type==='presence'){presence=(m.clients||[]).filter(c=>['vehicle','mdt'].includes(c.role));renderPresence();}
       if(m.type==='radio_call') handleCallEvent(m);
-      if(m.type==='radio_config'){ config=m.config||config; renderDirectory(); }
+      if(m.type==='radio_config_admin'){ config=m.config||config; renderDirectory(); }
       if(m.type==='signal') handleSignal(m).catch(err=>{console.error('[Guardian control signal]',err);const el=$('radioTxState');if(el)el.textContent=`AUDIO ERROR: ${String(err?.name||'ERROR')}`;});
       if(m.type==='floor') renderActive();
     };
@@ -64,6 +65,12 @@
       o.frequency.value=780;g.gain.value=.055;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+.16);
     }catch{}
   }
+  function controlDialTone(){
+    try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const now=audioCtx.currentTime;[620,820].forEach((f,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=f;g.gain.value=.045;o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.13);o.stop(now+i*.13+.11)})}catch{}
+  }
+  function connectAckTone(){
+    try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const now=audioCtx.currentTime;[700,1050].forEach((f,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=f;g.gain.value=.05;o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.12);o.stop(now+i*.12+.1)})}catch{}
+  }
   function updateRinger(){
     const ringing=calls.some(c=>c.status==='ringing');
     if(ringing&&!ringTimer){radioBeep();ringTimer=setInterval(radioBeep,1800)}
@@ -74,16 +81,44 @@
     const c=m.call;if(!c)return;
     calls=calls.filter(x=>x.id!==c.id);
     if(m.action==='ringing') calls.unshift(c);
+    if(m.action==='control_ringing'){
+      if(c.controlClientId===clientId){outboundRinging=c;controlDialTone();renderOutboundState();}
+    }
     if(m.action==='answered'){
-      if(c.controlClientId===clientId){ activeCall=c; beginPeer(false).catch(console.error); }
+      if(c.controlClientId===clientId){ outboundRinging=null; activeCall=c; connectAckTone(); beginPeer(false).catch(console.error); renderOutboundState(); }
       else if(activeCall?.id===c.id) activeCall=c;
     }
     if(['ended','rejected'].includes(m.action)){
+      if(outboundRinging?.id===c.id){outboundRinging=null;renderOutboundState();}
       if(activeCall?.id===c.id) teardownPeer();
     }
     renderCalls(); renderActive(); updateRinger();
   }
 
+  function bindOutbound(){
+    $('radioCallUnit')?.addEventListener('click',callSelectedUnit);
+    renderPresence();renderOutboundState();
+  }
+  function renderPresence(){
+    const sel=$('radioContactUnit');if(!sel)return;
+    const current=sel.value;
+    const rows=presence.filter(c=>c.id&&c.callsign&&c.callsign!=='CONTROL').sort((a,b)=>String(a.callsign).localeCompare(String(b.callsign)));
+    sel.innerHTML=rows.length?rows.map(c=>`<option value="${esc(c.id)}">${esc(c.callsign)}${c.channelName?` — ${esc(c.channelName)}`:''}</option>`).join(''):'<option value="">No online units</option>';
+    if(rows.some(c=>c.id===current))sel.value=current;
+  }
+  function renderOutboundState(){
+    const box=document.querySelector('.radioOutbound'),btn=$('radioCallUnit');if(!box||!btn)return;
+    box.classList.toggle('ringing',!!outboundRinging);
+    btn.textContent=outboundRinging?`RINGING ${outboundRinging.callsign}`:'CALL UNIT';
+    btn.disabled=!!outboundRinging||!!activeCall;
+  }
+  async function callSelectedUnit(){
+    const target=$('radioContactUnit')?.value;if(!target)return alert('No online Guardian radio selected.');
+    try{
+      const j=await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'control_request',targetClientId:target})});
+      outboundRinging=j.call;controlDialTone();renderOutboundState();
+    }catch(e){alert(`Unable to call unit: ${e.message}`)}
+  }
   function renderCalls(){
     const box=$('radioIncomingCalls'); if(!box)return;
     const ringing=calls.filter(c=>c.status==='ringing');
@@ -183,9 +218,9 @@
 
   function renderActive(){
     const box=$('radioActiveCall');if(!box)return;
-    if(!activeCall){box.innerHTML='';return}
+    if(!activeCall){box.innerHTML='';renderOutboundState();return}
     box.innerHTML=`<div class="radioConnectedCard"><div class="radioConnectedTop"><div><span class="panelKicker">CONNECTED RADIO CALL</span><h3>${esc(activeCall.callsign)}</h3><div class="radioConnectedMeta">${esc(activeCall.serviceName)} · ${esc(activeCall.channelName)} · URGENCY ${esc(activeCall.urgency||'1')}</div></div><strong id="radioTxState">LIVE VOICE</strong></div><div class="radioConnectedActions"><div class="radioLiveVoice">MICROPHONES OPEN — SPEAK NORMALLY</div><button id="radioEndCall" class="radioEnd">END CALL</button></div></div>`;
-    $('radioEndCall').onclick=endCall;
+    $('radioEndCall').onclick=endCall;renderOutboundState();
   }
   async function endCall(){
     if(!activeCall)return;const id=activeCall.id;const target=activeCall.vehicleClientId;
@@ -193,16 +228,19 @@
     try{await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'end',callId:id})})}catch{}
     teardownPeer();
   }
-  function teardownPeer(){if(localTrack)localTrack.enabled=false;floorHeld=false;try{pc?.close()}catch{}pc=null;activeCall=null;renderActive()}
+  function teardownPeer(){if(localTrack)localTrack.enabled=false;floorHeld=false;try{pc?.close()}catch{}pc=null;activeCall=null;outboundRinging=null;renderActive();renderOutboundState()}
 
   function renderDirectory(){
     const box=$('radioDirectoryAdmin');if(!box)return;
-    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map((c,ci)=>`<div class="radioChannelAdmin"><input type="text" value="${esc(c.name)}" data-rname="${si}:${ci}"><label class="radioOpenToggle"><input type="checkbox" data-ropen="${si}:${ci}" ${c.open?'checked':''}> OPEN</label><span>${c.open?'AVAILABLE':'CLOSED'}</span></div>`).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}<button class="secondary radioChannelSave" data-add-channel="${si}">ADD CHANNEL</button></div></details>`).join('');
-    box.querySelectorAll('[data-rname]').forEach(el=>el.onchange=()=>{const [si,ci]=el.dataset.rname.split(':').map(Number);config.services[si].channels[ci].name=el.value.trim()||config.services[si].channels[ci].name;saveConfig()});
-    box.querySelectorAll('[data-ropen]').forEach(el=>el.onchange=()=>{const [si,ci]=el.dataset.ropen.split(':').map(Number);config.services[si].channels[ci].open=el.checked;saveConfig()});
-    box.querySelectorAll('[data-add-channel]').forEach(b=>b.onclick=()=>{const si=Number(b.dataset.addChannel);const name=prompt(`New channel for ${config.services[si].name}:`);if(!name)return;config.services[si].channels.push({id:`${config.services[si].id}-${Date.now().toString(36)}`,name:name.trim(),open:true});saveConfig()});
+    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>`<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}</strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><span>${c.open?'AVAILABLE':'CLOSED'}</span></div>`).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
+    box.querySelectorAll('[data-ropen-id]').forEach(el=>el.onchange=async()=>{
+      const id=el.dataset.ropenId,open=el.checked;
+      el.disabled=true;
+      try{await radioFetch('/api/radio/open',{method:'POST',body:JSON.stringify({channelId:id,open})});const found=(config.services||[]).flatMap(s=>s.channels||[]).find(c=>c.id===id);if(found)found.open=open;renderDirectory()}
+      catch(e){el.checked=!open;alert(`Unable to change channel state: ${e.message}`)}
+      finally{el.disabled=false}
+    });
   }
-  async function saveConfig(){try{const j=await radioFetch('/api/radio/config',{method:'POST',body:JSON.stringify({config})});config=j.config;renderDirectory()}catch(e){alert(`Unable to save radio channels: ${e.message}`)}}
 
   window.addEventListener('beforeunload',()=>{try{eventSource?.close()}catch{};try{localStream?.getTracks().forEach(t=>t.stop())}catch{}});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
