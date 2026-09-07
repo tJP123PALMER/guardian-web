@@ -959,9 +959,12 @@ function renderIncidentDetail(){
 
  $("closeIncidentBtn").onclick=async()=>{
    if(!confirm(`Close incident #${inc.id}? Assigned appliances will be released.`))return;
+   const closureOutcome=prompt("Closure outcome (e.g. Incident resolved / False alarm / Handed to Police)",inc.closureOutcome||"Incident resolved");
+   if(closureOutcome===null)return;
+   const closureNotes=prompt("Closing notes / final command summary",inc.closureNotes||"")||"";
    const btn=$("closeIncidentBtn");btn.disabled=true;btn.textContent="CLOSING...";
    try{
-     await command("closeIncident",{incidentId:inc.id});
+     await command("closeIncident",{incidentId:inc.id,closureOutcome,closureNotes,closedBy:"CONTROL"});
      clearIncidentDraft(inc.id); selectedIncidentId=null;
      setTimeout(()=>load().catch(()=>{}),300);
    }catch(err){
