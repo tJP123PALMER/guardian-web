@@ -6,6 +6,7 @@
   const params = new URLSearchParams(location.search);
   const vehicleMode = params.get('vehicle') === '1';
   const fivemMode = params.get('fivem') === '1';
+  const directNuiMode = params.get('directNui') === '1';
   const radioRole = vehicleMode ? 'vehicle' : 'mdt';
   let powered = false, connecting = false, identity = null, clientId = '', eventSource = null;
   let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null, tunedChannel = null;
@@ -232,7 +233,16 @@
   })}
   async function selectChannel(ch){
     if(!ch||activeCall)return;if(!clientId){await ensureRadio(true);if(!clientId)return}
-    try{const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});selectedChannel={id:j.channel.id,name:j.channel.name};tunedChannel=null;menuLevel='home';closeAllGroupPeers();state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL');renderMenu();syncGroupPeers().catch(console.error)}
+    try{
+      const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});
+      selectedChannel={id:j.channel.id,name:j.channel.name};tunedChannel=null;menuLevel='home';closeAllGroupPeers();
+      state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL');renderMenu();
+      // Prime an audio sender before group negotiation. This fixes the one-way
+      // channel case where Control could be heard but the unit never advertised
+      // a usable microphone sender until after the first offer was already made.
+      try{await ensureMic();if(localTrack)localTrack.enabled=false;}catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
+      await syncGroupPeers();
+    }
     catch(e){state(e.message||'TALKGROUP UNAVAILABLE','error')}
   }
 
@@ -247,13 +257,14 @@
   function closeAllGroupPeers(){for(const id of [...groupPeers.keys()])closeGroupPeer(id)}
   async function attachTrackToGroupPeers(){if(!localTrack)return;for(const g of groupPeers.values()){const sender=g.pc.getSenders().find(x=>x.track?.kind==='audio')||g.pc.getTransceivers().find(t=>t.sender&&t.receiver?.track?.kind==='audio')?.sender;if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else{try{g.pc.addTrack(localTrack,localStream)}catch{}}}}
   function createGroupPeer(peer){
-    const rtc=new RTCPeerConnection({iceServers});const audio=groupRemoteAudio(peer.id);const g={pc:rtc,audio,peer};groupPeers.set(peer.id,g);
+    const rtc=new RTCPeerConnection({iceServers});const audio=groupRemoteAudio(peer.id);const g={pc:rtc,audio,peer,pendingIce:[]};groupPeers.set(peer.id,g);
     rtc.onicecandidate=e=>{if(e.candidate&&selectedChannel)signal('ice',{guardianChannel:true,channelId:selectedChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
     rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
     rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeGroupPeer(peer.id)};
     if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}}
     return g;
   }
+  async function flushGroupIce(g){if(!g?.pc?.remoteDescription)return;for(const c of g.pendingIce.splice(0)){try{await g.pc.addIceCandidate(c)}catch(e){console.warn('[Guardian channel ICE]',e)}}}
   async function startGroupOffer(peer){const g=groupPeers.get(peer.id)||createGroupPeer(peer);const offer=await g.pc.createOffer();await g.pc.setLocalDescription(offer);await signal('offer',{guardianChannel:true,channelId:selectedChannel.id,sdp:offer},peer.id)}
   async function syncGroupPeers(){
     if(!powered||!clientId||!selectedChannel){closeAllGroupPeers();return}
@@ -264,9 +275,9 @@
   async function handleGroupSignal(m){
     const d=m.data||{},peer=m.from;if(!peer||!selectedChannel||d.channelId!==selectedChannel.id)return;
     let g=groupPeers.get(peer.id)||createGroupPeer(peer);
-    if(d.sdp&&m.kind==='offer'){await g.pc.setRemoteDescription(d.sdp);const ans=await g.pc.createAnswer();await g.pc.setLocalDescription(ans);await signal('answer',{guardianChannel:true,channelId:selectedChannel.id,sdp:ans},peer.id)}
-    else if(d.sdp&&m.kind==='answer'){await g.pc.setRemoteDescription(d.sdp)}
-    else if(d.candidate&&m.kind==='ice'){try{await g.pc.addIceCandidate(d.candidate)}catch(e){console.warn('[Guardian channel ICE]',e)}}
+    if(d.sdp&&m.kind==='offer'){await g.pc.setRemoteDescription(d.sdp);await flushGroupIce(g);const ans=await g.pc.createAnswer();await g.pc.setLocalDescription(ans);await signal('answer',{guardianChannel:true,channelId:selectedChannel.id,sdp:ans},peer.id)}
+    else if(d.sdp&&m.kind==='answer'){await g.pc.setRemoteDescription(d.sdp);await flushGroupIce(g)}
+    else if(d.candidate&&m.kind==='ice'){if(g.pc.remoteDescription){try{await g.pc.addIceCandidate(d.candidate)}catch(e){console.warn('[Guardian channel ICE]',e)}}else g.pendingIce.push(d.candidate)}
   }
   async function channelPttStart(){
     if(!powered||!selectedChannel||groupTx)return;groupTx=true;startHoldTone();
@@ -335,7 +346,7 @@
 
   function friendlyMicError(e){
     const n=String(e?.name||'');
-    if(n==='NotAllowedError'||n==='SecurityError')return 'MICROPHONE PERMISSION DENIED — ALLOW GUARDIAN MICROPHONE ACCESS';
+    if(n==='NotAllowedError'||n==='SecurityError')return fivemMode?'MIC PERMISSION REQUIRED — PRESS F8 AND ALLOW MICROPHONE FOR GUARDIAN RADIO':'MICROPHONE PERMISSION DENIED — ALLOW GUARDIAN MICROPHONE ACCESS';
     if(n==='NotFoundError'||n==='DevicesNotFoundError')return 'NO MICROPHONE DETECTED — CONNECT MIC THEN PRESS GREEN AGAIN';
     if(n==='NotReadableError'||n==='TrackStartError')return 'MICROPHONE BUSY — CLOSE OTHER AUDIO APPS AND RETRY';
     if(n==='OverconstrainedError'||n==='ConstraintNotSatisfiedError')return 'MIC SETTINGS NOT SUPPORTED — RETRYING DEFAULT MIC';
@@ -474,7 +485,16 @@
     $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();softwarePttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();softwarePttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',softwarePttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',goHome);
     $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(-1);return;}if(!cycleChannel(-1))goBack()});$('radioNavRight')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(1);return;}if(!cycleChannel(1))selectMenuItem()});$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
-    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(-1);else if(!cycleChannel(-1))goBack();}else if(c==='right'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(1);else if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();}})}
+    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};
+      if(d.type==='radioState'||d.type==='guardianFivemState'){
+        const cs=String(d.callsign||'UNSET').trim().toUpperCase();const box=$('callsignBox');if(box&&box.textContent!==cs)box.textContent=cs;
+        if(d.open===false){document.body.classList.add('guardianRadioHidden');softwarePttStop();return}else if(d.open===true){document.body.classList.remove('guardianRadioHidden');setTimeout(()=>{setCallsign();if(powered)ensureRadio(true)},30)}
+        return;
+      }
+      if(d.type==='radioPtt'||d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}
+      if(d.type==='radioKey'||d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}
+      if(d.type==='radioControl'||d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(-1);else if(!cycleChannel(-1))goBack();}else if(c==='right'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(1);else if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();return}
+    })}
   }
   function watchIdentity(){
     const reauth=()=>{setCallsign();if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};

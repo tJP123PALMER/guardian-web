@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Guardian MTM800E Radio v33</title>
+<title>Guardian MTM800E Radio v38</title>
 <link rel="stylesheet" href="/radio/standalone.css?v=35">
 </head>
 <body>
+<div id="guardianFivemTools"><button id="gfrSmaller" title="Smaller">−</button><button id="gfrLarger" title="Larger">+</button><button id="gfrMic" class="mic" title="Microphone setup">MIC</button><button id="gfrClose" class="danger" title="Close">×</button></div><div id="guardianFivemMicHelp">FiveM needs microphone permission for Guardian Radio. Press the green radio key or PTT. If FiveM asks in the F8 console, choose <b>Allow microphone</b>. This v38 page runs as the top-level NUI rather than an iframe so the microphone request reaches FiveM directly.</div>
 <div id="callsignBox" hidden>UNSET</div>
 <section id="tab-radio" class="standaloneRadioPane radioOff">
   <div class="guardianRadioPage">
@@ -76,6 +77,22 @@
   if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
 })();
 </script>
-<script src="/mdt/radio.js?v=35"></script>
+<script src="/mdt/radio.js?v=38"></script>
+<script>
+(() => {
+  const q=new URLSearchParams(location.search);if(q.get('directNui')!=='1')return;
+  document.body.classList.add('guardianDirectNui','guardianRadioHidden');
+  let scale=Number(localStorage.getItem('guardianRadioScaleV38')||'.82');
+  const clamp=n=>Math.max(.28,Math.min(1.15,n));
+  const apply=()=>{scale=clamp(scale);localStorage.setItem('guardianRadioScaleV38',String(scale));document.documentElement.style.setProperty('--guardian-radio-scale',String(scale));};apply();
+  const res=q.get('resource')||'Guardian_radio';
+  const nui=(name,data={})=>fetch(`https://${res}/${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{});
+  document.getElementById('gfrSmaller').onclick=()=>{scale-=.06;apply()};
+  document.getElementById('gfrLarger').onclick=()=>{scale+=.06;apply()};
+  document.getElementById('gfrClose').onclick=()=>nui('close');
+  document.getElementById('gfrMic').onclick=()=>document.getElementById('guardianFivemMicHelp').classList.toggle('show');
+  addEventListener('message',e=>{const d=e.data||{};if(d.type==='radioState'){document.body.classList.toggle('guardianRadioHidden',!d.open);const cs=String(d.callsign||'UNSET').toUpperCase();const box=document.getElementById('callsignBox');if(box&&box.textContent!==cs)box.textContent=cs;}});
+})();
+</script>
 </body>
 </html>

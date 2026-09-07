@@ -249,13 +249,14 @@
   function closeControlChannelPeer(id){const g=channelPeers.get(id);if(!g)return;try{g.pc.close()}catch{};try{g.audio.remove()}catch{}channelPeers.delete(id)}
   function closeAllControlChannelPeers(){for(const id of [...channelPeers.keys()])closeControlChannelPeer(id)}
   function makeControlChannelPeer(peer){
-    const rtc=new RTCPeerConnection({iceServers}),audio=channelAudio(peer.id);const g={pc:rtc,audio,peer};channelPeers.set(peer.id,g);
+    const rtc=new RTCPeerConnection({iceServers}),audio=channelAudio(peer.id);const g={pc:rtc,audio,peer,pendingIce:[]};channelPeers.set(peer.id,g);
     rtc.onicecandidate=e=>{if(e.candidate&&controlChannel)signal('ice',{guardianChannel:true,channelId:controlChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
     rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
     rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeControlChannelPeer(peer.id)};
-    try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
+    if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}}
     return g;
   }
+  async function flushControlGroupIce(g){if(!g?.pc?.remoteDescription)return;for(const c of g.pendingIce.splice(0)){try{await g.pc.addIceCandidate(c)}catch(e){console.warn('[Guardian control channel ICE]',e)}}}
   async function startControlChannelOffer(peer){const g=channelPeers.get(peer.id)||makeControlChannelPeer(peer);const offer=await g.pc.createOffer();await g.pc.setLocalDescription(offer);await signal('offer',{guardianChannel:true,channelId:controlChannel.id,sdp:offer},peer.id)}
   async function syncControlChannelPeers(){
     if(!clientId||!controlChannel){closeAllControlChannelPeers();return}
@@ -267,16 +268,20 @@
   async function handleControlGroupSignal(m){
     const d=m.data||{},peer=m.from;if(!peer||!controlChannel||d.channelId!==controlChannel.id)return;
     const g=channelPeers.get(peer.id)||makeControlChannelPeer(peer);
-    if(d.sdp&&m.kind==='offer'){await g.pc.setRemoteDescription(d.sdp);const ans=await g.pc.createAnswer();await g.pc.setLocalDescription(ans);await signal('answer',{guardianChannel:true,channelId:controlChannel.id,sdp:ans},peer.id)}
-    else if(d.sdp&&m.kind==='answer')await g.pc.setRemoteDescription(d.sdp);
-    else if(d.candidate&&m.kind==='ice'){try{await g.pc.addIceCandidate(d.candidate)}catch(e){console.warn('[Guardian control channel ICE]',e)}}
+    if(d.sdp&&m.kind==='offer'){await g.pc.setRemoteDescription(d.sdp);await flushControlGroupIce(g);const ans=await g.pc.createAnswer();await g.pc.setLocalDescription(ans);await signal('answer',{guardianChannel:true,channelId:controlChannel.id,sdp:ans},peer.id)}
+    else if(d.sdp&&m.kind==='answer'){await g.pc.setRemoteDescription(d.sdp);await flushControlGroupIce(g)}
+    else if(d.candidate&&m.kind==='ice'){if(g.pc.remoteDescription){try{await g.pc.addIceCandidate(d.candidate)}catch(e){console.warn('[Guardian control channel ICE]',e)}}else g.pendingIce.push(d.candidate)}
   }
   async function setControlChannel(channelId){
     if(!clientId)return alert('Control radio is still connecting.');
     if(!channelId){await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId:''})});controlChannel=null;closeAllControlChannelPeers();renderControlChannelOps();renderDirectory();return;}
     const found=(config.services||[]).flatMap(s=>(s.channels||[]).map(c=>({service:s,channel:c}))).find(x=>x.channel.id===channelId);
     if(!found||!found.channel.open)return alert('That channel is closed.');
-    await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId})});controlChannel={id:found.channel.id,name:found.channel.name,serviceName:found.service.name};closeAllControlChannelPeers();renderControlChannelOps();renderDirectory();await syncControlChannelPeers();
+    await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId})});controlChannel={id:found.channel.id,name:found.channel.name,serviceName:found.service.name};closeAllControlChannelPeers();
+    // Prime Control's microphone before channel negotiation so every peer gets a
+    // bidirectional audio m-line from the start. The track remains muted until PTT.
+    try{await ensureMic();if(localTrack)localTrack.enabled=false;}catch(e){console.warn('[Guardian Control mic prime]',e)}
+    renderControlChannelOps();renderDirectory();await syncControlChannelPeers();
   }
   async function controlChannelPtt(down){
     if(!controlChannel)return;

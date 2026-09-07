@@ -414,26 +414,74 @@ function guardianRadioDefaultConfig(){
 function guardianRadioNormaliseConfig(existing){
   const defaults=guardianRadioDefaultConfig();
   if(!existing||!Array.isArray(existing.services))return defaults;
+
+  // v37: preserve the complete configured radio network. Standard Guardian
+  // services are guaranteed to contain OPS1-OPS10, while any administrator-
+  // added services/talkgroups are retained instead of being discarded by
+  // normalisation.
   const oldServices=existing.services||[];
+  const merged=[];
+  const used=new Set();
+
   for(const def of defaults.services){
     const aliases=def.prefix==="FLAB"?["FLAB","Lothian & Borders","East Scotland / L&B"]:[def.name];
-    const old=oldServices.find(s=>aliases.some(a=>String(s?.name||"").toLowerCase()===a.toLowerCase())||String(s?.prefix||"").toUpperCase()===def.prefix);
-    if(!old)continue;
-    def.channels=def.channels.map((ch,i)=>{
-      const prior=(old.channels||[]).find(c=>String(c?.name||"").replace(/\s+/g,"").toUpperCase()===ch.name.replace(/\s+/g,"").toUpperCase())||(old.channels||[])[i];
-      return prior?{...ch,open:prior.open===true}:ch;
+    const oldIndex=oldServices.findIndex(s=>aliases.some(a=>String(s?.name||"").toLowerCase()===a.toLowerCase())||String(s?.prefix||"").toUpperCase()===def.prefix);
+    const old=oldIndex>=0?oldServices[oldIndex]:null;
+    if(oldIndex>=0)used.add(oldIndex);
+
+    if(!old){merged.push(def);continue;}
+
+    const oldChannels=Array.isArray(old.channels)?old.channels:[];
+    const channels=[];
+    const matchedOld=new Set();
+
+    // Always provide the standard OPS1-OPS10 set for built-in services.
+    for(const ch of def.channels){
+      const oi=oldChannels.findIndex(c=>String(c?.name||"").replace(/\s+/g,"").toUpperCase()===ch.name.replace(/\s+/g,"").toUpperCase()||String(c?.id||"")===String(ch.id));
+      const prior=oi>=0?oldChannels[oi]:null;
+      if(oi>=0)matchedOld.add(oi);
+      channels.push(prior?{...ch,...prior,id:prior.id||ch.id,name:prior.name||ch.name,open:prior.open===true}:ch);
+    }
+
+    // Preserve administrator-added channels beyond the standard ten.
+    oldChannels.forEach((ch,oi)=>{
+      if(matchedOld.has(oi)||!ch)return;
+      channels.push({
+        id:String(ch.id||`${String(old.prefix||def.prefix).toLowerCase().replace(/[^a-z0-9]+/g,"-")}-custom-${oi+1}`),
+        name:String(ch.name||`${old.prefix||def.prefix}-OPS${channels.length+1}`),
+        open:ch.open===true
+      });
     });
+
+    merged.push({...def,...old,id:old.id||def.id,name:old.name||def.name,prefix:old.prefix||def.prefix,channels});
   }
-  return defaults;
+
+  // Preserve completely custom services created in Settings -> Radio.
+  oldServices.forEach((svc,si)=>{
+    if(used.has(si)||!svc)return;
+    const prefix=String(svc.prefix||`SVC${si+1}`).trim().toUpperCase();
+    merged.push({
+      id:String(svc.id||`svc-custom-${si+1}`),
+      name:String(svc.name||`Custom Service ${si+1}`),
+      prefix,
+      channels:(Array.isArray(svc.channels)?svc.channels:[]).map((ch,ci)=>({
+        id:String(ch?.id||`${prefix.toLowerCase().replace(/[^a-z0-9]+/g,"-")}-custom-${ci+1}`),
+        name:String(ch?.name||`${prefix}-OPS${ci+1}`),
+        open:ch?.open===true
+      }))
+    });
+  });
+
+  return {services:merged};
 }
 const guardianRadioRawConfig=guardianReadJson(guardianRadioConfigFile,null);
 let guardianRadioConfig=guardianRadioNormaliseConfig(guardianRadioRawConfig);
-// v36 migration: radio channels are operationally OPEN by default.
-// After this one-time migration, only Settings -> Radio may close them.
-if(!guardianRadioRawConfig || Number(guardianRadioRawConfig.schemaVersion||0)<36){
+// v37 migration: every configured talkgroup is operationally OPEN by default.
+// This runs once on upgrade. Afterward only Settings -> Radio may close one.
+if(!guardianRadioRawConfig || Number(guardianRadioRawConfig.schemaVersion||0)<37){
   for(const svc of guardianRadioConfig.services||[]) for(const ch of svc.channels||[]) ch.open=true;
 }
-guardianRadioConfig.schemaVersion=36;
+guardianRadioConfig.schemaVersion=37;
 guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
 function guardianRadioFindChannel(id){
   for(const service of guardianRadioConfig.services||[]){
