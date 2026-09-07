@@ -574,6 +574,12 @@ function render(){
 }
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
+ const allInc=state.incidents||[];
+ const activeAll=allInc.filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
+ const closedAll=allInc.filter(i=>String(i.status||"").toUpperCase()==="CLOSED");
+ const committed=[...new Set(activeAll.flatMap(i=>assignedUnits(i)))];
+ const setText=(id,val)=>{const el=$(id);if(el)el.textContent=String(val)};
+ setText("icsActive",activeAll.length);setText("icsImmediate",activeAll.filter(i=>upper(i.priority)==="IMMEDIATE").length);setText("icsUnits",committed.length);setText("icsClosed",closedAll.length);
  const closed=incidentListMode==="closed";
  const q=String(incidentListQuery||"").trim().toLowerCase();
  const pri=String(incidentPriorityFilter||"");

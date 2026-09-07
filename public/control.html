@@ -117,6 +117,9 @@
 
     <section id="view-incidents" class="view">
       <div class="pageHeader"><div><span class="eyebrow">INCIDENT MANAGEMENT</span><h1>Incidents & Logs</h1><p>Manage live incidents and retain a searchable closed incident archive.</p></div><button class="primary" id="openCreate2">NEW INCIDENT</button></div>
+      <div class="incidentCommandSummary" id="incidentCommandSummary">
+        <div><b id="icsActive">0</b><span>Active incidents</span></div><div><b id="icsImmediate">0</b><span>Immediate</span></div><div><b id="icsUnits">0</b><span>Units committed</span></div><div><b id="icsClosed">0</b><span>Closed logs</span></div>
+      </div>
       <div class="incidentArchiveToolbar">
         <div class="segmented"><button id="incidentModeActive" class="active">ACTIVE</button><button id="incidentModeClosed">CLOSED LOGS</button></div>
         <input id="incidentSearch" placeholder="Search number, type, location, callsign or closure outcome">
