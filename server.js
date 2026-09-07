@@ -833,7 +833,7 @@ app.post("/api/admin/config",guardianRequireAdmin("settings.edit"),(req,res)=>{
     map:{...(guardianConfig.map||{}),...(incoming.map||{})},
     alerts:{...(guardianConfig.alerts||{}),...(incoming.alerts||{})},
     general:{...(guardianConfig.general||{}),...(incoming.general||{})},
-    portal:{...(guardianConfig.portal||{}),...(incoming.portal||{})}
+    portal:{...(guardianConfig.portal||{}),...(incoming.portal||{}),updatedAt:Date.now()}
   };
   guardianWriteJson(guardianConfigFile,guardianConfig);
   applyGuardianBaselineToState();
@@ -889,7 +889,7 @@ app.delete("/api/admin/users/:username",guardianRequireAdmin("users.delete"),(re
 });
 
 // Portal public configuration and application workflow
-app.get("/api/portal/config",(_req,res)=>res.json({ok:true,portal:guardianPortalConfig()}));
+app.get("/api/portal/config",(_req,res)=>{res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");res.json({ok:true,portal:guardianPortalConfig(),revision:Number(guardianConfig.portal?.updatedAt||0)})});
 app.get("/api/portal/me",(req,res)=>{
   const session=guardianUserReadSession(req)||guardianAdminReadSession(req);
   if(!session)return res.json({ok:true,authenticated:false,whitelisted:false});

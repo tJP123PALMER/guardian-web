@@ -335,7 +335,7 @@ function renderPortal(){
 
     <div class="card wide"><div class="eyebrow">FOOTER / SITE TEXT</div><h3>Footer</h3><label>Footer message<input id="pFooterText" value="${val(p.footerText,'Built by the community, for the community.')}"></label></div>
   </div>
-  <div class="card saveBar"><div><h3>Save Portal Studio</h3><p>Changes appear on /portal/ after save and refresh.</p></div><button id="savePortal">SAVE PORTAL SETTINGS</button></div>`);
+  <div class="card saveBar"><div><h3>Save Portal Studio</h3><p>Changes are pushed to open portal tabs after save.</p></div><button id="savePortal">SAVE PORTAL SETTINGS</button></div>`);
 
   $('savePortal').onclick=async()=>{
     config.portal={...config.portal,
@@ -348,7 +348,9 @@ function renderPortal(){
       futureTitle:$('pFutureTitle').value.trim(),futureIntro:$('pFutureIntro').value.trim(),ambulanceLabel:$('pAmbLabel').value.trim(),policeLabel:$('pPoliceLabel').value.trim(),footerText:$('pFooterText').value.trim(),
       applicationQuestions:$('pQuestions').value.split('\n').map(x=>x.trim()).filter(Boolean)
     };
-    await api('/api/admin/config',{method:'POST',body:JSON.stringify({config})});notify('Portal Studio settings saved');await refreshAll()
+    await api('/api/admin/config',{method:'POST',body:JSON.stringify({config})});
+    try{localStorage.setItem('guardianPortalUpdatedAt',String(Date.now()));if('BroadcastChannel' in window){const ch=new BroadcastChannel('guardian-portal');ch.postMessage({type:'portal-updated'});ch.close()}}catch{}
+    notify('Portal settings saved and published');await refreshAll()
   };
 }
 
