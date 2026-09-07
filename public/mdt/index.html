@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Guardian MDT</title><link rel="stylesheet" href="ui.css?v=cf33-webfix-1"><link rel="stylesheet" href="/mdt/web_mode.css?v=fix1"><link rel="stylesheet" href="/mdt/web_shell.css?v=fix1"><link rel="stylesheet" href="/mdt/vehicle.css?v=5"><link rel="stylesheet" href="/mdt/radio.css?v=7"><link rel="stylesheet" href="/mdt/standalone_radio.css?v=22"><style id="guardianCoreBadgeStyle">
+<!doctype html><html><head><meta charset="utf-8"><title>Guardian MDT</title><link rel="stylesheet" href="ui.css?v=cf33-webfix-1"><link rel="stylesheet" href="/mdt/web_mode.css?v=fix1"><link rel="stylesheet" href="/mdt/web_shell.css?v=fix1"><link rel="stylesheet" href="/mdt/vehicle.css?v=5"><link rel="stylesheet" href="/mdt/radio.css?v=30"><link rel="stylesheet" href="/mdt/standalone_radio.css?v=22"><style id="guardianCoreBadgeStyle">
 #guardianCoreBadge{position:fixed;left:12px;bottom:10px;z-index:99999;padding:6px 9px;border:1px solid #496879;border-radius:4px;background:#061923ef;color:#c7dce7;font:800 9px Arial,sans-serif;letter-spacing:.05em;box-shadow:0 3px 15px #0008}
 #guardianCoreBadge[data-mode="fivem"]{border-color:#2d7a59;color:#7be0ad}
 #guardianCoreBadge[data-mode="standalone"]{border-color:#947326;color:#f1d075}
@@ -72,8 +72,9 @@
       <audio id="radioVehicleRemote" autoplay playsinline></audio>
     </div>
     <div class="mtmNavCluster">
+      <button id="radioHardwareBack" class="mtmUpperAux" type="button" aria-label="Back">↶</button>
       <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="Radio off">☎</button>
-      <button class="mtmMenuKey" type="button" aria-label="Menu">MENU</button>
+      <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Main menu"><span>≡</span>MENU</button>
       <div class="mtmDpad" aria-label="Radio navigation">
         <button id="radioNavUp" type="button" aria-label="Up">▲</button>
         <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
@@ -81,6 +82,7 @@
         <button id="radioNavRight" type="button" aria-label="Right">▶</button>
         <button id="radioNavDown" type="button" aria-label="Down">▼</button>
       </div>
+      <button id="radioHardwareEnter" class="mtmLowerAux" type="button" aria-label="Enter / select">●</button>
       <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Radio on">☎</button>
     </div>
     <aside class="guardianRadioKeypad" aria-label="Urgency keypad">
@@ -169,4 +171,4 @@
   </div>
 </div>
 <audio id="alert"><source src="assets/alert.mp3" type="audio/mpeg"></audio><audio id="ping"><source src="assets/ping.mp3" type="audio/mpeg"></audio><script src="ui.js?v=standby-live-details-3"></script><script src="/mdt/web_bridge.js?v=weback-incno-1"></script><script>if(location.protocol==="file:"){window.addEventListener("load",function(){setTimeout(function(){window.postMessage({type:"open"},"*")},50)})}</script>
-<script src="/mdt/radio.js?v=28"></script><script src="/mdt/standalone_radio.js?v=28"></script><script src="/core_status.js" defer></script></body></html>
+<script src="/mdt/radio.js?v=30"></script><script src="/mdt/standalone_radio.js?v=28"></script><script src="/core_status.js" defer></script></body></html>

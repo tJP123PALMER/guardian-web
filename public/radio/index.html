@@ -3,26 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Guardian MTM Radio v30</title>
-<link rel="stylesheet" href="/mdt/radio.css?v=30">
-<link rel="stylesheet" href="/radio/standalone.css?v=30">
+<title>Guardian MTM800E Radio v32</title>
+<link rel="stylesheet" href="/mdt/radio.css?v=32">
+<link rel="stylesheet" href="/radio/standalone.css?v=32">
 </head>
 <body>
 <div id="callsignBox" hidden>UNSET</div>
 <section id="tab-radio" class="standaloneRadioPane radioOff">
   <div class="guardianRadioPage">
     <section class="guardianMtmBody" aria-label="Guardian MTM-style digital radio terminal">
-      <div class="mtmBrandBadge" aria-hidden="true"><span class="mtmBadgeMark">G</span><span>GUARDIAN</span><small>MTM</small></div>
+      <div class="mtmBrandBadge" aria-hidden="true"><span class="mtmMotorolaMark">M</span><span>MOTOROLA</span></div>
 
       <div class="mtmLeftRail">
         <div class="mtmVolumeKnob" aria-hidden="true"></div>
         <button class="mtmEmergency" type="button" aria-label="Emergency">△</button>
-        <button id="radioChannelPtt" class="mtmPttButton" type="button" aria-label="Push to talk">PTT</button>
-        <div class="mtmMicPort" aria-hidden="true"><span></span></div>
+        <button id="radioChannelPtt" class="mtmLowerKnob" type="button" aria-label="Push to talk" title="Hold for PTT"><span>PTT</span></button>
       </div>
 
       <div class="mtmDisplayWrap">
-        <div class="mtmBrandRow"><span>GUARDIAN DIGITAL RADIO</span><span id="radioLinkState">OFF</span></div>
+        <div class="mtmBrandRow"><span>MTM800E</span><span id="radioLinkState">OFF</span></div>
         <div class="mtmLcd">
           <div class="mtmLcdTop"><strong id="radioVehicleCallsign">UNSET</strong><span id="radioMicState">RADIO OFF</span></div>
           <div class="mtmMenuTitle" id="radioMenuTitle">Main Menu</div>
@@ -30,7 +29,7 @@
           <div class="mtmLcdState" id="radioCallState">PRESS GREEN TO START RADIO</div>
           <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NONE</b></div>
           <div class="mtmSignalBars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-          <div class="mtmScreenSoftRail"><button type="button" id="radioScreenBack">Back</button><button type="button" id="radioScreenSelect">Select</button></div>
+          <div class="mtmScreenSoftRail"><button type="button" id="radioScreenBack">Contacts</button><button type="button" id="radioScreenSelect">Opts</button></div>
         </div>
         <div class="mtmSoftKeys"><button type="button" id="radioBackSoft">BACK</button><button type="button" id="radioSelectSoft">SELECT</button></div>
         <div class="mtmCallHint"><span id="radioSelectedService">CONTACTS</span><b id="radioUrgencyState">HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH</b></div>
@@ -38,9 +37,9 @@
       </div>
 
       <div class="mtmNavCluster">
-        <button id="radioPhysicalBack" class="mtmUpperAux mtmPhysicalSoft" type="button" aria-label="Back" title="Back"><span class="softDot">●</span><span class="softName">BACK</span></button>
+        <button id="radioHardwareBack" class="mtmUpperAux" type="button" aria-label="Back"><span class="auxDot"></span></button>
         <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="End call / radio off"><span class="phoneGlyph">☎</span></button>
-        <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Main menu" title="Main Menu"><span>≡</span>MENU</button>
+        <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Home"><span class="menuBars">≡</span><span>MENU</span></button>
         <div class="mtmDpad" aria-label="Radio navigation">
           <button id="radioNavUp" type="button" aria-label="Up">▲</button>
           <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
@@ -48,7 +47,7 @@
           <button id="radioNavRight" type="button" aria-label="Right">▶</button>
           <button id="radioNavDown" type="button" aria-label="Down">▼</button>
         </div>
-        <button id="radioPhysicalEnter" class="mtmLowerAux mtmPhysicalSoft" type="button" aria-label="Enter / select" title="Enter / Select"><span class="softDot">●</span><span class="softName">ENTER</span></button>
+        <button id="radioHardwareEnter" class="mtmLowerAux" type="button" aria-label="Enter / select"><span class="auxDot"></span></button>
         <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Answer / radio on"><span class="phoneGlyph">☎</span></button>
       </div>
 
@@ -77,6 +76,6 @@
   if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
 })();
 </script>
-<script src="/mdt/radio.js?v=30"></script>
+<script src="/mdt/radio.js?v=32"></script>
 </body>
 </html>

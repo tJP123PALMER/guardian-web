@@ -3,7 +3,7 @@
 #guardianCoreBadge[data-mode="fivem"]{border-color:#2d7a59;color:#7be0ad}
 #guardianCoreBadge[data-mode="standalone"]{border-color:#947326;color:#f1d075}
 #guardianCoreBadge[data-mode="offline"]{border-color:#8b3943;color:#ff9ba6}
-</style><link rel="stylesheet" href="/mdt/radio.css?v=7"></head><body><div class="frame"><header class="top"><div class="logoBox"><img src="assets/logo.png" alt="Guardian Projects"></div><div id="callsignBox" class="headerBox">UNSET</div><button id="liveStatus" class="headerBox headerButton liveStatusButton">Home Station</button><button id="topMessagesTab" class="headerBox headerButton" data-tab="messages">Messages (0)</button><button id="browserBtn" class="headerIcon"><img src="img/browser.png" alt=""><small>Browser</small></button><button id="satnavBtn" class="headerIcon"><img src="img/satnav.png" alt=""><small>Satnav</small></button><div class="headerOnline"><span>●</span><small>TETRA AT</small></div><button id="closeBtn" class="headerClose">×</button></header><div class="statusStrip" id="pageTitle">Request Status from Control</div><main class="body"><div class="main"><div id="mobilisingOverlay" class="mobilising-overlay">
+</style><link rel="stylesheet" href="/mdt/radio.css?v=30"></head><body><div class="frame"><header class="top"><div class="logoBox"><img src="assets/logo.png" alt="Guardian Projects"></div><div id="callsignBox" class="headerBox">UNSET</div><button id="liveStatus" class="headerBox headerButton liveStatusButton">Home Station</button><button id="topMessagesTab" class="headerBox headerButton" data-tab="messages">Messages (0)</button><button id="browserBtn" class="headerIcon"><img src="img/browser.png" alt=""><small>Browser</small></button><button id="satnavBtn" class="headerIcon"><img src="img/satnav.png" alt=""><small>Satnav</small></button><div class="headerOnline"><span>●</span><small>TETRA AT</small></div><button id="closeBtn" class="headerClose">×</button></header><div class="statusStrip" id="pageTitle">Request Status from Control</div><main class="body"><div class="main"><div id="mobilisingOverlay" class="mobilising-overlay">
   <div class="mobilising-stars">******************************</div>
   <div class="mobilising-message">
     <div>MOBILISING</div>
@@ -72,8 +72,9 @@
       <audio id="radioVehicleRemote" autoplay playsinline></audio>
     </div>
     <div class="mtmNavCluster">
+      <button id="radioHardwareBack" class="mtmUpperAux" type="button" aria-label="Back">↶</button>
       <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="Radio off">☎</button>
-      <button class="mtmMenuKey" type="button" aria-label="Menu">MENU</button>
+      <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Main menu"><span>≡</span>MENU</button>
       <div class="mtmDpad" aria-label="Radio navigation">
         <button id="radioNavUp" type="button" aria-label="Up">▲</button>
         <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
@@ -81,6 +82,7 @@
         <button id="radioNavRight" type="button" aria-label="Right">▶</button>
         <button id="radioNavDown" type="button" aria-label="Down">▼</button>
       </div>
+      <button id="radioHardwareEnter" class="mtmLowerAux" type="button" aria-label="Enter / select">●</button>
       <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Radio on">☎</button>
     </div>
     <aside class="guardianRadioKeypad" aria-label="Urgency keypad">
@@ -169,4 +171,4 @@
   </div>
 </div>
 <audio id="alert"><source src="assets/alert.mp3" type="audio/mpeg"></audio><audio id="ping"><source src="assets/ping.mp3" type="audio/mpeg"></audio><script src="ui.js?v=standby-live-details-3"></script><script src="/mdt/web_bridge.js?v=weback-incno-1"></script><script>if(location.protocol==="file:"){window.addEventListener("load",function(){setTimeout(function(){window.postMessage({type:"open"},"*")},50)})}</script>
-<script src="/mdt/radio.js?v=28"></script><script src="/core_status.js" defer></script></body></html>
+<script src="/mdt/radio.js?v=30"></script><script src="/core_status.js" defer></script></body></html>

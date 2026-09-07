@@ -9,9 +9,10 @@
   const radioRole = vehicleMode ? 'vehicle' : 'mdt';
   let powered = false, connecting = false, identity = null, clientId = '', eventSource = null;
   let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null;
-  let menuLevel = 'main', cursor = 0, activeCall = null, pc = null, localStream = null, localTrack = null;
+  let menuLevel = 'home', cursor = 0, activeCall = null, pc = null, localStream = null, localTrack = null;
   let remoteAudio = null, keyHoldTimer = null, keyHoldFired = false, reconnectTimer = null, lastIdentityKey = '';
   let toneCtx=null, holdTone=null, incomingRingTimer=null, softwarePttTimer=null, softwarePttDown=false;
+  let keyboardKeyTimer=null, keyboardKeyHeld='', keyboardKeyFired=false;
   let presence=[], groupPeers=new Map(), groupTx=false;
   const mainItems = [
     {id:'messages', label:'Messages', icon:'✉', disabled:true},
@@ -53,28 +54,74 @@
   function services(){return (config.services||[]).filter(s=>(s.channels||[]).some(c=>c.open===true));}
   function openChannels(s){return (s?.channels||[]).filter(c=>c.open===true);}
   function currentMenu(){
+    if(menuLevel==='home')return [];
     if(menuLevel==='main')return mainItems;
     if(menuLevel==='services')return services().map(s=>({id:s.id,label:s.name,icon:'▸',raw:s}));
-    if(menuLevel==='channels')return openChannels(selectedService).map(c=>({id:c.id,label:c.name,icon:'•',raw:c}));
-    return mainItems;
+    if(menuLevel==='channels'){
+      const chans=openChannels(selectedService);
+      if(!chans.length)return [];
+      cursor=Math.max(0,Math.min(cursor,chans.length-1));
+      const c=chans[cursor];
+      return [{id:c.id,label:c.name,icon:'◀  ▶',raw:c}];
+    }
+    return [];
+  }
+  function radioHomeLines(){
+    const cs=identity?.callsign||currentCallsign()||'UNSET';
+    const tg=selectedChannel?.name||'NO TALKGROUP';
+    const d=new Date();
+    const stamp=d.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+'  '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">GUARDIAN</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
   }
   function renderMenu(){
-    const title=$('radioMenuTitle'),list=$('radioMenuList');if(!title||!list)return;
-    title.textContent=menuLevel==='main'?'Main Menu':menuLevel==='services'?'Contacts':(selectedService?.name||'Talkgroups');
-    const items=currentMenu();if(cursor>=items.length)cursor=Math.max(0,items.length-1);
-    list.innerHTML=items.length?items.map((x,i)=>`<div class="mtmMenuItem${i===cursor?' selected':''}${x.disabled?' disabled':''}" data-mi="${i}"><span class="mtmMenuIcon">${x.icon||'•'}</span><span>${String(x.label||'')}</span></div>`).join(''):'<div class="mtmMenuItem selected">NO OPEN TALKGROUPS</div>';
-    list.querySelectorAll('[data-mi]').forEach(el=>el.addEventListener('click',()=>{cursor=Number(el.dataset.mi);renderMenu();selectMenuItem()}));
+    const title=$('radioMenuTitle'),list=$('radioMenuList'),topSoft=$('radioScreenBack'),bottomSoft=$('radioScreenSelect');if(!title||!list)return;
+    if(menuLevel==='home'){
+      title.textContent='';
+      list.innerHTML=radioHomeLines();
+      if(topSoft)topSoft.textContent='Contacts';
+      if(bottomSoft)bottomSoft.textContent='Opts';
+    }else{
+      title.textContent=menuLevel==='main'?'Main Menu':menuLevel==='services'?'Contacts':(selectedService?.name||'Talkgroups');
+      const items=currentMenu();
+      if(menuLevel==='channels'){
+        const chans=openChannels(selectedService);
+        if(cursor>=chans.length)cursor=Math.max(0,chans.length-1);
+        const ch=chans[cursor];
+        list.innerHTML=ch
+          ? `<div class="mtmChannelTune"><div class="mtmTuneArrow">◀</div><div class="mtmTuneCenter"><small>CHANNEL ${cursor+1} OF ${chans.length}</small><strong>${String(ch.name||'')}</strong><span>PRESS ENTER TO JOIN</span></div><div class="mtmTuneArrow">▶</div></div>`
+          : '<div class="mtmMenuItem selected">NO OPEN CHANNELS</div>';
+      }else{
+        if(cursor>=items.length)cursor=Math.max(0,items.length-1);
+        list.innerHTML=items.length?items.map((x,i)=>`<div class="mtmMenuItem${i===cursor?' selected':''}${x.disabled?' disabled':''}" data-mi="${i}"><span class="mtmMenuIcon">${x.icon||'•'}</span><span>${String(x.label||'')}</span></div>`).join(''):'<div class="mtmMenuItem selected">NO OPEN TALKGROUPS</div>';
+        list.querySelectorAll('[data-mi]').forEach(el=>el.addEventListener('click',()=>{cursor=Number(el.dataset.mi);renderMenu();selectMenuItem()}));
+      }
+      if(topSoft)topSoft.textContent='Back';
+      if(bottomSoft)bottomSoft.textContent='Select';
+    }
     if($('radioSelectedService'))$('radioSelectedService').textContent=selectedService?.name||'CONTACTS';
     if($('radioSelectedChannel'))$('radioSelectedChannel').textContent=selectedChannel?.name||'NONE';
   }
-  function moveCursor(delta){if(!powered)return;const items=currentMenu();if(!items.length)return;cursor=(cursor+delta+items.length)%items.length;renderMenu()}
-  function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='main';cursor=1;}renderMenu()}
-  function goHome(){if(!powered)return;menuLevel='main';cursor=1;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'MAIN MENU');hint(selectedChannel?'CHANNEL REMAINS ACTIVE · SELECT CONTACTS TO CHANGE':'CONTACTS → SELECT SERVICE / TALKGROUP');}
+  function moveCursor(delta){if(!powered||menuLevel==='home'||menuLevel==='channels')return;const items=currentMenu();if(!items.length)return;cursor=(cursor+delta+items.length)%items.length;renderMenu()}
+  function cycleChannel(delta){
+    if(!powered||menuLevel!=='channels'||!selectedService)return false;
+    const chans=openChannels(selectedService);if(!chans.length)return true;
+    cursor=(cursor+delta+chans.length)%chans.length;
+    const ch=chans[cursor];renderMenu();state(`TUNE ${ch.name} — PRESS ENTER TO JOIN`);hint('LEFT / RIGHT TO CHANGE CHANNEL · ENTER TO JOIN');
+    return true;
+  }
+  function openContacts(){if(!powered)return;menuLevel='services';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'CONTACTS');hint('SELECT SERVICE / TALKGROUP')}
+  function openOptions(){if(!powered)return;menuLevel='main';cursor=0;renderMenu();state('MAIN MENU');hint('MENU RETURNS HOME · BACK RETURNS PREVIOUS')}
+  function screenTopAction(){if(menuLevel==='home')openContacts();else goBack()}
+  function screenBottomAction(){if(menuLevel==='home')openOptions();else selectMenuItem()}
+  function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='home';cursor=0;}else if(menuLevel==='main'){menuLevel='home';cursor=0;}else{return;}renderMenu()}
+  function goHome(){if(!powered)return;menuLevel='home';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedChannel?'HOME · CHANNEL REMAINS ACTIVE':'CONTACTS → SELECT AN OPEN TALKGROUP')}
   async function selectMenuItem(){
-    if(!powered)return;const item=currentMenu()[cursor];if(!item||item.disabled)return;
-    if(menuLevel==='main'&&item.id==='contacts'){menuLevel='services';cursor=0;renderMenu();return;}
-    if(menuLevel==='services'){selectedService=item.raw;menuLevel='channels';cursor=0;renderMenu();return;}
-    if(menuLevel==='channels'){await selectChannel(item.raw);}
+    if(!powered)return;
+    if(menuLevel==='home'){openContacts();return;}
+    const item=currentMenu()[cursor];if(!item||item.disabled)return;
+    if(menuLevel==='main'&&item.id==='contacts'){openContacts();return;}
+    if(menuLevel==='services'){selectedService=item.raw;menuLevel='channels';const chans=openChannels(selectedService);const activeIndex=selectedChannel?chans.findIndex(c=>c.id===selectedChannel.id):-1;cursor=activeIndex>=0?activeIndex:0;renderMenu();if(chans.length){state(`TUNE ${chans[cursor].name} — PRESS ENTER TO JOIN`);hint('LEFT / RIGHT TO CHANGE CHANNEL · ENTER TO JOIN')}return;}
+    if(menuLevel==='channels'){const chans=openChannels(selectedService);const ch=chans[cursor];if(ch)await selectChannel(ch);}
   }
 
   async function powerOn(){
@@ -107,7 +154,7 @@
     setMic('CHECKING MIC…');
     state('RADIO ON — REGISTERING…');
     hint('OPEN CONTACTS AND SELECT A TALKGROUP');
-    menuLevel='main';cursor=1;renderMenu();
+    menuLevel='home';cursor=0;renderMenu();
 
     // Start backend registration immediately, independently of the microphone.
     ensureRadio(true).catch(e=>console.error('[Guardian radio register]',e));
@@ -204,44 +251,48 @@
   }
   function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();if(localTrack)localTrack.enabled=false;document.getElementById('radioChannelPtt')?.classList.remove('tx');setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
 
+  function keypadButton(key){return document.querySelector(`[data-radio-key="${CSS.escape(String(key))}"]`)}
+  function radioKeyDown(key,btn=keypadButton(key)){
+    key=String(key||'');
+    if(!/^[0-9*#]$/.test(key))return;
+    keyTone(key);
+    if(!powered||activeCall||!/^[0-9]$/.test(key))return;
+    if(keyboardKeyHeld===key)return;
+    keyboardKeyHeld=key;keyboardKeyFired=false;
+    btn?.classList.add('holding');startHoldTone();hint(`HOLDING ${key}…`);
+    clearTimeout(keyboardKeyTimer);
+    keyboardKeyTimer=setTimeout(()=>{keyboardKeyFired=true;btn?.classList.add('sent');stopHoldTone();requestAckTone();requestSpeech(key).finally(()=>setTimeout(()=>btn?.classList.remove('sent'),500))},2000);
+  }
+  function radioKeyUp(key,btn=keypadButton(key)){
+    key=String(key||'');
+    if(keyboardKeyHeld && keyboardKeyHeld!==key)return;
+    stopHoldTone();clearTimeout(keyboardKeyTimer);keyboardKeyTimer=null;btn?.classList.remove('holding');
+    if(!keyboardKeyFired&&powered&&!activeCall&&/^[0-9]$/.test(key)){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}
+    keyboardKeyHeld='';keyboardKeyFired=false;
+  }
   function bindNumberKeys(){
-    const buttons=new Map([...document.querySelectorAll('[data-radio-key]')].map(btn=>[String(btn.dataset.radioKey),btn]));
-    const heldKeyboard=new Set();
-    const pressKey=(key,btn,event)=>{
-      if(event)event.preventDefault();
-      keyTone(key);
-      if(!powered||activeCall||!/^[0-9]$/.test(key))return;
-      keyHoldFired=false;btn?.classList.add('holding');startHoldTone();hint(`HOLDING ${key}…`);
-      clearTimeout(keyHoldTimer);
-      keyHoldTimer=setTimeout(()=>{keyHoldFired=true;btn?.classList.add('sent');stopHoldTone();requestAckTone();requestSpeech(key).finally(()=>setTimeout(()=>btn?.classList.remove('sent'),500))},2000);
-    };
-    const releaseKey=(key,btn,event)=>{
-      if(event)event.preventDefault();
-      stopHoldTone();clearTimeout(keyHoldTimer);keyHoldTimer=null;btn?.classList.remove('holding');
-      if(!keyHoldFired&&powered&&!activeCall&&/^[0-9]$/.test(key)){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}
-      keyHoldFired=false;
-    };
-    buttons.forEach((btn,key)=>{
-      const down=e=>pressKey(key,btn,e), up=e=>releaseKey(key,btn,e);
+    document.querySelectorAll('[data-radio-key]').forEach(btn=>{
+      const key=btn.dataset.radioKey;
+      const down=e=>{e.preventDefault();radioKeyDown(key,btn)};
+      const up=e=>{e.preventDefault();radioKeyUp(key,btn)};
       btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',e=>{if(e.buttons)up(e)});
     });
-    const keyFromEvent=e=>{
-      if(/^Digit[0-9]$/.test(e.code))return e.code.slice(5);
-      if(/^Numpad[0-9]$/.test(e.code))return e.code.slice(6);
-      if(e.code==='NumpadMultiply'||e.key==='*')return '*';
-      if(e.key==='#')return '#';
-      return null;
-    };
+    // Real keyboard support: both number row and physical numeric keypad.
     window.addEventListener('keydown',e=>{
-      const key=keyFromEvent(e);if(key===null)return;
-      if(heldKeyboard.has(e.code)) { e.preventDefault(); return; }
-      heldKeyboard.add(e.code);pressKey(key,buttons.get(key),e);
-    },true);
+      if(e.repeat)return;
+      let key='';
+      if(/^Digit[0-9]$/.test(e.code))key=e.code.slice(-1);
+      else if(/^Numpad[0-9]$/.test(e.code))key=e.code.slice(-1);
+      if(!key)return;
+      e.preventDefault();radioKeyDown(key);
+    });
     window.addEventListener('keyup',e=>{
-      const key=keyFromEvent(e);if(key===null)return;
-      heldKeyboard.delete(e.code);releaseKey(key,buttons.get(key),e);
-    },true);
-    window.addEventListener('blur',()=>{for(const code of [...heldKeyboard])heldKeyboard.delete(code);stopHoldTone();clearTimeout(keyHoldTimer);keyHoldTimer=null;buttons.forEach(b=>b.classList.remove('holding'));});
+      let key='';
+      if(/^Digit[0-9]$/.test(e.code))key=e.code.slice(-1);
+      else if(/^Numpad[0-9]$/.test(e.code))key=e.code.slice(-1);
+      if(!key)return;
+      e.preventDefault();radioKeyUp(key);
+    });
   }
   async function requestSpeech(urgency){
     if(!selectedChannel){state('SELECT A TALKGROUP FIRST','error');hint('CONTACTS → SERVICE → TALKGROUP');return}
@@ -398,11 +449,10 @@
     // Capture fallback in case the head unit dispatches the event to a child/text node.
     tab.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true});
     tab.addEventListener('touchstart',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true,passive:false});
-    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();channelPttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();channelPttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',channelPttStop);$('radioScreenBack')?.addEventListener('click',goBack);$('radioScreenSelect')?.addEventListener('click',selectMenuItem);
-    $('radioPhysicalBack')?.addEventListener('click',goBack);$('radioMenuHome')?.addEventListener('click',goHome);$('radioPhysicalEnter')?.addEventListener('click',selectMenuItem);
-    $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',goBack);$('radioNavRight')?.addEventListener('click',selectMenuItem);$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
+    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();channelPttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();channelPttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',channelPttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',goHome);
+    $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',()=>{if(!cycleChannel(-1))goBack()});$('radioNavRight')?.addEventListener('click',()=>{if(!cycleChannel(1))selectMenuItem()});$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
-    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'||c==='back')goBack();else if(c==='right'||c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();return}if(d.type==='guardianRadioKeyboardKey'){const key=String(d.key||'');const btn=document.querySelector(`[data-radio-key="${CSS.escape(key)}"]`);if(!btn)return;const ev=new PointerEvent(d.down?'pointerdown':'pointerup',{bubbles:true,cancelable:true,pointerId:88,pointerType:'mouse',buttons:d.down?1:0});btn.dispatchEvent(ev);}})}
+    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(!cycleChannel(-1))goBack();}else if(c==='right'){if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();}})}
   }
   function watchIdentity(){
     const reauth=()=>{setCallsign();if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};
@@ -410,7 +460,7 @@
     const assigned=$('guardianWebAssignedCallsign');if(assigned)new MutationObserver(reauth).observe(assigned,{childList:true,subtree:true,characterData:true});
     const select=$('guardianWebCallsign');if(select)select.addEventListener('change',()=>setTimeout(reauth,100));
   }
-  window.addEventListener('beforeunload',()=>{clearTimeout(reconnectTimer);clearTimeout(keyHoldTimer);clearTimeout(softwarePttTimer);stopHoldTone();stopIncomingRing();try{eventSource?.close()}catch{};closeAllGroupPeers();teardownPeer(true)});
-  const start=()=>{tab.classList.add('radioOff');bindControls();watchIdentity();cursor=1;renderMenu();setCallsign();setLink('OFF');state('PRESS GREEN TO START RADIO');hint('RADIO OFF')};
+  window.addEventListener('beforeunload',()=>{clearTimeout(reconnectTimer);clearTimeout(keyHoldTimer);clearTimeout(keyboardKeyTimer);clearTimeout(softwarePttTimer);stopHoldTone();stopIncomingRing();try{eventSource?.close()}catch{};closeAllGroupPeers();teardownPeer(true)});
+  const start=()=>{tab.classList.add('radioOff');bindControls();watchIdentity();menuLevel='home';cursor=0;renderMenu();setCallsign();setLink('OFF');state('PRESS GREEN TO START RADIO');hint('RADIO OFF')};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();
