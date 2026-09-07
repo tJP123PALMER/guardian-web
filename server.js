@@ -888,6 +888,93 @@ app.delete("/api/admin/users/:username",guardianRequireAdmin("users.delete"),(re
   res.json({ok:true});
 });
 
+
+// ============================================================
+// Guardian Community Operations v45
+// Forms builder, patrol booking/deployment, service/rank/division
+// directory, membership controls and Discord integration settings.
+// ============================================================
+const guardianFormsFile=path.join(guardianAdminDataDir,"guardian-forms.json");
+const guardianFormSubmissionsFile=path.join(guardianAdminDataDir,"guardian-form-submissions.json");
+const guardianPatrolsFile=path.join(guardianAdminDataDir,"guardian-patrols.json");
+const guardianServicesFile=path.join(guardianAdminDataDir,"guardian-services.json");
+const guardianDiscordFile=path.join(guardianAdminDataDir,"guardian-discord.json");
+let guardianForms=guardianReadJson(guardianFormsFile,[
+  {id:"whitelist",title:"Whitelist Application",description:"Apply for Guardian membership and operational access.",category:"Applications",audience:"guest",published:true,requiresApproval:true,fields:[{id:"why",type:"textarea",label:"Why do you want to join Guardian?",required:true},{id:"experience",type:"textarea",label:"Tell us about your roleplay experience.",required:true}]},
+  {id:"loa",title:"Leave of Absence",description:"Request time away from scheduled activity.",category:"Member Requests",audience:"member",published:true,requiresApproval:true,fields:[{id:"from",type:"date",label:"From",required:true},{id:"to",type:"date",label:"To",required:true},{id:"reason",type:"textarea",label:"Reason",required:true}]},
+  {id:"support",title:"Support Request",description:"Ask staff for help.",category:"Support",audience:"member",published:true,requiresApproval:false,fields:[{id:"subject",type:"text",label:"Subject",required:true},{id:"details",type:"textarea",label:"What do you need help with?",required:true}]}
+]);
+if(!Array.isArray(guardianForms))guardianForms=[];
+let guardianFormSubmissions=guardianReadJson(guardianFormSubmissionsFile,[]);if(!Array.isArray(guardianFormSubmissions))guardianFormSubmissions=[];
+let guardianPatrols=guardianReadJson(guardianPatrolsFile,[]);if(!Array.isArray(guardianPatrols))guardianPatrols=[];
+let guardianServices=guardianReadJson(guardianServicesFile,[
+  {id:"fire",name:"Fire & Rescue",enabled:true,callsignPattern:"J##P#",ranks:["Firefighter","Crew Manager","Watch Manager","Station Manager","Group Manager"],divisions:["East Scotland / L&B","Northumberland"],roles:["Crew","Driver","Officer in Charge","Control Liaison"],qualifications:["BA","Emergency Response Driver","Incident Command","Aerial","Water Rescue"]},
+  {id:"police",name:"Police",enabled:true,callsignPattern:"SIERRA-##",ranks:["Police Constable","Sergeant","Inspector","Chief Inspector"],divisions:["Response","Roads Policing","CID","Operations Support"],roles:["Response Officer","Traffic Officer","Detective","Supervisor"],qualifications:["Response Driving","TPAC","Taser","Firearms"]},
+  {id:"sas",name:"SAS / Specialist",enabled:true,callsignPattern:"SAS-##",ranks:["Operator","Team Leader","Commander"],divisions:["Special Operations"],roles:["Operator","Medic","Marksman","Team Leader"],qualifications:["Specialist Operations"]},
+  {id:"ambulance",name:"Ambulance",enabled:false,callsignPattern:"AMB-##",ranks:["Technician","Paramedic","Specialist Paramedic","Operations Officer"],divisions:["Ambulance Operations"],roles:["Clinician","Driver","Commander"],qualifications:["Emergency Driving","Advanced Life Support"]},
+  {id:"control",name:"Control",enabled:true,callsignPattern:"CONTROL",ranks:["Control Operator","Control Supervisor"],divisions:["Emergency Control"],roles:["Call Handler","Dispatcher","Supervisor"],qualifications:["Control Qualified"]}
+]);
+if(!Array.isArray(guardianServices))guardianServices=[];
+let guardianDiscord=guardianReadJson(guardianDiscordFile,{enabled:false,guildId:"",patrolChannelId:"",applicationsChannelId:"",staffChannelId:"",auditChannelId:"",briefingChannelId:"",whitelistRoleId:"",memberRoleId:"",fireRoleId:"",policeRoleId:"",ambulanceRoleId:"",sasRoleId:"",controlRoleId:"",staffRoleId:"",syncRoles:false,patrolPosts:true,reminders:true,applicationNotifications:true});
+if(!guardianDiscord||typeof guardianDiscord!=="object"||Array.isArray(guardianDiscord))guardianDiscord={};
+function guardianSaveForms(){guardianWriteJson(guardianFormsFile,guardianForms)}
+function guardianSaveFormSubmissions(){guardianWriteJson(guardianFormSubmissionsFile,guardianFormSubmissions)}
+function guardianSavePatrols(){guardianWriteJson(guardianPatrolsFile,guardianPatrols)}
+function guardianSaveServices(){guardianWriteJson(guardianServicesFile,guardianServices)}
+function guardianSaveDiscord(){guardianWriteJson(guardianDiscordFile,guardianDiscord)}
+function guardianMemberType(user){return String(user?.membershipType||((user?.whitelistStatus||"").toLowerCase()==="approved"?"member":"non-member"))}
+function guardianAudienceAllowed(form,user){
+  const a=String(form?.audience||"member").toLowerCase();
+  if(a==="all"||a==="guest")return true;
+  if(!user)return false;
+  if(a==="staff")return ["owner","admin","dev","supervisor","control"].includes(String(user.role));
+  if(a==="whitelisted")return String(user.whitelistStatus||"").toLowerCase()==="approved";
+  return guardianMemberType(user)==="member"||String(user.whitelistStatus||"").toLowerCase()==="approved";
+}
+function guardianSafeForm(form){return {id:form.id,title:form.title,description:form.description||"",category:form.category||"Forms",audience:form.audience||"member",published:form.published!==false,requiresApproval:form.requiresApproval!==false,fields:Array.isArray(form.fields)?form.fields:[]}}
+async function guardianDiscordSend(channelId,content){
+  const token=String(process.env.DISCORD_BOT_TOKEN||"").trim();
+  if(!guardianDiscord.enabled||!token||!channelId)return {ok:false,skipped:true};
+  try{
+    const r=await fetch(`https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages`,{method:"POST",headers:{"Authorization":`Bot ${token}`,"Content-Type":"application/json"},body:JSON.stringify({content:String(content||"").slice(0,1900)})});
+    if(!r.ok)return {ok:false,status:r.status,error:await r.text()};return {ok:true};
+  }catch(e){return {ok:false,error:e.message}}
+}
+function guardianUserPublicProfile(u){return {username:u.username,displayName:u.displayName||u.username,role:u.role,membershipType:guardianMemberType(u),whitelistStatus:u.whitelistStatus||"pending",discordUserId:u.discordUserId||"",serviceAssignments:Array.isArray(u.serviceAssignments)?u.serviceAssignments:[],qualifications:Array.isArray(u.qualifications)?u.qualifications:[]}}
+
+app.get("/api/community/services",(_req,res)=>res.json({ok:true,services:guardianServices.filter(x=>x.enabled!==false)}));
+app.get("/api/community/forms",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);const u=session?guardianAdminUsers.get(session.username):null;res.json({ok:true,forms:guardianForms.filter(f=>f.published!==false&&guardianAudienceAllowed(f,u)).map(guardianSafeForm)})});
+app.post("/api/community/forms/:id/submit",async(req,res)=>{
+  const form=guardianForms.find(f=>f.id===req.params.id&&f.published!==false);if(!form)return res.status(404).json({ok:false,error:"Form not found"});
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req),u=session?guardianAdminUsers.get(session.username):null;
+  if(!guardianAudienceAllowed(form,u))return res.status(403).json({ok:false,error:"You do not have access to this form"});
+  if(!u&&String(form.audience||"").toLowerCase()!=="guest")return res.status(401).json({ok:false,error:"Sign in required"});
+  const answers=req.body?.answers&&typeof req.body.answers==="object"?req.body.answers:{};
+  for(const field of form.fields||[])if(field.required&&!String(answers[field.id]??"").trim())return res.status(400).json({ok:false,error:`${field.label||"Required field"} is required`});
+  const sub={id:crypto.randomUUID(),formId:form.id,formTitle:form.title,username:u?.username||String(req.body?.username||"guest"),displayName:u?.displayName||String(req.body?.displayName||"Guest"),answers,status:form.requiresApproval===false?"closed":"submitted",submittedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),assignedTo:"",staffNotes:[],history:[{at:new Date().toISOString(),by:u?.username||"guest",action:"SUBMITTED"}]};
+  guardianFormSubmissions.unshift(sub);guardianSaveFormSubmissions();guardianAdminAuditLog(sub.username,"FORM_SUBMITTED",{formId:form.id,submissionId:sub.id});
+  if(guardianDiscord.applicationNotifications)guardianDiscordSend(guardianDiscord.applicationsChannelId,`📝 **${form.title}** submitted by **${sub.displayName}** (${sub.username})`);
+  res.json({ok:true,submission:sub});
+});
+app.get("/api/community/submissions/me",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});res.json({ok:true,submissions:guardianFormSubmissions.filter(x=>x.username===session.username)})});
+app.get("/api/community/patrols",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.json({ok:true,patrols:[]});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||"").toLowerCase()!=="approved")return res.json({ok:true,patrols:[]});res.json({ok:true,patrols:guardianPatrols.filter(p=>p.published!==false).map(p=>({...p,bookings:(p.bookings||[]).map(b=>({...b,isMe:b.username===session.username}))}))})});
+app.post("/api/community/patrols/:id/book",async(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||"").toLowerCase()!=="approved")return res.status(403).json({ok:false,error:"Whitelist approval required"});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===session.username);if(!b){b={username:session.username,displayName:u.displayName||session.username,servicePreference:String(req.body?.servicePreference||""),rolePreference:String(req.body?.rolePreference||""),bookedAt:new Date().toISOString(),status:"booked",deployment:null};p.bookings.push(b)}else{b.status="booked";b.servicePreference=String(req.body?.servicePreference||b.servicePreference||"");b.rolePreference=String(req.body?.rolePreference||b.rolePreference||"")};guardianSavePatrols();guardianAdminAuditLog(session.username,"PATROL_BOOKED",{patrolId:p.id});if(guardianDiscord.patrolPosts)guardianDiscordSend(guardianDiscord.patrolChannelId,`✅ **${b.displayName}** booked onto **${p.title}**`);res.json({ok:true,booking:b})});
+app.post("/api/community/patrols/:id/cancel",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});const b=(p.bookings||[]).find(x=>x.username===session.username);if(b)b.status="cancelled";guardianSavePatrols();res.json({ok:true})});
+
+app.get("/api/admin/forms",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,forms:guardianForms,submissions:guardianFormSubmissions}));
+app.post("/api/admin/forms",guardianRequireAdmin("settings.edit"),(req,res)=>{const forms=Array.isArray(req.body?.forms)?req.body.forms:[];guardianForms=forms.map((f,i)=>({...f,id:String(f.id||`form-${Date.now()}-${i}`),title:String(f.title||"Untitled Form"),fields:Array.isArray(f.fields)?f.fields:[]}));guardianSaveForms();guardianAdminAuditLog(req.guardianAdmin.username,"FORMS_CONFIG_SAVED",{count:guardianForms.length});res.json({ok:true,forms:guardianForms})});
+app.post("/api/admin/form-submissions/:id/review",guardianRequireAdmin("settings.edit"),(req,res)=>{const sub=guardianFormSubmissions.find(x=>x.id===req.params.id);if(!sub)return res.status(404).json({ok:false,error:"Submission not found"});const status=String(req.body?.status||"under-review");sub.status=status;sub.assignedTo=String(req.body?.assignedTo||sub.assignedTo||"");sub.updatedAt=new Date().toISOString();if(req.body?.note)sub.staffNotes.push({at:sub.updatedAt,by:req.guardianAdmin.username,note:String(req.body.note)});sub.history.push({at:sub.updatedAt,by:req.guardianAdmin.username,action:`STATUS_${status.toUpperCase()}`});guardianSaveFormSubmissions();res.json({ok:true,submission:sub})});
+app.get("/api/admin/patrols",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,patrols:guardianPatrols,services:guardianServices}));
+app.post("/api/admin/patrols",guardianRequireAdmin("settings.edit"),async(req,res)=>{const incoming=req.body?.patrol;if(!incoming)return res.status(400).json({ok:false,error:"Patrol required"});let p=incoming.id?guardianPatrols.find(x=>x.id===incoming.id):null;if(!p){p={id:crypto.randomUUID(),bookings:[],createdAt:new Date().toISOString()};guardianPatrols.unshift(p)}Object.assign(p,{title:String(incoming.title||"Weekly Patrol"),serviceId:String(incoming.serviceId||"fire"),startsAt:String(incoming.startsAt||""),maxSlots:Number(incoming.maxSlots||0),briefing:String(incoming.briefing||""),published:incoming.published!==false,requiredQualifications:Array.isArray(incoming.requiredQualifications)?incoming.requiredQualifications:[]});guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,"PATROL_SAVED",{patrolId:p.id});if(guardianDiscord.patrolPosts&&incoming.announce===true)await guardianDiscordSend(guardianDiscord.patrolChannelId,`📅 **${p.title}**\n${p.startsAt?`Starts: ${p.startsAt}\n`:""}${p.briefing||"Book on through Guardian Operations."}`);res.json({ok:true,patrol:p})});
+app.delete("/api/admin/patrols/:id",guardianRequireAdmin("settings.edit"),(req,res)=>{guardianPatrols=guardianPatrols.filter(x=>x.id!==req.params.id);guardianSavePatrols();res.json({ok:true})});
+app.post("/api/admin/patrols/:id/deployment",guardianRequireAdmin("settings.edit"),(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});const username=String(req.body?.username||"");const b=(p.bookings||[]).find(x=>x.username===username);if(!b)return res.status(404).json({ok:false,error:"Booking not found"});b.deployment={serviceId:String(req.body?.serviceId||""),callsign:String(req.body?.callsign||"").toUpperCase(),rank:String(req.body?.rank||""),division:String(req.body?.division||""),role:String(req.body?.role||""),vehicle:String(req.body?.vehicle||""),talkgroup:String(req.body?.talkgroup||"")};const u=guardianAdminUsers.get(username);if(u){u.serviceAssignments=Array.isArray(u.serviceAssignments)?u.serviceAssignments:[];const idx=u.serviceAssignments.findIndex(x=>x.serviceId===b.deployment.serviceId);if(idx>=0)u.serviceAssignments[idx]={...u.serviceAssignments[idx],...b.deployment};else u.serviceAssignments.push({...b.deployment});guardianSaveUsers()}guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,"PATROL_DEPLOYMENT_ASSIGNED",{patrolId:p.id,username,deployment:b.deployment});res.json({ok:true,booking:b})});
+app.get("/api/admin/services",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,services:guardianServices}));
+app.post("/api/admin/services",guardianRequireAdmin("settings.edit"),(req,res)=>{if(!Array.isArray(req.body?.services))return res.status(400).json({ok:false,error:"Services required"});guardianServices=req.body.services;guardianSaveServices();guardianAdminAuditLog(req.guardianAdmin.username,"SERVICE_DIRECTORY_SAVED",{count:guardianServices.length});res.json({ok:true,services:guardianServices})});
+app.post("/api/admin/users/:username/community-profile",guardianRequireAdmin("settings.edit"),(req,res)=>{const u=guardianAdminUsers.get(String(req.params.username||""));if(!u)return res.status(404).json({ok:false,error:"User not found"});u.membershipType=["member","non-member"].includes(req.body?.membershipType)?req.body.membershipType:u.membershipType||"non-member";u.discordUserId=String(req.body?.discordUserId||u.discordUserId||"");u.serviceAssignments=Array.isArray(req.body?.serviceAssignments)?req.body.serviceAssignments:u.serviceAssignments||[];u.qualifications=Array.isArray(req.body?.qualifications)?req.body.qualifications:u.qualifications||[];guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"COMMUNITY_PROFILE_UPDATED",{username:u.username,membershipType:u.membershipType});res.json({ok:true,user:guardianUserPublicProfile(u)})});
+app.get("/api/admin/discord",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,discord:guardianDiscord,status:{tokenConfigured:!!String(process.env.DISCORD_BOT_TOKEN||"").trim(),clientIdConfigured:!!String(process.env.DISCORD_CLIENT_ID||"").trim(),clientSecretConfigured:!!String(process.env.DISCORD_CLIENT_SECRET||"").trim()}}));
+app.post("/api/admin/discord",guardianRequireAdmin("settings.edit"),(req,res)=>{guardianDiscord={...guardianDiscord,...req.body};guardianSaveDiscord();guardianAdminAuditLog(req.guardianAdmin.username,"DISCORD_SETTINGS_SAVED");res.json({ok:true,discord:guardianDiscord})});
+app.post("/api/admin/discord/test",guardianRequireAdmin("settings.edit"),async(req,res)=>{const channelId=String(req.body?.channelId||guardianDiscord.staffChannelId||guardianDiscord.patrolChannelId||"");const result=await guardianDiscordSend(channelId,"✅ Guardian Operations Discord integration test successful.");if(!result.ok)return res.status(400).json({ok:false,error:result.skipped?"Discord integration/token/channel is not configured":result.error||`Discord HTTP ${result.status}`});res.json({ok:true})});
+
 // Portal public configuration and application workflow
 app.get("/api/portal/config",(_req,res)=>{res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");res.json({ok:true,portal:guardianPortalConfig(),revision:Number(guardianConfig.portal?.updatedAt||0)})});
 app.get("/api/portal/me",(req,res)=>{
@@ -895,7 +982,7 @@ app.get("/api/portal/me",(req,res)=>{
   if(!session)return res.json({ok:true,authenticated:false,whitelisted:false});
   const user=guardianAdminUsers.get(session.username);
   const application=guardianApplications.find(a=>a.username===session.username)||null;
-  res.json({ok:true,authenticated:true,whitelisted:guardianUserWhitelisted(session.username),user:{username:session.username,displayName:user?.displayName||session.username,role:session.role,whitelistStatus:user?.whitelistStatus||"pending"},application:application?{id:application.id,status:application.status,submittedAt:application.submittedAt,reviewedAt:application.reviewedAt||null}:null});
+  res.json({ok:true,authenticated:true,whitelisted:guardianUserWhitelisted(session.username),user:user?guardianUserPublicProfile(user):{username:session.username,displayName:session.username,role:session.role,membershipType:"non-member",whitelistStatus:"pending",serviceAssignments:[],qualifications:[]},application:application?{id:application.id,status:application.status,submittedAt:application.submittedAt,reviewedAt:application.reviewedAt||null}:null});
 });
 app.post("/api/applications",(req,res)=>{
   const portal=guardianPortalConfig();
@@ -913,7 +1000,7 @@ app.post("/api/applications",(req,res)=>{
   if(req.body?.rulesAccepted!==true)return res.status(400).json({ok:false,error:"You must confirm the community rules"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"That Guardian username already exists"});
   const pw=guardianAdminHashPassword(password),nowIso=new Date().toISOString();
-  guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso});
+  guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso,membershipType:"non-member",serviceAssignments:[],qualifications:[]});
   guardianSaveUsers();
   const application={id:crypto.randomUUID(),username,displayName,discord,age,answers,rulesAccepted:true,status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
   guardianApplications.unshift(application);guardianSaveApplications();guardianAdminAuditLog(username,"WHITELIST_APPLICATION_SUBMITTED",{applicationId:application.id});
@@ -931,7 +1018,7 @@ app.post("/api/admin/applications/:id/review",guardianRequireAdmin("settings.edi
   const user=guardianAdminUsers.get(application.username);
   if(!user)return res.status(404).json({ok:false,error:"Applicant account not found"});
   application.status=decision;application.reviewedAt=new Date().toISOString();application.reviewedBy=req.guardianAdmin.username;application.reviewNote=String(req.body?.note||"").trim();
-  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;
+  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;if(decision==="approved"&&!user.membershipType)user.membershipType="member";
   guardianSaveUsers();guardianSaveApplications();guardianAdminAuditLog(req.guardianAdmin.username,"WHITELIST_APPLICATION_REVIEWED",{applicationId:application.id,username:application.username,decision});
   res.json({ok:true,application});
 });

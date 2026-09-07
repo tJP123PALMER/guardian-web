@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Guardian Operations · Portal</title>
-  <link rel="stylesheet" href="/portal/portal.css?v=44">
+  <link rel="stylesheet" href="/portal/portal.css?v=45">
 </head>
 <body>
 <a class="skipLink" href="#appMain">Skip to main content</a>
@@ -19,6 +19,7 @@
     <button class="navTab active" type="button" data-view-link="portal" aria-current="page"><span aria-hidden="true">⌂</span> Portal</button>
     <button class="navTab" type="button" data-view-link="profile"><span aria-hidden="true">♙</span> Your Profile</button>
     <button class="navTab" type="button" data-view-link="forms"><span aria-hidden="true">▤</span> Forms</button>
+    <button class="navTab" type="button" data-view-link="patrols"><span aria-hidden="true">◫</span> Patrols</button>
     <button class="navTab" type="button" data-view-link="misc"><span aria-hidden="true">▦</span> Misc</button>
     <a id="adminSettingsNav" class="navTab adminNav hidden" href="/settings.html#portal"><span aria-hidden="true">⚙</span> Settings</a>
   </nav>
@@ -91,11 +92,19 @@
 
   <section class="appView" data-view="forms" aria-labelledby="formsHeading" hidden>
     <div class="viewHeader"><div><div class="eyebrow">COMMUNITY</div><h1 id="formsHeading">Forms &amp; requests</h1><p id="formsIntro">Submit applications and requests to the Guardian team.</p></div></div>
+    <div id="dynamicForms" class="formCards"></div>
+    <h2 class="legacyFormsTitle">Quick forms</h2>
     <div class="formCards">
       <a class="formCard" href="/apply/"><span>▤</span><div><h2 id="whitelistFormTitle">Whitelist application</h2><p id="whitelistFormSubtitle">Join our community</p></div><b>→</b></a>
       <a class="formCard" id="leaveBtn" href="#"><span>▦</span><div><h2 id="leaveTitle">Leave of absence</h2><p id="leaveSubtitle">Request time away</p></div><b>→</b></a>
       <a class="formCard" id="supportBtn" href="#"><span>◌</span><div><h2 id="supportTitle">Support request</h2><p id="supportSubtitle">Get help from staff</p></div><b>→</b></a>
     </div>
+  </section>
+
+
+  <section class="appView" data-view="patrols" aria-labelledby="patrolsHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">OPERATIONS</div><h1 id="patrolsHeading">Patrols &amp; Book On</h1><p>Book onto upcoming Guardian patrols and view your deployment.</p></div></div>
+    <div id="patrolCards" class="patrolCards"><section class="card"><p>Sign in and become whitelisted to view patrols.</p></section></div>
   </section>
 
   <section class="appView" data-view="misc" aria-labelledby="miscHeading" hidden>
@@ -112,6 +121,6 @@
   <p id="footerText">Built by the community, for the community.</p>
 </footer>
 
-<script src="/portal/portal.js?v=44"></script>
+<script src="/portal/portal.js?v=45"></script>
 </body>
 </html>
