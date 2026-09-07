@@ -116,9 +116,14 @@
     </section>
 
     <section id="view-incidents" class="view">
-      <div class="pageHeader"><div><span class="eyebrow">INCIDENT MANAGEMENT</span><h1>Incidents</h1><p>Select an incident to manage appliances and mobilisation channels.</p></div><button class="primary" id="openCreate2">NEW INCIDENT</button></div>
+      <div class="pageHeader"><div><span class="eyebrow">INCIDENT MANAGEMENT</span><h1>Incidents & Logs</h1><p>Manage live incidents and retain a searchable closed incident archive.</p></div><button class="primary" id="openCreate2">NEW INCIDENT</button></div>
+      <div class="incidentArchiveToolbar">
+        <div class="segmented"><button id="incidentModeActive" class="active">ACTIVE</button><button id="incidentModeClosed">CLOSED LOGS</button></div>
+        <input id="incidentSearch" placeholder="Search number, type, location, callsign or closure outcome">
+        <select id="incidentPriorityFilter"><option value="">All priorities</option><option>Immediate</option><option>Prompt</option><option>Non Emergency</option></select>
+      </div>
       <div class="incidentWorkspace">
-        <div class="panel incidentListPanel"><header><h2>Open Incidents</h2></header><div id="incidentList" class="incidentList"></div></div>
+        <div class="panel incidentListPanel"><header><div><span class="panelKicker" id="incidentListKicker">LIVE</span><h2 id="incidentListTitle">Active Incidents</h2></div><span id="incidentListCount" class="boardSummary"></span></header><div id="incidentList" class="incidentList"></div></div>
         <div class="panel incidentDetailPanel" id="incidentDetail"><div class="emptyState"><strong>No incident selected</strong><span>Select an incident from the list to view operational details.</span></div></div>
       </div>
     </section>

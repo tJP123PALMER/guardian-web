@@ -50,6 +50,7 @@ function allConfiguredCallsigns(){
 
 let state={connected:false,units:{},incidents:[],calls999:[],messages:[],callsigns:[],callSignStations:{},applianceSkills:{},stations:{},eventLog:[],standbyMoves:[]};
 let controlView="overview",selectedIncidentId=null;
+let incidentListMode="active", incidentListQuery="", incidentPriorityFilter="";
 const pending999Conversions=new Set();
 const pending999Dismissals=new Set();
 
@@ -573,8 +574,21 @@ function render(){
 }
 function empty(text){return `<div class="emptyState"><strong>${esc(text)}</strong><span>Live server data will appear here automatically.</span></div>`}
 function renderIncidentList(){
- const openIncidents=(state.incidents||[]).filter(i=>String(i.status||"ONGOING").toUpperCase()!=="CLOSED");
- $("incidentList").innerHTML=openIncidents.length?openIncidents.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")} · ${assignedUnits(i).length} appliance(s)</p></div>`).join(""):empty("No open incidents");
+ const closed=incidentListMode==="closed";
+ const q=String(incidentListQuery||"").trim().toLowerCase();
+ const pri=String(incidentPriorityFilter||"");
+ let rows=(state.incidents||[]).filter(i=>(String(i.status||"ONGOING").toUpperCase()==="CLOSED")===closed);
+ rows=rows.filter(i=>{
+   if(pri&&String(i.priority||"")!==pri)return false;
+   if(!q)return true;
+   const hay=[i.id,i.type,i.address,i.postal,i.priority,i.closureOutcome,i.closureNotes,i.closedBy,...assignedUnits(i)].join(" ").toLowerCase();
+   return hay.includes(q);
+ });
+ rows.sort((a,b)=>closed?String(b.closedAt||b.updatedAt||"").localeCompare(String(a.closedAt||a.updatedAt||"")):String(b.id||"").localeCompare(String(a.id||""),undefined,{numeric:true}));
+ const title=$("incidentListTitle"),kicker=$("incidentListKicker"),count=$("incidentListCount");
+ if(title)title.textContent=closed?"Closed Incident Logs":"Active Incidents";if(kicker)kicker.textContent=closed?"ARCHIVE":"LIVE";if(count)count.textContent=`${rows.length} record${rows.length===1?"":"s"}`;
+ $("incidentModeActive")?.classList.toggle("active",!closed);$("incidentModeClosed")?.classList.toggle("active",closed);
+ $("incidentList").innerHTML=rows.length?rows.map(i=>`<div class="incidentCard ${String(i.id)===String(selectedIncidentId)?"active":""}" data-incident="${esc(i.id)}"><strong>#${esc(i.id)} · ${esc(i.type||"Incident")}</strong><p>${esc(i.address||i.postal||"No location")}</p><div class="incidentCardMeta"><span>${esc(i.priority||"—")}</span><span>${assignedUnits(i).length} unit(s)</span>${closed?`<span>${esc(i.closureOutcome||"Closed")}</span>`:""}</div></div>`).join(""):empty(closed?"No closed incident logs match your filters":"No active incidents match your filters");
 }
 
 function incidentAckInfo(inc,cs){
@@ -648,6 +662,15 @@ function renderIncidentDetail(){
  const el=$("incidentDetail"),inc=incidentById(selectedIncidentId);
  if(!inc){
    el.innerHTML='<div class="emptyState"><strong>No incident selected</strong><span>Select an incident from the list to manage the live incident record.</span></div>';
+   return;
+ }
+
+ if(String(inc.status||"").toUpperCase()==="CLOSED"){
+   const assigned=assignedUnits(inc);
+   const timeline=cleanTimelineEvents(Array.isArray(inc.timeline)?inc.timeline:[]).filter(e=>timelineEventLabel(e?.text));
+   el.innerHTML=`<div class="incidentDetailContent closedIncidentRecord"><div class="detailTop commandRecordTop"><div><span class="eyebrow">CLOSED INCIDENT #${esc(inc.id)}</span><h2>${esc(inc.type||"Incident")}</h2><p>${esc(inc.address||"No location")}${inc.postal?` · ${esc(inc.postal)}`:""}</p></div><div class="incidentTopActions"><span class="status closed">CLOSED</span><button class="secondary" id="printClosedIncident">PRINT</button><button class="primary" id="reopenClosedIncident">REOPEN</button></div></div><div class="closedIncidentSummary"><div><span>Opened</span><b>${esc(inc.createdAt||inc.openedAt||"—")}</b></div><div><span>Closed</span><b>${esc(inc.closedAt||"—")}</b></div><div><span>Closed by</span><b>${esc(inc.closedBy||"CONTROL")}</b></div><div><span>Priority</span><b>${esc(inc.priority||"—")}</b></div><div><span>Outcome</span><b>${esc(inc.closureOutcome||"Closed")}</b></div><div><span>Talkgroup</span><b>${esc(inc.talkgroup||"—")}</b></div></div><section class="incidentOpsCard"><header><span class="panelKicker">FINAL RECORD</span><h3>Closure & Command Summary</h3></header><dl class="closedIncidentDl"><dt>Final notes</dt><dd>${esc(inc.closureNotes||inc.details||inc.notes||"No closing notes recorded.")}</dd><dt>Hazards</dt><dd>${esc(inc.hazards||"—")}</dd><dt>Resources requested</dt><dd>${esc(inc.resources||"—")}</dd><dt>Services / Units</dt><dd>${esc(assigned.join(", ")||"None recorded")}</dd></dl></section><section class="incidentOpsCard"><header><span class="panelKicker">AUDIT TRAIL</span><h3>Incident Timeline</h3></header><div class="timeline">${timeline.length?timeline.map(e=>`<div class="timelineItem"><time>${esc(e.time||e.at||"")}</time><div><b>${esc(timelineEventLabel(e.text)||e.type||"Update")}</b>${e.detail?`<p>${esc(e.detail)}</p>`:""}</div></div>`).join(""):'<div class="emptyState">No timeline entries recorded.</div>'}</div></section></div>`;
+   $("reopenClosedIncident").onclick=async()=>{if(!confirm(`Reopen incident #${inc.id}?`))return;await command("reopenIncident",{incidentId:inc.id,reopenedBy:"CONTROL"});incidentListMode="active";setTimeout(()=>load().catch(()=>{}),250)};
+   $("printClosedIncident").onclick=()=>window.print();
    return;
  }
 
@@ -1277,6 +1300,10 @@ function connect(){const es=new EventSource("/api/events");es.onmessage=e=>{try{
 let unitBoardFiltersBound=false;
 function bindUnitBoardFilters(){if(unitBoardFiltersBound)return;unitBoardFiltersBound=true;["unitSearch","unitLiveFilter","unitStatusFilter"].forEach(id=>document.getElementById(id)?.addEventListener(id==="unitSearch"?"input":"change",()=>renderUnits()))}
 bindUnitBoardFilters();
+$("incidentModeActive")?.addEventListener("click",()=>{incidentListMode="active";selectedIncidentId=null;renderIncidentList();renderIncidentDetail()});
+$("incidentModeClosed")?.addEventListener("click",()=>{incidentListMode="closed";selectedIncidentId=null;renderIncidentList();renderIncidentDetail()});
+$("incidentSearch")?.addEventListener("input",e=>{incidentListQuery=e.target.value;renderIncidentList()});
+$("incidentPriorityFilter")?.addEventListener("change",e=>{incidentPriorityFilter=e.target.value;renderIncidentList()});
 
 setMode();load();connect();
 window.addEventListener("online",()=>load().catch?.(()=>{}));
