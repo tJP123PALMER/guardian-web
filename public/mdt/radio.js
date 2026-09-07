@@ -69,6 +69,7 @@
   }
   function moveCursor(delta){if(!powered)return;const items=currentMenu();if(!items.length)return;cursor=(cursor+delta+items.length)%items.length;renderMenu()}
   function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='main';cursor=1;}renderMenu()}
+  function goHome(){if(!powered)return;menuLevel='main';cursor=1;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'MAIN MENU');hint(selectedChannel?'CHANNEL REMAINS ACTIVE · SELECT CONTACTS TO CHANGE':'CONTACTS → SELECT SERVICE / TALKGROUP');}
   async function selectMenuItem(){
     if(!powered)return;const item=currentMenu()[cursor];if(!item||item.disabled)return;
     if(menuLevel==='main'&&item.id==='contacts'){menuLevel='services';cursor=0;renderMenu();return;}
@@ -204,12 +205,43 @@
   function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();if(localTrack)localTrack.enabled=false;document.getElementById('radioChannelPtt')?.classList.remove('tx');setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
 
   function bindNumberKeys(){
-    document.querySelectorAll('[data-radio-key]').forEach(btn=>{
-      const key=btn.dataset.radioKey;
-      const down=e=>{e.preventDefault();keyTone(key);if(!powered||activeCall||!/^[0-9]$/.test(key))return;keyHoldFired=false;btn.classList.add('holding');startHoldTone();hint(`HOLDING ${key}…`);clearTimeout(keyHoldTimer);keyHoldTimer=setTimeout(()=>{keyHoldFired=true;btn.classList.add('sent');stopHoldTone();requestAckTone();requestSpeech(key).finally(()=>setTimeout(()=>btn.classList.remove('sent'),500))},2000)};
-      const up=e=>{e.preventDefault();stopHoldTone();clearTimeout(keyHoldTimer);keyHoldTimer=null;btn.classList.remove('holding');if(!keyHoldFired&&powered&&!activeCall){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}keyHoldFired=false};
+    const buttons=new Map([...document.querySelectorAll('[data-radio-key]')].map(btn=>[String(btn.dataset.radioKey),btn]));
+    const heldKeyboard=new Set();
+    const pressKey=(key,btn,event)=>{
+      if(event)event.preventDefault();
+      keyTone(key);
+      if(!powered||activeCall||!/^[0-9]$/.test(key))return;
+      keyHoldFired=false;btn?.classList.add('holding');startHoldTone();hint(`HOLDING ${key}…`);
+      clearTimeout(keyHoldTimer);
+      keyHoldTimer=setTimeout(()=>{keyHoldFired=true;btn?.classList.add('sent');stopHoldTone();requestAckTone();requestSpeech(key).finally(()=>setTimeout(()=>btn?.classList.remove('sent'),500))},2000);
+    };
+    const releaseKey=(key,btn,event)=>{
+      if(event)event.preventDefault();
+      stopHoldTone();clearTimeout(keyHoldTimer);keyHoldTimer=null;btn?.classList.remove('holding');
+      if(!keyHoldFired&&powered&&!activeCall&&/^[0-9]$/.test(key)){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}
+      keyHoldFired=false;
+    };
+    buttons.forEach((btn,key)=>{
+      const down=e=>pressKey(key,btn,e), up=e=>releaseKey(key,btn,e);
       btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',e=>{if(e.buttons)up(e)});
     });
+    const keyFromEvent=e=>{
+      if(/^Digit[0-9]$/.test(e.code))return e.code.slice(5);
+      if(/^Numpad[0-9]$/.test(e.code))return e.code.slice(6);
+      if(e.code==='NumpadMultiply'||e.key==='*')return '*';
+      if(e.key==='#')return '#';
+      return null;
+    };
+    window.addEventListener('keydown',e=>{
+      const key=keyFromEvent(e);if(key===null)return;
+      if(heldKeyboard.has(e.code)) { e.preventDefault(); return; }
+      heldKeyboard.add(e.code);pressKey(key,buttons.get(key),e);
+    },true);
+    window.addEventListener('keyup',e=>{
+      const key=keyFromEvent(e);if(key===null)return;
+      heldKeyboard.delete(e.code);releaseKey(key,buttons.get(key),e);
+    },true);
+    window.addEventListener('blur',()=>{for(const code of [...heldKeyboard])heldKeyboard.delete(code);stopHoldTone();clearTimeout(keyHoldTimer);keyHoldTimer=null;buttons.forEach(b=>b.classList.remove('holding'));});
   }
   async function requestSpeech(urgency){
     if(!selectedChannel){state('SELECT A TALKGROUP FIRST','error');hint('CONTACTS → SERVICE → TALKGROUP');return}
@@ -367,9 +399,10 @@
     tab.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true});
     tab.addEventListener('touchstart',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true,passive:false});
     $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();channelPttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();channelPttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',channelPttStop);$('radioScreenBack')?.addEventListener('click',goBack);$('radioScreenSelect')?.addEventListener('click',selectMenuItem);
+    $('radioPhysicalBack')?.addEventListener('click',goBack);$('radioMenuHome')?.addEventListener('click',goHome);$('radioPhysicalEnter')?.addEventListener('click',selectMenuItem);
     $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',goBack);$('radioNavRight')?.addEventListener('click',selectMenuItem);$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
-    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'||c==='back')goBack();else if(c==='right'||c==='select')selectMenuItem();}})}
+    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'||c==='back')goBack();else if(c==='right'||c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();return}if(d.type==='guardianRadioKeyboardKey'){const key=String(d.key||'');const btn=document.querySelector(`[data-radio-key="${CSS.escape(key)}"]`);if(!btn)return;const ev=new PointerEvent(d.down?'pointerdown':'pointerup',{bubbles:true,cancelable:true,pointerId:88,pointerType:'mouse',buttons:d.down?1:0});btn.dispatchEvent(ev);}})}
   }
   function watchIdentity(){
     const reauth=()=>{setCallsign();if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};

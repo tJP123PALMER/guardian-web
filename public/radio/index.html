@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Guardian MTM Radio v29</title>
-<link rel="stylesheet" href="/mdt/radio.css?v=29">
-<link rel="stylesheet" href="/radio/standalone.css?v=29">
+<title>Guardian MTM Radio v30</title>
+<link rel="stylesheet" href="/mdt/radio.css?v=30">
+<link rel="stylesheet" href="/radio/standalone.css?v=30">
 </head>
 <body>
 <div id="callsignBox" hidden>UNSET</div>
 <section id="tab-radio" class="standaloneRadioPane radioOff">
   <div class="guardianRadioPage">
     <section class="guardianMtmBody" aria-label="Guardian MTM-style digital radio terminal">
-      <div class="mtmBrandBadge" aria-hidden="true"><span class="mtmBadgeMark">G</span><span>GUARDIAN</span></div>
+      <div class="mtmBrandBadge" aria-hidden="true"><span class="mtmBadgeMark">G</span><span>GUARDIAN</span><small>MTM</small></div>
 
       <div class="mtmLeftRail">
         <div class="mtmVolumeKnob" aria-hidden="true"></div>
@@ -38,9 +38,9 @@
       </div>
 
       <div class="mtmNavCluster">
-        <button class="mtmUpperAux" type="button" tabindex="-1" aria-hidden="true">●</button>
+        <button id="radioPhysicalBack" class="mtmUpperAux mtmPhysicalSoft" type="button" aria-label="Back" title="Back"><span class="softDot">●</span><span class="softName">BACK</span></button>
         <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="End call / radio off"><span class="phoneGlyph">☎</span></button>
-        <button class="mtmMenuKey" type="button" aria-label="Menu"><span>≡</span>MENU</button>
+        <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Main menu" title="Main Menu"><span>≡</span>MENU</button>
         <div class="mtmDpad" aria-label="Radio navigation">
           <button id="radioNavUp" type="button" aria-label="Up">▲</button>
           <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
@@ -48,7 +48,7 @@
           <button id="radioNavRight" type="button" aria-label="Right">▶</button>
           <button id="radioNavDown" type="button" aria-label="Down">▼</button>
         </div>
-        <button class="mtmLowerAux" type="button" tabindex="-1" aria-hidden="true">●</button>
+        <button id="radioPhysicalEnter" class="mtmLowerAux mtmPhysicalSoft" type="button" aria-label="Enter / select" title="Enter / Select"><span class="softDot">●</span><span class="softName">ENTER</span></button>
         <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Answer / radio on"><span class="phoneGlyph">☎</span></button>
       </div>
 
@@ -77,6 +77,6 @@
   if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
 })();
 </script>
-<script src="/mdt/radio.js?v=29"></script>
+<script src="/mdt/radio.js?v=30"></script>
 </body>
 </html>

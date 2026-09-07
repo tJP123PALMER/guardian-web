@@ -6,3 +6,5 @@ body{padding:0!important}
 .standaloneRadioPane.controlIncoming .guardianMtmBody{animation:guardianIncomingFlash .72s ease-in-out infinite alternate}
 .standaloneRadioPane.controlIncoming .mtmLcd{box-shadow:inset 0 0 0 2px rgba(255,174,31,.62),0 0 18px rgba(255,126,0,.38)}
 @keyframes guardianIncomingFlash{from{filter:brightness(1)}to{filter:brightness(1.12)}}
+
+.mtmPhysicalSoft:active,.mtmMenuKey:active{filter:brightness(1.35);transform:translateY(1px)}
