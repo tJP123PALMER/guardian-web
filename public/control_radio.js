@@ -18,7 +18,7 @@
   const radioFetch = async (url, opts={}) => {
     const r = await fetch(url, { credentials:"same-origin", headers:{"Content-Type":"application/json", ...(opts.headers||{})}, ...opts });
     let j={}; try{j=await r.json()}catch{}
-    if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if(!r.ok){ const e=new Error(j.error || `HTTP ${r.status}`); e.status=r.status; throw e; }
     return j;
   };
 
@@ -37,7 +37,11 @@
       const cq=await radioFetch('/api/radio/calls'); calls=cq.calls||[];
       renderDirectory(); renderCalls(); bindOutbound(); renderControlChannelOps(); connectEvents(); setOnline(true,'RADIO ONLINE');
     }catch(e){
-      console.warn('[Guardian radio control]',e); setOnline(false,'LOGIN REQUIRED');
+      console.warn('[Guardian radio control]',e);
+      if(e?.status===401||e?.status===403||/login required/i.test(String(e?.message||''))){
+        location.href='/login/?next=%2Fcontrol%2F&reason=expired'; return;
+      }
+      setOnline(false,'RADIO OFFLINE');
       if($('radioIncomingCalls')) $('radioIncomingCalls').innerHTML=`<div class="emptyState"><strong>Radio unavailable</strong><span>${esc(e.message)}</span></div>`;
     }
   }

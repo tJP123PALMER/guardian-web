@@ -1,56 +1,41 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Guardian Operations · Sign In</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Segoe UI",Arial,sans-serif;background:#07111a;color:#eaf1f6}
-body{display:grid;place-items:center;background:radial-gradient(circle at 50% 0%,#102c42 0,#07111a 42%)}
-.card{width:min(430px,92vw);background:#0c1924;border:1px solid #284156;border-radius:10px;box-shadow:0 28px 80px #0008;overflow:hidden}
-.brand{padding:28px 30px 22px;border-bottom:1px solid #1f3547}.brandTop{display:flex;align-items:center;gap:12px}
-.mark{width:42px;height:42px;border-radius:7px;background:#cc2931;display:grid;place-items:center;font-weight:900;font-size:20px}
-.brand strong,.brand span{display:block}.brand strong{letter-spacing:1.7px;font-size:14px}.brand span{font-size:9px;color:#6f8da3;letter-spacing:1.5px;margin-top:3px}
-.brand p{margin:18px 0 0;color:#89a0b1;font-size:12px;line-height:1.55}
-form{padding:26px 30px 30px}label{display:block;font-size:9px;letter-spacing:1px;color:#748fa3;font-weight:800;margin-bottom:14px}
-input{display:block;width:100%;margin-top:7px;padding:12px;background:#071620;color:#fff;border:1px solid #2c4a60;border-radius:5px;outline:0}
-input:focus{border-color:#4b8cba;box-shadow:0 0 0 2px #2a63852b}
-button{width:100%;margin-top:6px;padding:12px;border:1px solid #387aaa;border-radius:5px;background:#176796;color:#fff;font-weight:900;letter-spacing:.5px;cursor:pointer}
-button:hover{background:#1f79ad}button:disabled{opacity:.6;cursor:wait}
-#error{min-height:18px;margin:12px 0 0;color:#e9858b;font-size:10px;text-align:center}
-.footer{border-top:1px solid #1c3142;padding:13px 30px;color:#526e82;font-size:9px;text-align:center}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,"Segoe UI",Arial,sans-serif;background:#051019;color:#eaf4fb}body{min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(circle at 50% -10%,#17394e 0,#091824 34%,#050d14 72%)}
+.shell{width:min(920px,96vw);display:grid;grid-template-columns:1.05fr .95fr;background:#091824;border:1px solid #28475b;border-radius:14px;overflow:hidden;box-shadow:0 34px 100px #000b}.hero{position:relative;min-height:520px;padding:48px;background:linear-gradient(145deg,#0b2230,#07131d 62%)}.hero:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 25% 24%,#2383b423,transparent 36%),linear-gradient(115deg,transparent 65%,#d4232e10);pointer-events:none}.brand{position:relative;z-index:1;display:flex;align-items:center;gap:15px}.mark{width:52px;height:52px;border-radius:9px;background:#d4202d;display:grid;place-items:center;box-shadow:0 8px 24px #d4202d33}.mark img{width:34px;height:34px;object-fit:contain}.brand strong,.brand span{display:block}.brand strong{font-size:16px;letter-spacing:2px}.brand span{font-size:9px;color:#7595aa;letter-spacing:1.8px;margin-top:4px}.heroCopy{position:relative;z-index:1;margin-top:110px;max-width:420px}.eyebrow{color:#4db7ef;font-size:10px;font-weight:900;letter-spacing:2px}.hero h1{font-size:38px;line-height:1.06;margin:12px 0 16px}.hero p{color:#8da8b9;line-height:1.7;font-size:13px}.status{position:absolute;left:48px;bottom:38px;z-index:1;display:flex;gap:8px;align-items:center;color:#6f91a5;font-size:10px;letter-spacing:.8px}.dot{width:8px;height:8px;border-radius:50%;background:#1ce07e;box-shadow:0 0 12px #1ce07e}
+.login{padding:48px 44px;display:flex;flex-direction:column;justify-content:center;background:#0a1721}.login h2{font-size:25px;margin:0 0 8px}.sub{color:#7693a6;font-size:12px;margin:0 0 30px;line-height:1.5}.notice{display:none;margin:0 0 20px;padding:11px 12px;border:1px solid #70532b;background:#291d0d;color:#efc46c;border-radius:6px;font-size:11px}.notice.show{display:block}label{display:block;font-size:9px;letter-spacing:1.2px;color:#7894a6;font-weight:900;margin:0 0 17px}input[type=text],input[type=password]{display:block;width:100%;margin-top:7px;padding:13px 12px;background:#06131c;color:#fff;border:1px solid #2c4c60;border-radius:6px;outline:0;font-size:13px}input:focus{border-color:#54a3d4;box-shadow:0 0 0 3px #2b83b52a}.remember{display:flex;align-items:center;gap:9px;color:#91a9b8;font-size:11px;margin:2px 0 18px;cursor:pointer}.remember input{accent-color:#1c7caf}.primary{width:100%;padding:13px;border:1px solid #3a8abb;border-radius:6px;background:#176a99;color:#fff;font-weight:900;letter-spacing:.7px;cursor:pointer}.primary:hover{background:#1d7bad}.primary:disabled{opacity:.6;cursor:wait}#error{min-height:20px;padding-top:12px;color:#f18890;font-size:11px;text-align:center}.foot{margin-top:20px;padding-top:18px;border-top:1px solid #1a3242;color:#587488;font-size:9px;line-height:1.6}.signed{display:none;margin:0 0 20px;padding:12px;border:1px solid #285b42;background:#0b281d;color:#8de1b1;border-radius:6px;font-size:11px}.signed.show{display:block}
+@media(max-width:760px){.shell{grid-template-columns:1fr}.hero{display:none}.login{padding:38px 28px;min-height:520px}}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="brand">
-    <div class="brandTop"><div class="mark">G</div><div><strong>GUARDIAN OPERATIONS</strong><span>FIRE & RESCUE COMMAND PLATFORM</span></div></div>
-    <p>Sign in to your authorised Guardian account.</p>
-  </div>
-  <form id="loginForm">
-    <label>USERNAME<input id="username" autocomplete="username" autofocus></label>
-    <label>PASSWORD<input id="password" type="password" autocomplete="current-password"></label>
-    <button id="loginBtn">SIGN IN</button>
-    <div id="error"></div>
-  </form>
-  <div class="footer">Authorised operational access only</div>
+<div class="shell">
+  <section class="hero">
+    <div class="brand"><div class="mark"><img src="/assets/guardian-projects-shield.png" onerror="this.style.display='none'"></div><div><strong>GUARDIAN OPERATIONS</strong><span>FIRE & RESCUE COMMAND PLATFORM</span></div></div>
+    <div class="heroCopy"><div class="eyebrow">SECURE OPERATIONAL ACCESS</div><h1>Control starts here.</h1><p>Sign in once to access authorised Guardian Control, Radio and administrative functions. Your operational session is kept separate from public access.</p></div>
+    <div class="status"><span class="dot"></span> GUARDIAN CORE · SECURE SESSION</div>
+  </section>
+  <section class="login">
+    <h2>Sign in</h2><p class="sub">Use your Guardian account to continue.</p>
+    <div id="notice" class="notice"></div><div id="signed" class="signed"></div>
+    <form id="loginForm">
+      <label>USERNAME<input id="username" type="text" autocomplete="username" autofocus></label>
+      <label>PASSWORD<input id="password" type="password" autocomplete="current-password"></label>
+      <label class="remember"><input id="remember" type="checkbox" checked> Keep me signed in on this device</label>
+      <button class="primary" id="loginBtn">SIGN IN TO GUARDIAN</button><div id="error"></div>
+    </form>
+    <div class="foot">Authorised operational access only. “Keep me signed in” keeps this browser session for up to 7 days; otherwise the session lasts up to 12 hours.</div>
+  </section>
 </div>
 <script>
-document.getElementById("loginForm").addEventListener("submit",async e=>{
- e.preventDefault();
- const btn=document.getElementById("loginBtn"),err=document.getElementById("error");
- btn.disabled=true;btn.textContent="SIGNING IN…";err.textContent="";
- try{
-   const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-     username:document.getElementById("username").value,
-     password:document.getElementById("password").value,
-     vehicle:new URLSearchParams(location.search).get("vehicle")==="1"
-   })});
-   const j=await r.json();
-   if(!r.ok) throw new Error(j.error||"Sign in failed");
-   location.href=j.redirect||"/";
- }catch(e){err.textContent=e.message}
- finally{btn.disabled=false;btn.textContent="SIGN IN"}
-});
+const qs=new URLSearchParams(location.search), next=qs.get('next')||'', vehicle=qs.get('vehicle')==='1';
+const safeNext=next.startsWith('/')&&!next.startsWith('//')?next:'';
+const notice=document.getElementById('notice');
+if(qs.get('reason')==='control'){notice.textContent='Please sign in to open Guardian Control and Radio.';notice.classList.add('show')}
+if(qs.get('reason')==='expired'){notice.textContent='Your Guardian session expired. Sign in again to continue.';notice.classList.add('show')}
+(async()=>{try{const r=await fetch('/api/session',{credentials:'same-origin',cache:'no-store'});if(!r.ok)return;const j=await r.json();if(j.authenticated){const box=document.getElementById('signed');box.textContent=`Already signed in as ${j.user?.displayName||j.user?.username}. Redirecting…`;box.classList.add('show');setTimeout(()=>location.href=safeNext||(vehicle?'/vehicle/':(['control','supervisor','admin','dev','owner'].includes(j.user?.role)?'/control/':'/mdt/')),350)}}catch{}})();
+document.getElementById('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=document.getElementById('loginBtn'),err=document.getElementById('error');btn.disabled=true;btn.textContent='SIGNING IN…';err.textContent='';try{const r=await fetch('/api/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value,vehicle,remember:document.getElementById('remember').checked,next:safeNext})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Sign in failed');location.href=j.redirect||safeNext||'/'}catch(ex){err.textContent=ex.message}finally{btn.disabled=false;btn.textContent='SIGN IN TO GUARDIAN'}});
 </script>
 </body></html>

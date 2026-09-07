@@ -66,17 +66,20 @@ function guardianAdminSign(v){
   if(!GUARDIAN_ADMIN_SESSION_SECRET)return "";
   return crypto.createHmac("sha256",GUARDIAN_ADMIN_SESSION_SECRET).update(v).digest("hex");
 }
-function guardianAdminSetCookie(res,session){
+function guardianAppendCookie(res,value){ res.append("Set-Cookie",value); }
+function guardianAdminSetCookie(res,session,maxAge=43200){
+  const createdAt=Number(session.createdAt||Date.now());
   const payload=Buffer.from(JSON.stringify({
     username:String(session.username),
     role:String(session.role),
-    createdAt:Number(session.createdAt||Date.now())
+    createdAt,
+    expiresAt:createdAt+(Number(maxAge)||43200)*1000
   }),"utf8").toString("base64url");
   const signed=`${payload}.${guardianAdminSign(payload)}`;
-  res.setHeader("Set-Cookie",`guardian_admin=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
+  guardianAppendCookie(res,`guardian_admin=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Number(maxAge)||43200}; Secure`);
 }
 function guardianAdminClearCookie(res){
-  res.setHeader("Set-Cookie","guardian_admin=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure");
+  guardianAppendCookie(res,"guardian_admin=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure");
 }
 function guardianAdminHashPassword(password,saltHex){
   const salt=saltHex?Buffer.from(saltHex,"hex"):crypto.randomBytes(16);
@@ -130,7 +133,8 @@ function guardianAdminReadSession(req){
   try{
     const session=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));
     if(!session?.username||!session?.role||!session?.createdAt)return null;
-    if(Date.now()-Number(session.createdAt)>12*60*60*1000)return null;
+    const expiresAt=Number(session.expiresAt||0);
+    if(expiresAt?Date.now()>expiresAt:Date.now()-Number(session.createdAt)>12*60*60*1000)return null;
     return session;
   }catch{return null}
 }
@@ -163,19 +167,20 @@ function guardianRequireAdmin(permission="settings.view"){
 const guardianVehicleAssignmentsFile=path.join(guardianAdminDataDir,"guardian-vehicle-assignments.json");
 let guardianVehicleAssignments=guardianReadJson(guardianVehicleAssignmentsFile,{});
 if(!guardianVehicleAssignments||typeof guardianVehicleAssignments!=="object"||Array.isArray(guardianVehicleAssignments))guardianVehicleAssignments={};
-function guardianUserSetCookie(res,user){
-  const payload=Buffer.from(JSON.stringify({username:String(user.username),role:String(user.role),createdAt:Date.now()}),"utf8").toString("base64url");
+function guardianUserSetCookie(res,user,maxAge=43200){
+  const createdAt=Date.now();
+  const payload=Buffer.from(JSON.stringify({username:String(user.username),role:String(user.role),createdAt,expiresAt:createdAt+(Number(maxAge)||43200)*1000}),"utf8").toString("base64url");
   const signed=`${payload}.${guardianAdminSign(payload)}`;
-  res.setHeader("Set-Cookie",`guardian_user=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure`);
+  guardianAppendCookie(res,`guardian_user=${encodeURIComponent(signed)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Number(maxAge)||43200}; Secure`);
 }
-function guardianUserClearCookie(res){res.setHeader("Set-Cookie","guardian_user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure")}
+function guardianUserClearCookie(res){guardianAppendCookie(res,"guardian_user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure")}
 function guardianUserReadSession(req){
   const raw=guardianAdminCookieMap(req).guardian_user;if(!raw)return null;
   const dot=raw.lastIndexOf(".");if(dot<1)return null;
   const payload=raw.slice(0,dot),sig=raw.slice(dot+1),expected=guardianAdminSign(payload);
   if(!expected||sig.length!==expected.length)return null;
   try{if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null}catch{return null}
-  try{const session=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));if(!session?.username||!session?.role||!session?.createdAt)return null;if(Date.now()-Number(session.createdAt)>12*60*60*1000)return null;return session}catch{return null}
+  try{const session=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));if(!session?.username||!session?.role||!session?.createdAt)return null;const expiresAt=Number(session.expiresAt||0);if(expiresAt?Date.now()>expiresAt:Date.now()-Number(session.createdAt)>12*60*60*1000)return null;return session}catch{return null}
 }
 function guardianVehicleAssignment(username){return String(guardianVehicleAssignments[String(username||"").trim()]||"").trim().toUpperCase()}
 function guardianVehicleSaveAssignments(){guardianWriteJson(guardianVehicleAssignmentsFile,guardianVehicleAssignments)}
@@ -185,13 +190,19 @@ app.post("/api/login",(req,res)=>{
   const username=String(req.body?.username||"").trim(),password=String(req.body?.password||"");
   const user=guardianAdminUsers.get(username);
   if(!user||!guardianAdminVerify(password,user))return res.status(401).json({ok:false,error:"Invalid username or password"});
-  guardianUserSetCookie(res,user);
+  const remember=req.body?.remember===true;
+  const maxAge=remember?7*24*60*60:12*60*60;
+  guardianUserSetCookie(res,user,maxAge);
+  // One sign-in should also unlock Settings for roles that are allowed to use it.
+  if(["owner","admin","dev","readonly"].includes(String(user.role))) guardianAdminSetCookie(res,{username:user.username,role:user.role,createdAt:Date.now()},maxAge);
   user.lastLoginAt=new Date().toISOString();guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   const vehicle=req.body?.vehicle===true||String(req.query?.vehicle||"")==="1";
-  const redirect=vehicle?"/vehicle/":(["control","supervisor","admin","dev","owner"].includes(user.role)?"/control/":"/mdt/");
-  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role},redirect});
+  const requestedNext=String(req.body?.next||"").trim();
+  const safeNext=requestedNext.startsWith("/")&&!requestedNext.startsWith("//")?requestedNext:"";
+  const fallback=vehicle?"/vehicle/":(["control","supervisor","admin","dev","owner"].includes(user.role)?"/control/":"/mdt/");
+  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role},redirect:safeNext||fallback,remembered:remember});
 });
-app.post("/api/logout",(req,res)=>{guardianUserClearCookie(res);res.json({ok:true})});
+app.post("/api/logout",(req,res)=>{guardianUserClearCookie(res);guardianAdminClearCookie(res);res.json({ok:true})});
 app.get("/api/session",(req,res)=>{
   const session=guardianUserReadSession(req);if(!session)return res.status(401).json({ok:false,authenticated:false});
   const user=guardianAdminUsers.get(session.username);
@@ -2170,9 +2181,22 @@ app.get("/api/operational/cover",(_req,res)=>{
 
 const controlFile = path.join(__dirname,"public","control","index.html");
 const mdtFile = path.join(__dirname,"public","mdt","index.html");
-app.get("/",(_q,r)=>r.sendFile(controlFile));
-app.get("/control",(_q,r)=>r.sendFile(controlFile));
-app.get("/control/",(_q,r)=>{guardianRadioSetControlRuntimeCookie(r);r.sendFile(controlFile)});
+const loginFile = path.join(__dirname,"public","login.html");
+function guardianControlPage(req,res){
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);
+  if(!session||!guardianRadioControlRole(session.role)){
+    const next=encodeURIComponent("/control/");
+    return res.redirect(`/login/?next=${next}&reason=control`);
+  }
+  return res.sendFile(controlFile);
+}
+app.get(["/login","/login/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(loginFile)});
+app.get("/",(q,r)=>{
+  const session=guardianUserReadSession(q)||guardianAdminReadSession(q);
+  if(session&&guardianRadioControlRole(session.role))return r.redirect("/control/");
+  return r.redirect("/login/?next=%2Fcontrol%2F");
+});
+app.get(["/control","/control/"],guardianControlPage);
 app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
 app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
 app.get(["/vehicle","/vehicle/"],(q,r)=>{
