@@ -296,12 +296,7 @@
 
   function renderDirectory(){
     const box=$('radioDirectoryAdmin');if(!box)return;
-    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>{const listeners=(presence||[]).filter(x=>x.channelId===c.id).length;const active=controlChannel?.id===c.id;return `<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}<small>${listeners} UNIT${listeners===1?'':'S'} ON CHANNEL${active?' · CONTROL MONITORING':''}</small></strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><button class="radioMonitorBtn" data-rmonitor-id="${esc(c.id)}" ${c.open?'':'disabled'}>${active?'ON CHANNEL':'MONITOR'}</button></div>`}).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
-    box.querySelectorAll('[data-ropen-id]').forEach(el=>el.onchange=async()=>{
-      const id=el.dataset.ropenId,open=el.checked;el.disabled=true;
-      try{await radioFetch('/api/radio/open',{method:'POST',body:JSON.stringify({channelId:id,open})});const found=(config.services||[]).flatMap(s=>s.channels||[]).find(c=>c.id===id);if(found)found.open=open;if(!open&&controlChannel?.id===id)await setControlChannel('');renderDirectory();renderControlChannelOps()}
-      catch(e){el.checked=!open;alert(`Unable to change channel state: ${e.message}`)}finally{el.disabled=false}
-    });
+    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>{const listeners=(presence||[]).filter(x=>x.channelId===c.id).length;const active=controlChannel?.id===c.id;return `<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}<small>${listeners} UNIT${listeners===1?'':'S'} ON CHANNEL${active?' · CONTROL MONITORING':''}</small></strong><label class="radioOpenToggle" title="Channel availability is managed in Settings → Radio"><input type="checkbox" ${c.open?'checked':''} disabled> OPEN</label><button class="radioMonitorBtn" data-rmonitor-id="${esc(c.id)}" ${c.open?'':'disabled'}>${active?'ON CHANNEL':'MONITOR'}</button></div>`}).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
     box.querySelectorAll('[data-rmonitor-id]').forEach(btn=>btn.onclick=()=>setControlChannel(btn.dataset.rmonitorId).catch(e=>alert(e.message)));
   }
 

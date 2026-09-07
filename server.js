@@ -407,7 +407,7 @@ function guardianRadioDefaultConfig(){
     channels:Array.from({length:10},(_,i)=>({
       id:`${prefix.toLowerCase().replace(/[^a-z0-9]+/g,"-")}-ops-${i+1}`,
       name:`${prefix}-OPS${i+1}`,
-      open:(prefix==="FLAB"&&i===0)||(prefix==="NFRS"&&i===0)
+      open:true
     }))
   }))};
 }
@@ -426,7 +426,14 @@ function guardianRadioNormaliseConfig(existing){
   }
   return defaults;
 }
-let guardianRadioConfig=guardianRadioNormaliseConfig(guardianReadJson(guardianRadioConfigFile,null));
+const guardianRadioRawConfig=guardianReadJson(guardianRadioConfigFile,null);
+let guardianRadioConfig=guardianRadioNormaliseConfig(guardianRadioRawConfig);
+// v36 migration: radio channels are operationally OPEN by default.
+// After this one-time migration, only Settings -> Radio may close them.
+if(!guardianRadioRawConfig || Number(guardianRadioRawConfig.schemaVersion||0)<36){
+  for(const svc of guardianRadioConfig.services||[]) for(const ch of svc.channels||[]) ch.open=true;
+}
+guardianRadioConfig.schemaVersion=36;
 guardianWriteJson(guardianRadioConfigFile,guardianRadioConfig);
 function guardianRadioFindChannel(id){
   for(const service of guardianRadioConfig.services||[]){
