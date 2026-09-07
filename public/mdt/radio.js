@@ -71,7 +71,7 @@
     const tg=selectedChannel?.name||'NO TALKGROUP';
     const d=new Date();
     const stamp=d.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+'  '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">GUARDIAN</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
+    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">GUARDIAN RADIO</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
   }
   function renderMenu(){
     const title=$('radioMenuTitle'),list=$('radioMenuList'),topSoft=$('radioScreenBack'),bottomSoft=$('radioScreenSelect');if(!title||!list)return;
@@ -109,12 +109,12 @@
     const ch=chans[cursor];renderMenu();state(`TUNE ${ch.name} — PRESS ENTER TO JOIN`);hint('LEFT / RIGHT TO CHANGE CHANNEL · ENTER TO JOIN');
     return true;
   }
-  function openContacts(){if(!powered)return;menuLevel='services';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'CONTACTS');hint('SELECT SERVICE / TALKGROUP')}
+  function openContacts(){if(!powered)return;menuLevel='services';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'CONTACTS');hint('SELECT FIRE SERVICE')}
   function openOptions(){if(!powered)return;menuLevel='main';cursor=0;renderMenu();state('MAIN MENU');hint('MENU RETURNS HOME · BACK RETURNS PREVIOUS')}
   function screenTopAction(){if(menuLevel==='home')openContacts();else goBack()}
   function screenBottomAction(){if(menuLevel==='home')openOptions();else selectMenuItem()}
   function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='home';cursor=0;}else if(menuLevel==='main'){menuLevel='home';cursor=0;}else{return;}renderMenu()}
-  function goHome(){if(!powered)return;menuLevel='home';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedChannel?'HOME · CHANNEL REMAINS ACTIVE':'CONTACTS → SELECT AN OPEN TALKGROUP')}
+  function goHome(){if(!powered)return;menuLevel='home';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedChannel?'HOME · CHANNEL REMAINS ACTIVE':'CONTACTS → FIRE SERVICE → LEFT/RIGHT CHANNEL → ENTER')}
   async function selectMenuItem(){
     if(!powered)return;
     if(menuLevel==='home'){openContacts();return;}
