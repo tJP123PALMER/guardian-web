@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Guardian MTM800E Radio v39</title>
-<link rel="stylesheet" href="/radio/standalone.css?v=39">
+<title>Guardian MTM800E Radio v40</title>
+<link rel="stylesheet" href="/radio/standalone.css?v=40">
 </head>
 <body>
-<div id="guardianFivemTools"><button id="gfrSmaller" title="Smaller">−</button><button id="gfrLarger" title="Larger">+</button><button id="gfrMic" class="mic" title="Microphone setup">MIC</button><button id="gfrClose" class="danger" title="Close">×</button></div><div id="guardianFivemMicHelp">FiveM needs microphone permission for Guardian Radio. Press the green radio key or PTT. If FiveM asks in the F8 console, choose <b>Allow microphone</b>. This v39 page runs as the top-level NUI rather than an iframe so the microphone request reaches FiveM directly.</div>
+<div id="guardianFivemTools"><button id="gfrSmaller" title="Smaller">−</button><button id="gfrLarger" title="Larger">+</button><button id="gfrMic" class="mic" title="Microphone setup">MIC</button><button id="gfrClose" class="danger" title="Close">×</button></div><div id="guardianFivemMicHelp">FiveM needs microphone permission for Guardian Radio. Press the green radio key or PTT. If FiveM asks in the F8 console, choose <b>Allow microphone</b>. This v40 page runs as the top-level NUI rather than an iframe so the microphone request reaches FiveM directly.</div>
 <div id="callsignBox" hidden>UNSET</div>
 <section id="tab-radio" class="standaloneRadioPane radioOff">
   <div class="guardianRadioPage">
@@ -77,14 +77,14 @@
   if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
 })();
 </script>
-<script src="/mdt/radio.js?v=39"></script>
+<script src="/mdt/radio.js?v=40"></script>
 <script>
 (() => {
   const q=new URLSearchParams(location.search);if(q.get('directNui')!=='1')return;
   document.body.classList.add('guardianDirectNui','guardianRadioHidden');
-  let scale=Number(localStorage.getItem('guardianRadioScaleV39')||'.78');
+  let scale=Number(localStorage.getItem('guardianRadioScaleV40')||'.78');
   const clamp=n=>Math.max(.28,Math.min(1.15,n));
-  const apply=()=>{scale=clamp(scale);localStorage.setItem('guardianRadioScaleV39',String(scale));document.documentElement.style.setProperty('--guardian-radio-scale',String(scale));};apply();
+  const apply=()=>{scale=clamp(scale);localStorage.setItem('guardianRadioScaleV40',String(scale));document.documentElement.style.setProperty('--guardian-radio-scale',String(scale));};apply();
   const res=q.get('resource')||'Guardian_radio';
   const nui=(name,data={})=>fetch(`https://${res}/${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{});
   document.getElementById('gfrSmaller').onclick=()=>{scale-=.06;apply()};

@@ -1,5 +1,5 @@
 (() => {
-  console.info('[Guardian Radio] v39 gain-gated microphone build loaded');
+  console.info('[Guardian Radio] v40 MTM screen-flow + gain-gated microphone build loaded');
   const $ = id => document.getElementById(id);
   const tab = $('tab-radio');
   if (!tab) return;
@@ -20,7 +20,16 @@
   const mainItems = [
     {id:'messages', label:'Messages', icon:'✉', disabled:true},
     {id:'contacts', label:'Contacts', icon:'▣'},
-    {id:'radio-info', label:'Radio Info', icon:'ⓘ', disabled:true}
+    {id:'security', label:'Security', icon:'▣', disabled:true},
+    {id:'setup', label:'Setup', icon:'▣', disabled:true},
+    {id:'group-setup', label:'Group Setup', icon:'▣', disabled:true},
+    {id:'favorites', label:'Favorites', icon:'★', disabled:true}
+  ];
+  const optionItems = [
+    {id:'folder', label:'Folder', icon:'▣'},
+    {id:'tg-folder', label:'TG by Folder', icon:'▣'},
+    {id:'tg-abc', label:'TG by abc', icon:'abc', disabled:true},
+    {id:'direct', label:'Direct Mode', icon:'↦', disabled:true}
   ];
 
   const currentCallsign = () => {
@@ -76,6 +85,7 @@
   function currentMenu(){
     if(menuLevel==='home')return [];
     if(menuLevel==='main')return mainItems;
+    if(menuLevel==='options')return optionItems;
     if(menuLevel==='services')return services().map(s=>({id:s.id,label:s.name,icon:'▸',raw:s}));
     if(menuLevel==='channels'){
       const chans=openChannels(selectedService);
@@ -86,12 +96,30 @@
     }
     return [];
   }
+  function servicePrefix(s){
+    const ch=(s?.channels||[]).find(c=>c?.name);
+    const n=String(ch?.name||'').toUpperCase();
+    const m=n.match(/^([A-Z0-9]+)-/);
+    return m?m[1]:'';
+  }
+  function serviceShortName(s){
+    const n=String(s?.name||'').trim();
+    if(/L\s*&\s*B/i.test(n)) return 'L & B';
+    if(/Northumberland/i.test(n)) return 'Northumberland';
+    return n||'NO SERVICE';
+  }
   function radioHomeLines(){
     const cs=identity?.callsign||currentCallsign()||'UNSET';
-    const tg=(tunedChannel?.name||selectedChannel?.name||'NULL');
-    const d=new Date();
-    const stamp=d.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+'  '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">${selectedService?.name||'GUARDIAN RADIO'}</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
+    const prefix=servicePrefix(selectedService);
+    const tg=(tunedChannel?.name||selectedChannel?.name||(prefix?`${prefix}-NULL`:'NULL'));
+    return `<div class="mtmHomeScreen mtmIrlHome">
+      <div class="mtmIrlStatusIcons"><span>⌁</span><span>▮▮▮</span><span>◈</span></div>
+      <div class="mtmIrlNetwork">Airwave</div>
+      <div class="mtmIrlService">${serviceShortName(selectedService)}</div>
+      <div class="mtmIrlGroup">${tg}</div>
+      <div class="mtmIrlIdentity">Csgn:${cs}&nbsp;&nbsp; Status:MDT</div>
+      <div class="mtmIrlLogo">M</div>
+    </div>`;
   }
   function renderMenu(){
     const title=$('radioMenuTitle'),list=$('radioMenuList'),topSoft=$('radioScreenBack'),bottomSoft=$('radioScreenSelect');if(!title||!list)return;
@@ -101,7 +129,7 @@
       if(topSoft)topSoft.textContent='Contacts';
       if(bottomSoft)bottomSoft.textContent='Opts';
     }else{
-      title.textContent=menuLevel==='main'?'Main Menu':menuLevel==='services'?'Contacts':(selectedService?.name||'Talkgroups');
+      title.textContent=menuLevel==='main'?'Main Menu':menuLevel==='options'?'TMO Options':menuLevel==='services'?'Contacts':(selectedService?.name||'Talkgroups');
       const items=currentMenu();
       if(menuLevel==='channels'){
         const chans=openChannels(selectedService);
@@ -143,16 +171,18 @@
     await selectChannel(tunedChannel);tunedChannel=null;menuLevel='home';renderMenu();return true;
   }
   function openContacts(){if(!powered)return;menuLevel='services';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'CONTACTS');hint('SELECT FIRE SERVICE')}
-  function openOptions(){if(!powered)return;menuLevel='main';cursor=0;renderMenu();state('MAIN MENU');hint('MENU RETURNS HOME · BACK RETURNS PREVIOUS')}
+  function openOptions(){if(!powered)return;menuLevel='options';cursor=0;renderMenu();state('TMO OPTIONS');hint('SELECT OPTION · BACK RETURNS HOME')}
   function screenTopAction(){if(menuLevel==='home')openContacts();else goBack()}
   function screenBottomAction(){if(menuLevel==='home')openOptions();else selectMenuItem()}
-  function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='home';cursor=0;}else if(menuLevel==='main'){menuLevel='home';cursor=0;}else{return;}renderMenu()}
+  function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'||menuLevel==='main'||menuLevel==='options'){menuLevel='home';cursor=0;}else{return;}renderMenu()}
   function goHome(){if(!powered)return;menuLevel='home';cursor=0;tunedChannel=null;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedService?(selectedChannel?'HOME · LEFT/RIGHT TO RETUNE · SELECT TO JOIN':'LEFT / RIGHT TO FIND CHANNEL · SELECT TO JOIN'):'CONTACTS → SELECT FIRE SERVICE')}
+  function openMainMenu(){if(!powered)return;menuLevel='main';cursor=0;renderMenu();state('MAIN MENU');hint('UP / DOWN TO MOVE · ENTER TO SELECT · BACK TO HOME')}
   async function selectMenuItem(){
     if(!powered)return;
     if(menuLevel==='home'){if(selectedService){await selectHomeChannel();return;}openContacts();return;}
     const item=currentMenu()[cursor];if(!item||item.disabled)return;
     if(menuLevel==='main'&&item.id==='contacts'){openContacts();return;}
+    if(menuLevel==='options'&&(item.id==='folder'||item.id==='tg-folder')){openContacts();return;}
     if(menuLevel==='services'){
       selectedService=item.raw;
       // Contacts is only the service directory. Selecting a service returns to
@@ -520,7 +550,7 @@
     // Capture fallback in case the head unit dispatches the event to a child/text node.
     tab.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true});
     tab.addEventListener('touchstart',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true,passive:false});
-    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();softwarePttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();softwarePttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',softwarePttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',goHome);
+    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();softwarePttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();softwarePttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',softwarePttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',openMainMenu);
     $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(-1);return;}if(!cycleChannel(-1))goBack()});$('radioNavRight')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(1);return;}if(!cycleChannel(1))selectMenuItem()});$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
     if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};
@@ -531,7 +561,7 @@
       }
       if(d.type==='radioPtt'||d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}
       if(d.type==='radioKey'||d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}
-      if(d.type==='radioControl'||d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(-1);else if(!cycleChannel(-1))goBack();}else if(c==='right'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(1);else if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();return}
+      if(d.type==='radioControl'||d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(-1);else if(!cycleChannel(-1))goBack();}else if(c==='right'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(1);else if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu')openMainMenu();else if(c==='home')goHome();return}
     })}
   }
   function watchIdentity(){
