@@ -1,6 +1,6 @@
 
 const $=id=>document.getElementById(id);
-let me=null,config=null,operational=null,active="overview";
+let me=null,config=null,operational=null,community={services:[]},active="overview";
 
 async function api(url,opt={}){
   const r=await fetch(url,{cache:"no-store",headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});
@@ -45,7 +45,8 @@ async function refreshAll(){
   try{
     const c=await api("/api/admin/config");
     let o={};try{o=await api("/api/admin/operational")}catch(_){const b=await api("/api/admin/baseline");o={stations:b.stations||[],appliances:b.appliances||[],applianceTypes:c.config?.applianceTypes||[],skills:c.config?.skills||[],statuses:c.config?.statuses||[],stationMapPositions:{},stationMapLocked:false,summary:{stations:(b.stations||[]).length,appliances:(b.appliances||[]).length,booked:0,incidents:0,calls999:0,standby:0,fivemConnected:false,coreMode:"STANDALONE"}}}
-    config=c.config||{};operational=o||{};
+    let svc={services:[]};try{svc=await api("/api/admin/services")}catch(err){console.warn("Guardian services directory unavailable",err)}
+    config=c.config||{};operational=o||{};community={services:Array.isArray(svc.services)?svc.services:[]};
     config.stations=operational.stations||config.stations||[];
     config.appliances=operational.appliances||config.appliances||[];
     config.applianceTypes=operational.applianceTypes||config.applianceTypes||[];
