@@ -931,7 +931,7 @@ function guardianAudienceAllowed(form,user){
   if(a==="whitelisted")return String(user.whitelistStatus||"").toLowerCase()==="approved";
   return guardianMemberType(user)==="member"||String(user.whitelistStatus||"").toLowerCase()==="approved";
 }
-function guardianSafeForm(form){return {id:form.id,title:form.title,description:form.description||"",category:form.category||"Forms",audience:form.audience||"member",published:form.published!==false,requiresApproval:form.requiresApproval!==false,fields:Array.isArray(form.fields)?form.fields:[]}}
+function guardianSafeForm(form){return {id:form.id,title:form.title,description:form.description||"",category:form.category||"Forms",icon:form.icon||"▤",instructions:form.instructions||"",confirmationText:form.confirmationText||"Your form has been submitted.",audience:form.audience||"member",published:form.published!==false,requiresApproval:form.requiresApproval!==false,allowRepeat:form.allowRepeat!==false,fields:Array.isArray(form.fields)?form.fields:[]}}
 async function guardianDiscordSend(channelId,content){
   const token=String(process.env.DISCORD_BOT_TOKEN||"").trim();
   if(!guardianDiscord.enabled||!token||!channelId)return {ok:false,skipped:true};
@@ -950,7 +950,13 @@ app.post("/api/community/forms/:id/submit",async(req,res)=>{
   if(!guardianAudienceAllowed(form,u))return res.status(403).json({ok:false,error:"You do not have access to this form"});
   if(!u&&String(form.audience||"").toLowerCase()!=="guest")return res.status(401).json({ok:false,error:"Sign in required"});
   const answers=req.body?.answers&&typeof req.body.answers==="object"?req.body.answers:{};
-  for(const field of form.fields||[])if(field.required&&!String(answers[field.id]??"").trim())return res.status(400).json({ok:false,error:`${field.label||"Required field"} is required`});
+  for(const field of form.fields||[]){
+    if(field.type==="section")continue;
+    const val=answers[field.id];
+    const missing=field.type==="checkbox"||field.type==="acknowledgement" ? field.required&&!val : field.required&&(Array.isArray(val)?val.length===0:!String(val??"").trim());
+    if(missing)return res.status(400).json({ok:false,error:`${field.label||"Required field"} is required`});
+  }
+  if(form.allowRepeat===false&&u&&guardianFormSubmissions.some(x=>x.formId===form.id&&x.username===u.username&&!['rejected','closed'].includes(String(x.status))))return res.status(409).json({ok:false,error:"You already have an active submission for this form"});
   const sub={id:crypto.randomUUID(),formId:form.id,formTitle:form.title,username:u?.username||String(req.body?.username||"guest"),displayName:u?.displayName||String(req.body?.displayName||"Guest"),answers,status:form.requiresApproval===false?"closed":"submitted",submittedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),assignedTo:"",staffNotes:[],history:[{at:new Date().toISOString(),by:u?.username||"guest",action:"SUBMITTED"}]};
   guardianFormSubmissions.unshift(sub);guardianSaveFormSubmissions();guardianAdminAuditLog(sub.username,"FORM_SUBMITTED",{formId:form.id,submissionId:sub.id});
   if(guardianDiscord.applicationNotifications)guardianDiscordSend(guardianDiscord.applicationsChannelId,`📝 **${form.title}** submitted by **${sub.displayName}** (${sub.username})`);
@@ -975,6 +981,71 @@ app.get("/api/admin/discord",guardianRequireAdmin("settings.view"),(req,res)=>re
 app.post("/api/admin/discord",guardianRequireAdmin("settings.edit"),(req,res)=>{guardianDiscord={...guardianDiscord,...req.body};guardianSaveDiscord();guardianAdminAuditLog(req.guardianAdmin.username,"DISCORD_SETTINGS_SAVED");res.json({ok:true,discord:guardianDiscord})});
 app.post("/api/admin/discord/test",guardianRequireAdmin("settings.edit"),async(req,res)=>{const channelId=String(req.body?.channelId||guardianDiscord.staffChannelId||guardianDiscord.patrolChannelId||"");const result=await guardianDiscordSend(channelId,"✅ Guardian Operations Discord integration test successful.");if(!result.ok)return res.status(400).json({ok:false,error:result.skipped?"Discord integration/token/channel is not configured":result.error||`Discord HTTP ${result.status}`});res.json({ok:true})});
 
+
+// ============================================================
+// Guardian Operations Suite v46
+// Calendar/templates, training, fleet, announcements, guides/rules,
+// role permissions and attendance. Designed as data-driven modules.
+// ============================================================
+const guardianAnnouncementsFile=path.join(guardianAdminDataDir,"guardian-announcements.json");
+const guardianGuidesFile=path.join(guardianAdminDataDir,"guardian-guides.json");
+const guardianTrainingFile=path.join(guardianAdminDataDir,"guardian-training.json");
+const guardianFleetFile=path.join(guardianAdminDataDir,"guardian-fleet.json");
+const guardianPatrolTemplatesFile=path.join(guardianAdminDataDir,"guardian-patrol-templates.json");
+const guardianRolePermissionsFile=path.join(guardianAdminDataDir,"guardian-role-permissions.json");
+let guardianAnnouncements=guardianReadJson(guardianAnnouncementsFile,[
+ {id:"welcome",title:"Welcome to Guardian Operations",body:"Check the Guides section before your first patrol and keep your profile details up to date.",audience:"all",priority:"info",published:true,requiresAck:false,createdAt:new Date().toISOString(),acknowledgedBy:[]}
+]); if(!Array.isArray(guardianAnnouncements))guardianAnnouncements=[];
+let guardianGuides=guardianReadJson(guardianGuidesFile,[
+ {id:"community-rules",title:"Community Rules",category:"Rules",summary:"The standards expected from every Guardian member.",body:"# Community Rules\n\n1. Treat everyone with respect.\n2. Follow staff directions during organised operations.\n3. Use the MDT and radio professionally.\n4. Do not share restricted operational information outside the community.\n5. Report issues through the Support form rather than escalating them in public channels.",published:true,audience:"all",order:1},
+ {id:"getting-started",title:"Getting Started",category:"How to use Guardian",summary:"From whitelist approval to your first patrol.",body:"# Getting Started\n\n1. Complete your whitelist application.\n2. Once approved, review your profile and service assignment.\n3. Book onto an upcoming operation.\n4. Staff will assign your callsign, rank/division, vehicle and talkgroup.\n5. Join the MDT and radio using the assignment shown on your profile.",published:true,audience:"member",order:2},
+ {id:"radio-guide",title:"Radio Guide",category:"How to use Guardian",summary:"Channels, PTT and private Control calls.",body:"# Guardian Radio\n\nSelect your service in Contacts, return Home, use Left/Right to choose a talkgroup and Select to join. PTT talks on the open channel. Hold keypad 1 for two seconds when you need a private Control request.",published:true,audience:"whitelisted",order:3},
+ {id:"mdt-guide",title:"MDT Guide",category:"How to use Guardian",summary:"Booking on, status changes and incident handling.",body:"# MDT Guide\n\nUse the MDT only after you are whitelisted and assigned to an operation. Keep your status accurate and acknowledge Control messages promptly.",published:true,audience:"whitelisted",order:4}
+]); if(!Array.isArray(guardianGuides))guardianGuides=[];
+let guardianTraining=guardianReadJson(guardianTrainingFile,[]); if(!Array.isArray(guardianTraining))guardianTraining=[];
+let guardianFleet=guardianReadJson(guardianFleetFile,[
+ {id:"fleet-pump-1",serviceId:"fire",callsign:"J27P6",name:"Pump",station:"Coldstream Fire Station",type:"Pump",status:"available",qualifications:["Emergency Response Driver"],active:true},
+ {id:"fleet-police-1",serviceId:"police",callsign:"SIERRA-01",name:"Response Unit",station:"Response",type:"Marked Response",status:"available",qualifications:["Response Driving"],active:true}
+]); if(!Array.isArray(guardianFleet))guardianFleet=[];
+let guardianPatrolTemplates=guardianReadJson(guardianPatrolTemplatesFile,[
+ {id:"weekly-joint",title:"Weekly Joint Operation",serviceId:"joint",dayOfWeek:"Friday",time:"20:00",maxSlots:0,briefing:"Weekly Guardian operation.",requiredQualifications:[],published:true}
+]); if(!Array.isArray(guardianPatrolTemplates))guardianPatrolTemplates=[];
+let guardianRolePermissions=guardianReadJson(guardianRolePermissionsFile,{
+ owner:{portal:true,mdt:true,control:true,radio:true,forms:true,patrols:true,training:true,staff:true,settings:true},
+ admin:{portal:true,mdt:true,control:true,radio:true,forms:true,patrols:true,training:true,staff:true,settings:true},
+ dev:{portal:true,mdt:true,control:true,radio:true,forms:true,patrols:true,training:true,staff:true,settings:true},
+ control:{portal:true,mdt:true,control:true,radio:true,forms:true,patrols:true,training:true,staff:false,settings:false},
+ supervisor:{portal:true,mdt:true,control:true,radio:true,forms:true,patrols:true,training:true,staff:true,settings:false},
+ player:{portal:true,mdt:true,control:false,radio:true,forms:true,patrols:true,training:true,staff:false,settings:false}
+}); if(!guardianRolePermissions||Array.isArray(guardianRolePermissions))guardianRolePermissions={};
+const saveV46=()=>{guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);guardianWriteJson(guardianGuidesFile,guardianGuides);guardianWriteJson(guardianTrainingFile,guardianTraining);guardianWriteJson(guardianFleetFile,guardianFleet);guardianWriteJson(guardianPatrolTemplatesFile,guardianPatrolTemplates);guardianWriteJson(guardianRolePermissionsFile,guardianRolePermissions)};
+function guardianRoleAllows(role,permission){const p=guardianRolePermissions[String(role||"player")]||guardianRolePermissions.player||{};return p[permission]!==false}
+function guardianContentAudienceAllowed(a,user){return guardianAudienceAllowed({audience:a||"member"},user)}
+function guardianV46User(req){const session=guardianUserReadSession(req)||guardianAdminReadSession(req);return {session,user:session?guardianAdminUsers.get(session.username):null}}
+app.get('/api/community/announcements',(req,res)=>{const {user}=guardianV46User(req);res.json({ok:true,announcements:guardianAnnouncements.filter(x=>x.published!==false&&guardianContentAudienceAllowed(x.audience,user)).map(x=>({...x,acknowledged:!!user&&(x.acknowledgedBy||[]).includes(user.username)}))})});
+app.post('/api/community/announcements/:id/ack',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});const a=guardianAnnouncements.find(x=>x.id===req.params.id);if(!a)return res.status(404).json({ok:false,error:'Announcement not found'});a.acknowledgedBy=Array.isArray(a.acknowledgedBy)?a.acknowledgedBy:[];if(!a.acknowledgedBy.includes(user.username))a.acknowledgedBy.push(user.username);guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);res.json({ok:true})});
+app.get('/api/community/guides',(req,res)=>{const {user}=guardianV46User(req);res.json({ok:true,guides:guardianGuides.filter(x=>x.published!==false&&guardianContentAudienceAllowed(x.audience,user)).sort((a,b)=>(a.order||0)-(b.order||0))})});
+app.get('/api/community/training',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.json({ok:true,sessions:[]});res.json({ok:true,sessions:guardianTraining.filter(x=>x.published!==false).map(t=>({...t,booked:(t.bookings||[]).includes(user.username)}))})});
+app.post('/api/community/training/:id/book',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});if(String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.status(403).json({ok:false,error:'Whitelist approval required'});const t=guardianTraining.find(x=>x.id===req.params.id);if(!t)return res.status(404).json({ok:false,error:'Training not found'});t.bookings=Array.isArray(t.bookings)?t.bookings:[];if(!t.bookings.includes(user.username))t.bookings.push(user.username);guardianWriteJson(guardianTrainingFile,guardianTraining);guardianAdminAuditLog(user.username,'TRAINING_BOOKED',{trainingId:t.id});res.json({ok:true})});
+app.post('/api/community/training/:id/cancel',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});const t=guardianTraining.find(x=>x.id===req.params.id);if(!t)return res.status(404).json({ok:false,error:'Training not found'});t.bookings=(t.bookings||[]).filter(x=>x!==user.username);guardianWriteJson(guardianTrainingFile,guardianTraining);res.json({ok:true})});
+app.get('/api/community/permissions/me',(req,res)=>{const {session}=guardianV46User(req);const role=session?.role||'player';res.json({ok:true,role,permissions:guardianRolePermissions[role]||guardianRolePermissions.player||{}})});
+app.get('/api/community/operations/me',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});let totalMinutes=0;for(const p of guardianPatrols)for(const b of p.bookings||[])if(b.username===user.username&&b.checkInAt&&b.checkOutAt)totalMinutes+=Math.max(0,(new Date(b.checkOutAt)-new Date(b.checkInAt))/60000);res.json({ok:true,profile:guardianUserPublicProfile(user),attendance:{minutes:Math.round(totalMinutes),hours:Number((totalMinutes/60).toFixed(1))},upcoming:guardianPatrols.filter(p=>(p.bookings||[]).some(b=>b.username===user.username&&b.status==='booked')).slice(0,5)})});
+app.get('/api/admin/announcements',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,announcements:guardianAnnouncements}));
+app.post('/api/admin/announcements',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianAnnouncements=Array.isArray(req.body?.announcements)?req.body.announcements:guardianAnnouncements;guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);guardianAdminAuditLog(req.guardianAdmin.username,'ANNOUNCEMENTS_SAVED',{count:guardianAnnouncements.length});res.json({ok:true})});
+app.get('/api/admin/guides',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,guides:guardianGuides}));
+app.post('/api/admin/guides',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianGuides=Array.isArray(req.body?.guides)?req.body.guides:guardianGuides;guardianWriteJson(guardianGuidesFile,guardianGuides);guardianAdminAuditLog(req.guardianAdmin.username,'GUIDES_SAVED',{count:guardianGuides.length});res.json({ok:true})});
+app.get('/api/admin/training',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,sessions:guardianTraining,services:guardianServices}));
+app.post('/api/admin/training',guardianRequireAdmin('settings.edit'),async(req,res)=>{const incoming=req.body?.session;if(!incoming)return res.status(400).json({ok:false,error:'Session required'});let t=incoming.id?guardianTraining.find(x=>x.id===incoming.id):null;if(!t){t={id:crypto.randomUUID(),bookings:[],createdAt:new Date().toISOString()};guardianTraining.unshift(t)}Object.assign(t,{title:String(incoming.title||'Training Session'),serviceId:String(incoming.serviceId||'fire'),startsAt:String(incoming.startsAt||''),location:String(incoming.location||''),instructor:String(incoming.instructor||''),description:String(incoming.description||''),qualificationAwarded:String(incoming.qualificationAwarded||''),maxSlots:Number(incoming.maxSlots||0),published:incoming.published!==false});guardianWriteJson(guardianTrainingFile,guardianTraining);if(incoming.announce&&guardianDiscord.enabled)await guardianDiscordSend(guardianDiscord.briefingChannelId||guardianDiscord.patrolChannelId,`🎓 **${t.title}**\n${t.startsAt||''}\n${t.description||''}`);res.json({ok:true,session:t})});
+app.post('/api/admin/training/:id/complete',guardianRequireAdmin('settings.edit'),(req,res)=>{const t=guardianTraining.find(x=>x.id===req.params.id);if(!t)return res.status(404).json({ok:false,error:'Training not found'});const usernames=Array.isArray(req.body?.usernames)?req.body.usernames:t.bookings||[];for(const username of usernames){const u=guardianAdminUsers.get(username);if(!u)continue;u.qualifications=Array.isArray(u.qualifications)?u.qualifications:[];if(t.qualificationAwarded&&!u.qualifications.some(q=>(typeof q==='string'?q:q.name)===t.qualificationAwarded))u.qualifications.push({name:t.qualificationAwarded,awardedAt:new Date().toISOString(),awardedBy:req.guardianAdmin.username,expiresAt:String(req.body?.expiresAt||'')})}guardianSaveUsers();t.completedAt=new Date().toISOString();guardianWriteJson(guardianTrainingFile,guardianTraining);guardianAdminAuditLog(req.guardianAdmin.username,'TRAINING_COMPLETED',{trainingId:t.id,users:usernames});res.json({ok:true})});
+app.get('/api/admin/fleet',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,fleet:guardianFleet,services:guardianServices}));
+app.post('/api/admin/fleet',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianFleet=Array.isArray(req.body?.fleet)?req.body.fleet:guardianFleet;guardianWriteJson(guardianFleetFile,guardianFleet);guardianAdminAuditLog(req.guardianAdmin.username,'FLEET_SAVED',{count:guardianFleet.length});res.json({ok:true})});
+app.get('/api/admin/patrol-templates',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,templates:guardianPatrolTemplates}));
+app.post('/api/admin/patrol-templates',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianPatrolTemplates=Array.isArray(req.body?.templates)?req.body.templates:guardianPatrolTemplates;guardianWriteJson(guardianPatrolTemplatesFile,guardianPatrolTemplates);res.json({ok:true})});
+app.post('/api/admin/patrols/from-template',guardianRequireAdmin('settings.edit'),(req,res)=>{const t=guardianPatrolTemplates.find(x=>x.id===req.body?.templateId);if(!t)return res.status(404).json({ok:false,error:'Template not found'});const p={id:crypto.randomUUID(),title:t.title,serviceId:t.serviceId||'joint',startsAt:String(req.body?.startsAt||''),maxSlots:Number(t.maxSlots||0),briefing:t.briefing||'',published:true,requiredQualifications:t.requiredQualifications||[],bookings:[],createdAt:new Date().toISOString()};guardianPatrols.unshift(p);guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_CREATED_FROM_TEMPLATE',{templateId:t.id,patrolId:p.id});res.json({ok:true,patrol:p})});
+app.post('/api/admin/patrols/:id/attendance',guardianRequireAdmin('settings.edit'),(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});const b=(p.bookings||[]).find(x=>x.username===req.body?.username);if(!b)return res.status(404).json({ok:false,error:'Booking not found'});const action=String(req.body?.action||'');if(action==='checkin')b.checkInAt=new Date().toISOString();if(action==='checkout')b.checkOutAt=new Date().toISOString();if(action==='noshow')b.attendanceStatus='no-show';if(action==='attended')b.attendanceStatus='attended';guardianSavePatrols();res.json({ok:true,booking:b})});
+app.get('/api/admin/role-permissions',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,permissions:guardianRolePermissions}));
+app.post('/api/admin/role-permissions',guardianRequireAdmin('settings.edit'),(req,res)=>{if(!req.body?.permissions||typeof req.body.permissions!=='object')return res.status(400).json({ok:false,error:'Permissions required'});guardianRolePermissions=req.body.permissions;guardianWriteJson(guardianRolePermissionsFile,guardianRolePermissions);guardianAdminAuditLog(req.guardianAdmin.username,'ROLE_PERMISSIONS_SAVED');res.json({ok:true})});
+
 // Portal public configuration and application workflow
 app.get("/api/portal/config",(_req,res)=>{res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");res.json({ok:true,portal:guardianPortalConfig(),revision:Number(guardianConfig.portal?.updatedAt||0)})});
 app.get("/api/portal/me",(req,res)=>{
@@ -982,7 +1053,7 @@ app.get("/api/portal/me",(req,res)=>{
   if(!session)return res.json({ok:true,authenticated:false,whitelisted:false});
   const user=guardianAdminUsers.get(session.username);
   const application=guardianApplications.find(a=>a.username===session.username)||null;
-  res.json({ok:true,authenticated:true,whitelisted:guardianUserWhitelisted(session.username),user:user?guardianUserPublicProfile(user):{username:session.username,displayName:session.username,role:session.role,membershipType:"non-member",whitelistStatus:"pending",serviceAssignments:[],qualifications:[]},application:application?{id:application.id,status:application.status,submittedAt:application.submittedAt,reviewedAt:application.reviewedAt||null}:null});
+  res.json({ok:true,authenticated:true,whitelisted:guardianUserWhitelisted(session.username),permissions:guardianRolePermissions[session.role]||guardianRolePermissions.player||{},user:user?guardianUserPublicProfile(user):{username:session.username,displayName:session.username,role:session.role,membershipType:"non-member",whitelistStatus:"pending",serviceAssignments:[],qualifications:[]},application:application?{id:application.id,status:application.status,submittedAt:application.submittedAt,reviewedAt:application.reviewedAt||null}:null});
 });
 app.post("/api/applications",(req,res)=>{
   const portal=guardianPortalConfig();
@@ -2436,17 +2507,19 @@ function guardianNeedWhitelist(req,res,nextPath){
 }
 function guardianControlPage(req,res){
   const session=guardianNeedWhitelist(req,res,"/control/");if(!session||res.headersSent)return;
-  if(!guardianRadioControlRole(session.role))return res.status(403).sendFile(portalFile);
+  if(!guardianRadioControlRole(session.role)||!guardianRoleAllows(session.role,"control"))return res.status(403).sendFile(portalFile);
   return res.sendFile(controlFile);
 }
 function guardianMdtPage(req,res){
   if(guardianFivemEmbed(req))return res.sendFile(mdtFile);
   const session=guardianNeedWhitelist(req,res,"/mdt/");if(!session||res.headersSent)return;
+  if(!guardianRoleAllows(session.role,"mdt"))return res.status(403).sendFile(portalFile);
   return res.sendFile(mdtFile);
 }
 function guardianRadioPage(req,res){
   if(guardianFivemEmbed(req))return res.sendFile(radioFile);
   const session=guardianNeedWhitelist(req,res,"/radio/");if(!session||res.headersSent)return;
+  if(!guardianRoleAllows(session.role,"radio"))return res.status(403).sendFile(portalFile);
   return res.sendFile(radioFile);
 }
 app.get(["/login","/login/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(loginFile)});

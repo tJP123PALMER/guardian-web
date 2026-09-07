@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Guardian Operations · Portal</title>
-  <link rel="stylesheet" href="/portal/portal.css?v=45">
+  <link rel="stylesheet" href="/portal/portal.css?v=46">
 </head>
 <body>
 <a class="skipLink" href="#appMain">Skip to main content</a>
@@ -19,7 +19,9 @@
     <button class="navTab active" type="button" data-view-link="portal" aria-current="page"><span aria-hidden="true">⌂</span> Portal</button>
     <button class="navTab" type="button" data-view-link="profile"><span aria-hidden="true">♙</span> Your Profile</button>
     <button class="navTab" type="button" data-view-link="forms"><span aria-hidden="true">▤</span> Forms</button>
-    <button class="navTab" type="button" data-view-link="patrols"><span aria-hidden="true">◫</span> Patrols</button>
+    <button class="navTab" type="button" data-view-link="patrols"><span aria-hidden="true">◫</span> Operations</button>
+    <button class="navTab" type="button" data-view-link="training"><span aria-hidden="true">⌁</span> Training</button>
+    <button class="navTab" type="button" data-view-link="guides"><span aria-hidden="true">?</span> Guides</button>
     <button class="navTab" type="button" data-view-link="misc"><span aria-hidden="true">▦</span> Misc</button>
     <a id="adminSettingsNav" class="navTab adminNav hidden" href="/settings.html#portal"><span aria-hidden="true">⚙</span> Settings</a>
   </nav>
@@ -61,6 +63,8 @@
     </div>
 
     <div id="accessBanner" class="notice hidden" role="status"></div>
+
+    <section id="announcementSection" class="pageSection hidden" aria-labelledby="annHeading"><div class="sectionHead"><div><div class="eyebrow">LATEST</div><h2 id="annHeading">Announcements & orders</h2></div></div><div id="announcementCards" class="announcementGrid"></div></section>
 
     <section class="pageSection" aria-labelledby="systemsHeading">
       <div class="sectionHead">
@@ -107,6 +111,16 @@
     <div id="patrolCards" class="patrolCards"><section class="card"><p>Sign in and become whitelisted to view patrols.</p></section></div>
   </section>
 
+  <section class="appView" data-view="training" aria-labelledby="trainingHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">DEVELOPMENT</div><h1 id="trainingHeading">Training & Qualifications</h1><p>Book training, track qualifications and prepare for specialist roles.</p></div></div>
+    <div id="trainingCards" class="patrolCards"><section class="card"><p>Loading training…</p></section></div>
+  </section>
+
+  <section class="appView" data-view="guides" aria-labelledby="guidesHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">KNOWLEDGE BASE</div><h1 id="guidesHeading">Rules & How to Use Guardian</h1><p>Community standards, getting started, MDT/radio instructions and operational guides.</p></div></div>
+    <div id="guideCards" class="guideGrid"><section class="card"><p>Loading guides…</p></section></div>
+  </section>
+
   <section class="appView" data-view="misc" aria-labelledby="miscHeading" hidden>
     <div class="viewHeader"><div><div class="eyebrow">MORE</div><h1 id="miscHeading">Community &amp; future services</h1><p>Useful links and upcoming Guardian modules.</p></div></div>
     <div class="twoCol">
@@ -121,6 +135,6 @@
   <p id="footerText">Built by the community, for the community.</p>
 </footer>
 
-<script src="/portal/portal.js?v=45"></script>
+<script src="/portal/portal.js?v=46"></script>
 </body>
 </html>
