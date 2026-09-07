@@ -12,6 +12,7 @@
   let iceServers = [];
   let floorHeld = false;
   let ringTimer=null; let audioCtx=null; let presence=[]; let outboundRinging=null;
+  let controlChannel=null, channelPeers=new Map(), channelTx=false;
 
   const esc = s => String(s ?? "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
   const radioFetch = async (url, opts={}) => {
@@ -34,7 +35,7 @@
       iceServers=sess.iceServers||[];
       const cfg=await radioFetch('/api/radio/config?role=control'); config=cfg.config||{services:[]};
       const cq=await radioFetch('/api/radio/calls'); calls=cq.calls||[];
-      renderDirectory(); renderCalls(); bindOutbound(); connectEvents(); setOnline(true,'RADIO ONLINE');
+      renderDirectory(); renderCalls(); bindOutbound(); renderControlChannelOps(); connectEvents(); setOnline(true,'RADIO ONLINE');
     }catch(e){
       console.warn('[Guardian radio control]',e); setOnline(false,'LOGIN REQUIRED');
       if($('radioIncomingCalls')) $('radioIncomingCalls').innerHTML=`<div class="emptyState"><strong>Radio unavailable</strong><span>${esc(e.message)}</span></div>`;
@@ -48,10 +49,10 @@
     eventSource.onmessage=e=>{
       let m; try{m=JSON.parse(e.data)}catch{return}
       if(m.type==='hello'){ clientId=m.client?.id||''; setOnline(true,'RADIO ONLINE'); }
-      if(m.type==='presence'){presence=(m.clients||[]).filter(c=>['vehicle','mdt'].includes(c.role));renderPresence();renderDirectory();}
+      if(m.type==='presence'){presence=(m.clients||[]).filter(c=>['vehicle','mdt'].includes(c.role));renderPresence();renderDirectory();syncControlChannelPeers().catch(console.error);}
       if(m.type==='radio_call') handleCallEvent(m);
-      if(m.type==='radio_config_admin'){ config=m.config||config; renderDirectory(); }
-      if(m.type==='signal') handleSignal(m).catch(err=>{console.error('[Guardian control signal]',err);const el=$('radioTxState');if(el)el.textContent=`AUDIO ERROR: ${String(err?.name||'ERROR')}`;});
+      if(m.type==='radio_config_admin'){ config=m.config||config; renderDirectory(); renderControlChannelOps(); }
+      if(m.type==='signal'){ const task=(m.data&&m.data.guardianChannel===true)?handleControlGroupSignal(m):handleSignal(m); Promise.resolve(task).catch(err=>{console.error('[Guardian control signal]',err);const el=$('radioTxState');if(el)el.textContent=`AUDIO ERROR: ${String(err?.name||'ERROR')}`;}); }
       if(m.type==='floor') renderActive();
     };
     eventSource.onerror=()=>setOnline(false,'RECONNECTING');
@@ -85,7 +86,7 @@
       if(c.controlClientId===clientId){outboundRinging=c;controlDialTone();renderOutboundState();}
     }
     if(m.action==='answered'){
-      if(c.controlClientId===clientId){ outboundRinging=null; activeCall=c; connectAckTone(); beginPeer(false).catch(console.error); renderOutboundState(); }
+      if(c.controlClientId===clientId){ outboundRinging=null; activeCall=c; closeAllControlChannelPeers(); connectAckTone(); beginPeer(false).catch(console.error); renderOutboundState(); }
       else if(activeCall?.id===c.id) activeCall=c;
     }
     if(['ended','rejected'].includes(m.action)){
@@ -136,7 +137,7 @@
     try{
       await ensureMic();
       const j=await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'answer',callId:id})});
-      activeCall=j.call; calls=calls.filter(c=>c.id!==id); renderCalls(); renderActive();
+      activeCall=j.call; closeAllControlChannelPeers(); calls=calls.filter(c=>c.id!==id); renderCalls(); renderActive();
     }catch(e){alert(`Unable to answer: ${friendlyMicError(e)}`)}
   }
   async function rejectCall(id){
@@ -169,12 +170,12 @@
     throw firstErr||new DOMException('Could not start microphone','NotReadableError');
   }
   async function ensureMic(){
-    if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live')){localTrack=localStream.getAudioTracks()[0]||null;if(localTrack)localTrack.enabled=true;return localStream}
+    if(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live')){localTrack=localStream.getAudioTracks()[0]||null;return localStream}
     releaseMic();await sleep(250);
     localStream=await openDefaultMic();
     localTrack=localStream.getAudioTracks()[0]||null;
     if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
-    localTrack.enabled=true;
+    localTrack.enabled=false;
     return localStream;
   }
   async function playRemote(){
@@ -219,8 +220,8 @@
   function renderActive(){
     const box=$('radioActiveCall');if(!box)return;
     if(!activeCall){box.innerHTML='';renderOutboundState();return}
-    box.innerHTML=`<div class="radioConnectedCard"><div class="radioConnectedTop"><div><span class="panelKicker">CONNECTED RADIO CALL</span><h3>${esc(activeCall.callsign)}</h3><div class="radioConnectedMeta">${esc(activeCall.serviceName)} · ${esc(activeCall.channelName)} · URGENCY ${esc(activeCall.urgency||'1')}</div></div><strong id="radioTxState">LIVE VOICE</strong></div><div class="radioConnectedActions"><div class="radioLiveVoice">MICROPHONES OPEN — SPEAK NORMALLY</div><button id="radioEndCall" class="radioEnd">END CALL</button></div></div>`;
-    $('radioEndCall').onclick=endCall;renderOutboundState();
+    box.innerHTML=`<div class="radioConnectedCard"><div class="radioConnectedTop"><div><span class="panelKicker">CONNECTED RADIO CALL</span><h3>${esc(activeCall.callsign)}</h3><div class="radioConnectedMeta">${esc(activeCall.serviceName)} · ${esc(activeCall.channelName)} · URGENCY ${esc(activeCall.urgency||'1')}</div></div><strong id="radioTxState">LIVE VOICE</strong></div><div class="radioConnectedActions"><button id="radioDirectPtt" class="radioPtt">HOLD TO TALK TO UNIT</button><button id="radioEndCall" class="radioEnd">END CALL</button></div></div>`;
+    $('radioEndCall').onclick=endCall;const dp=$('radioDirectPtt');if(dp){dp.onpointerdown=e=>{e.preventDefault();controlDirectPtt(true)};dp.onpointerup=e=>{e.preventDefault();controlDirectPtt(false)};dp.onpointercancel=()=>controlDirectPtt(false)}renderOutboundState();
   }
   async function endCall(){
     if(!activeCall)return;const id=activeCall.id;const target=activeCall.vehicleClientId;
@@ -228,20 +229,82 @@
     try{await radioFetch('/api/radio/call',{method:'POST',body:JSON.stringify({role:'control',clientId,action:'end',callId:id})})}catch{}
     teardownPeer();
   }
-  function teardownPeer(){if(localTrack)localTrack.enabled=false;floorHeld=false;try{pc?.close()}catch{}pc=null;activeCall=null;outboundRinging=null;renderActive();renderOutboundState()}
+  function teardownPeer(){if(localTrack)localTrack.enabled=false;floorHeld=false;try{pc?.close()}catch{}pc=null;activeCall=null;outboundRinging=null;renderActive();renderOutboundState();syncControlChannelPeers().catch(console.error)}
+
+  async function controlDirectPtt(down){
+    if(!activeCall)return;
+    const btn=$('radioDirectPtt');
+    if(down){
+      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track?.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);localTrack.enabled=true;}if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}const st=$('radioTxState');if(st)st.textContent='CONTROL TX';}
+      catch(e){alert(friendlyMicError(e))}
+    }else{
+      if(localTrack)localTrack.enabled=false;if(btn){btn.classList.remove('tx');btn.textContent='HOLD TO TALK TO UNIT'}const st=$('radioTxState');if(st)st.textContent='LIVE VOICE';
+    }
+  }
+
+  function channelAudio(peerId){
+    const id='guardianControlChannelAudio_'+String(peerId).replace(/[^a-zA-Z0-9_-]/g,'');
+    let a=document.getElementById(id);if(!a){a=document.createElement('audio');a.id=id;a.autoplay=true;a.playsInline=true;a.style.display='none';document.body.appendChild(a)}return a;
+  }
+  function closeControlChannelPeer(id){const g=channelPeers.get(id);if(!g)return;try{g.pc.close()}catch{};try{g.audio.remove()}catch{}channelPeers.delete(id)}
+  function closeAllControlChannelPeers(){for(const id of [...channelPeers.keys()])closeControlChannelPeer(id)}
+  function makeControlChannelPeer(peer){
+    const rtc=new RTCPeerConnection({iceServers}),audio=channelAudio(peer.id);const g={pc:rtc,audio,peer};channelPeers.set(peer.id,g);
+    rtc.onicecandidate=e=>{if(e.candidate&&controlChannel)signal('ice',{guardianChannel:true,channelId:controlChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
+    rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
+    rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeControlChannelPeer(peer.id)};
+    try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
+    return g;
+  }
+  async function startControlChannelOffer(peer){const g=channelPeers.get(peer.id)||makeControlChannelPeer(peer);const offer=await g.pc.createOffer();await g.pc.setLocalDescription(offer);await signal('offer',{guardianChannel:true,channelId:controlChannel.id,sdp:offer},peer.id)}
+  async function syncControlChannelPeers(){
+    if(!clientId||!controlChannel){closeAllControlChannelPeers();return}
+    const wanted=(presence||[]).filter(c=>c.channelId===controlChannel.id);const ids=new Set(wanted.map(c=>c.id));
+    for(const id of [...channelPeers.keys()])if(!ids.has(id))closeControlChannelPeer(id);
+    for(const peer of wanted)if(!channelPeers.has(peer.id)){makeControlChannelPeer(peer);if(String(clientId)<String(peer.id))await startControlChannelOffer(peer)}
+    renderControlChannelOps();
+  }
+  async function handleControlGroupSignal(m){
+    const d=m.data||{},peer=m.from;if(!peer||!controlChannel||d.channelId!==controlChannel.id)return;
+    const g=channelPeers.get(peer.id)||makeControlChannelPeer(peer);
+    if(d.sdp&&m.kind==='offer'){await g.pc.setRemoteDescription(d.sdp);const ans=await g.pc.createAnswer();await g.pc.setLocalDescription(ans);await signal('answer',{guardianChannel:true,channelId:controlChannel.id,sdp:ans},peer.id)}
+    else if(d.sdp&&m.kind==='answer')await g.pc.setRemoteDescription(d.sdp);
+    else if(d.candidate&&m.kind==='ice'){try{await g.pc.addIceCandidate(d.candidate)}catch(e){console.warn('[Guardian control channel ICE]',e)}}
+  }
+  async function setControlChannel(channelId){
+    if(!clientId)return alert('Control radio is still connecting.');
+    if(!channelId){await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId:''})});controlChannel=null;closeAllControlChannelPeers();renderControlChannelOps();renderDirectory();return;}
+    const found=(config.services||[]).flatMap(s=>(s.channels||[]).map(c=>({service:s,channel:c}))).find(x=>x.channel.id===channelId);
+    if(!found||!found.channel.open)return alert('That channel is closed.');
+    await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId})});controlChannel={id:found.channel.id,name:found.channel.name,serviceName:found.service.name};closeAllControlChannelPeers();renderControlChannelOps();renderDirectory();await syncControlChannelPeers();
+  }
+  async function controlChannelPtt(down){
+    if(!controlChannel)return;
+    const btn=$('radioControlChannelPtt');
+    if(down){
+      try{await ensureMic();for(const g of channelPeers.values()){const sender=g.pc.getSenders().find(s=>s.track?.kind==='audio')||g.pc.getTransceivers().find(t=>t.sender&&t.receiver?.track?.kind==='audio')?.sender;if(sender&&localTrack){try{await sender.replaceTrack(localTrack)}catch{}}}if(localTrack)localTrack.enabled=true;channelTx=true;if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}}catch(e){alert(friendlyMicError(e))}
+    }else{channelTx=false;if(localTrack)localTrack.enabled=false;if(btn){btn.classList.remove('tx');btn.textContent='HOLD PTT'}}
+  }
+  function renderControlChannelOps(){
+    const box=$('radioControlChannelOps');if(!box)return;
+    const open=(config.services||[]).flatMap(s=>(s.channels||[]).filter(c=>c.open).map(c=>({service:s,channel:c})));
+    box.innerHTML=`<select id="radioControlChannelSelect"><option value="">NULL — NO CHANNEL</option>${open.map(x=>`<option value="${esc(x.channel.id)}">${esc(x.channel.name)} — ${esc(x.service.name)}</option>`).join('')}</select><button id="radioControlJoin" class="secondaryBtn">${controlChannel?'CHANGE':'MONITOR'}</button><button id="radioControlChannelPtt" class="channelPtt" ${controlChannel?'':'disabled'}>HOLD PTT</button><div class="radioControlChannelStatus"><span>CONTROL TALKGROUP</span><strong>${esc(controlChannel?.name||'NULL')}</strong><span>${controlChannel?`${(presence||[]).filter(c=>c.channelId===controlChannel.id).length} units · monitoring live audio`:'Select a channel to hear everyone on that net'}</span></div>`;
+    const sel=$('radioControlChannelSelect');if(controlChannel&&sel)sel.value=controlChannel.id;
+    $('radioControlJoin').onclick=()=>setControlChannel(sel?.value||'').catch(e=>alert(e.message));
+    const ptt=$('radioControlChannelPtt');if(ptt){ptt.onpointerdown=e=>{e.preventDefault();controlChannelPtt(true)};ptt.onpointerup=e=>{e.preventDefault();controlChannelPtt(false)};ptt.onpointercancel=()=>controlChannelPtt(false)}
+  }
 
   function renderDirectory(){
     const box=$('radioDirectoryAdmin');if(!box)return;
-    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>{const listeners=(presence||[]).filter(x=>x.channelId===c.id&&['mdt','vehicle'].includes(x.role)).length;return `<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}<small>${listeners} UNIT${listeners===1?'':'S'} ON CHANNEL</small></strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><span>${c.open?'ON AIR':'CLOSED'}</span></div>`}).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
+    box.innerHTML=(config.services||[]).map((s,si)=>`<details class="radioServiceAdmin" ${si<3?'open':''}><summary>${esc(s.name)}</summary><div>${(s.channels||[]).map(c=>{const listeners=(presence||[]).filter(x=>x.channelId===c.id).length;const active=controlChannel?.id===c.id;return `<div class="radioChannelAdmin radioChannelStatus"><strong>${esc(c.name)}<small>${listeners} UNIT${listeners===1?'':'S'} ON CHANNEL${active?' · CONTROL MONITORING':''}</small></strong><label class="radioOpenToggle"><input type="checkbox" data-ropen-id="${esc(c.id)}" ${c.open?'checked':''}> OPEN</label><button class="radioMonitorBtn" data-rmonitor-id="${esc(c.id)}" ${c.open?'':'disabled'}>${active?'ON CHANNEL':'MONITOR'}</button></div>`}).join('')||'<div class="radioChannelAdmin"><span>No channels configured</span></div>'}</div></details>`).join('');
     box.querySelectorAll('[data-ropen-id]').forEach(el=>el.onchange=async()=>{
-      const id=el.dataset.ropenId,open=el.checked;
-      el.disabled=true;
-      try{await radioFetch('/api/radio/open',{method:'POST',body:JSON.stringify({channelId:id,open})});const found=(config.services||[]).flatMap(s=>s.channels||[]).find(c=>c.id===id);if(found)found.open=open;renderDirectory()}
-      catch(e){el.checked=!open;alert(`Unable to change channel state: ${e.message}`)}
-      finally{el.disabled=false}
+      const id=el.dataset.ropenId,open=el.checked;el.disabled=true;
+      try{await radioFetch('/api/radio/open',{method:'POST',body:JSON.stringify({channelId:id,open})});const found=(config.services||[]).flatMap(s=>s.channels||[]).find(c=>c.id===id);if(found)found.open=open;if(!open&&controlChannel?.id===id)await setControlChannel('');renderDirectory();renderControlChannelOps()}
+      catch(e){el.checked=!open;alert(`Unable to change channel state: ${e.message}`)}finally{el.disabled=false}
     });
+    box.querySelectorAll('[data-rmonitor-id]').forEach(btn=>btn.onclick=()=>setControlChannel(btn.dataset.rmonitorId).catch(e=>alert(e.message)));
   }
 
-  window.addEventListener('beforeunload',()=>{try{eventSource?.close()}catch{};try{localStream?.getTracks().forEach(t=>t.stop())}catch{}});
+  window.addEventListener('beforeunload',()=>{try{eventSource?.close()}catch{};closeAllControlChannelPeers();try{localStream?.getTracks().forEach(t=>t.stop())}catch{}});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();

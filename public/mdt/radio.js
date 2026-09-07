@@ -8,7 +8,7 @@
   const fivemMode = params.get('fivem') === '1';
   const radioRole = vehicleMode ? 'vehicle' : 'mdt';
   let powered = false, connecting = false, identity = null, clientId = '', eventSource = null;
-  let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null;
+  let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null, tunedChannel = null;
   let menuLevel = 'home', cursor = 0, activeCall = null, pc = null, localStream = null, localTrack = null;
   let remoteAudio = null, keyHoldTimer = null, keyHoldFired = false, reconnectTimer = null, lastIdentityKey = '';
   let toneCtx=null, holdTone=null, incomingRingTimer=null, softwarePttTimer=null, softwarePttDown=false;
@@ -68,10 +68,10 @@
   }
   function radioHomeLines(){
     const cs=identity?.callsign||currentCallsign()||'UNSET';
-    const tg=selectedChannel?.name||'NO TALKGROUP';
+    const tg=(tunedChannel?.name||selectedChannel?.name||'NULL');
     const d=new Date();
     const stamp=d.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'})+'  '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">GUARDIAN RADIO</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
+    return `<div class="mtmHomeScreen"><div class="mtmHomeBrand">${selectedService?.name||'GUARDIAN RADIO'}</div><div class="mtmHomeCallsign">${cs}</div><div class="mtmHomeTalkgroup">${tg}</div><div class="mtmHomeStamp">${stamp}</div></div>`;
   }
   function renderMenu(){
     const title=$('radioMenuTitle'),list=$('radioMenuList'),topSoft=$('radioScreenBack'),bottomSoft=$('radioScreenSelect');if(!title||!list)return;
@@ -99,7 +99,7 @@
       if(bottomSoft)bottomSoft.textContent='Select';
     }
     if($('radioSelectedService'))$('radioSelectedService').textContent=selectedService?.name||'CONTACTS';
-    if($('radioSelectedChannel'))$('radioSelectedChannel').textContent=selectedChannel?.name||'NONE';
+    if($('radioSelectedChannel'))$('radioSelectedChannel').textContent=selectedChannel?.name||'NULL';
   }
   function moveCursor(delta){if(!powered||menuLevel==='home'||menuLevel==='channels')return;const items=currentMenu();if(!items.length)return;cursor=(cursor+delta+items.length)%items.length;renderMenu()}
   function cycleChannel(delta){
@@ -109,18 +109,42 @@
     const ch=chans[cursor];renderMenu();state(`TUNE ${ch.name} — PRESS ENTER TO JOIN`);hint('LEFT / RIGHT TO CHANGE CHANNEL · ENTER TO JOIN');
     return true;
   }
+  function tuneHomeChannel(delta){
+    if(!powered||menuLevel!=='home'||!selectedService)return false;
+    const chans=openChannels(selectedService);if(!chans.length){tunedChannel=null;renderMenu();state('NO OPEN CHANNELS','error');return true;}
+    let idx=tunedChannel?chans.findIndex(c=>c.id===tunedChannel.id):(selectedChannel?chans.findIndex(c=>c.id===selectedChannel.id):-1);
+    if(idx<0) idx=delta>0?-1:0;
+    idx=(idx+delta+chans.length)%chans.length;tunedChannel=chans[idx];renderMenu();
+    state(`TUNE ${tunedChannel.name} — PRESS SELECT`);hint('LEFT / RIGHT TO CHANGE · SELECT / ENTER TO JOIN');return true;
+  }
+  async function selectHomeChannel(){
+    if(!powered||menuLevel!=='home')return false;
+    if(!tunedChannel){hint(selectedService?'LEFT / RIGHT TO FIND A CHANNEL':'OPEN CONTACTS AND SELECT FIRE SERVICE');return true;}
+    await selectChannel(tunedChannel);tunedChannel=null;menuLevel='home';renderMenu();return true;
+  }
   function openContacts(){if(!powered)return;menuLevel='services';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'CONTACTS');hint('SELECT FIRE SERVICE')}
   function openOptions(){if(!powered)return;menuLevel='main';cursor=0;renderMenu();state('MAIN MENU');hint('MENU RETURNS HOME · BACK RETURNS PREVIOUS')}
   function screenTopAction(){if(menuLevel==='home')openContacts();else goBack()}
   function screenBottomAction(){if(menuLevel==='home')openOptions();else selectMenuItem()}
   function goBack(){if(!powered)return;if(menuLevel==='channels'){menuLevel='services';cursor=Math.max(0,services().findIndex(s=>s.id===selectedService?.id));}else if(menuLevel==='services'){menuLevel='home';cursor=0;}else if(menuLevel==='main'){menuLevel='home';cursor=0;}else{return;}renderMenu()}
-  function goHome(){if(!powered)return;menuLevel='home';cursor=0;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedChannel?'HOME · CHANNEL REMAINS ACTIVE':'CONTACTS → FIRE SERVICE → LEFT/RIGHT CHANNEL → ENTER')}
+  function goHome(){if(!powered)return;menuLevel='home';cursor=0;tunedChannel=null;renderMenu();state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED');hint(selectedService?(selectedChannel?'HOME · LEFT/RIGHT TO RETUNE · SELECT TO JOIN':'LEFT / RIGHT TO FIND CHANNEL · SELECT TO JOIN'):'CONTACTS → SELECT FIRE SERVICE')}
   async function selectMenuItem(){
     if(!powered)return;
-    if(menuLevel==='home'){openContacts();return;}
+    if(menuLevel==='home'){if(selectedService){await selectHomeChannel();return;}openContacts();return;}
     const item=currentMenu()[cursor];if(!item||item.disabled)return;
     if(menuLevel==='main'&&item.id==='contacts'){openContacts();return;}
-    if(menuLevel==='services'){selectedService=item.raw;menuLevel='channels';const chans=openChannels(selectedService);const activeIndex=selectedChannel?chans.findIndex(c=>c.id===selectedChannel.id):-1;cursor=activeIndex>=0?activeIndex:0;renderMenu();if(chans.length){state(`TUNE ${chans[cursor].name} — PRESS ENTER TO JOIN`);hint('LEFT / RIGHT TO CHANGE CHANNEL · ENTER TO JOIN')}return;}
+    if(menuLevel==='services'){
+      selectedService=item.raw;
+      // Contacts is only the service directory. Selecting a service returns to
+      // the MTM home screen; the talkgroup starts NULL until the operator tunes
+      // left/right and presses Select/Enter.
+      if(selectedChannel && !openChannels(selectedService).some(c=>c.id===selectedChannel.id)){
+        selectedChannel=null;closeAllGroupPeers();
+      }
+      tunedChannel=null;menuLevel='home';cursor=0;renderMenu();
+      state('REGISTERED');hint('SERVICE SELECTED · LEFT / RIGHT TO FIND CHANNEL · SELECT TO JOIN');
+      return;
+    }
     if(menuLevel==='channels'){const chans=openChannels(selectedService);const ch=chans[cursor];if(ch)await selectChannel(ch);}
   }
 
@@ -153,7 +177,7 @@
     setCallsign();
     setMic('CHECKING MIC…');
     state('RADIO ON — REGISTERING…');
-    hint('OPEN CONTACTS AND SELECT A TALKGROUP');
+    hint('CONTACTS SELECTS SERVICE · TALKGROUP NULL UNTIL SELECTED');
     menuLevel='home';cursor=0;renderMenu();
 
     // Start backend registration immediately, independently of the microphone.
@@ -178,7 +202,7 @@
       try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'reject',callId:activeCall.id}))})}catch{}
       activeCall=null;state('CONTROL CALL REJECTED','error');hint('RADIO READY');return;
     }
-    if(activeCall)await endCall();closeAllGroupPeers();powered=false;clearTimeout(reconnectTimer);eventSource?.close();eventSource=null;clientId='';identity=null;lastIdentityKey='';selectedChannel=null;selectedService=null;menuLevel='main';cursor=1;
+    if(activeCall)await endCall();closeAllGroupPeers();powered=false;clearTimeout(reconnectTimer);eventSource?.close();eventSource=null;clientId='';identity=null;lastIdentityKey='';selectedChannel=null;selectedService=null;tunedChannel=null;menuLevel='main';cursor=1;
     teardownPeer(true);tab.classList.add('radioOff');$('radioPowerOn')?.classList.remove('on');setLink('OFF');setMic('RADIO OFF');state('PRESS GREEN TO START RADIO');hint('RADIO OFF');setCallsign();renderMenu();
   }
   function scheduleRetry(msg){clearTimeout(reconnectTimer);if(!powered)return;if(msg)state(msg,'error');reconnectTimer=setTimeout(()=>ensureRadio(false),1800)}
@@ -208,7 +232,7 @@
   })}
   async function selectChannel(ch){
     if(!ch||activeCall)return;if(!clientId){await ensureRadio(true);if(!clientId)return}
-    try{const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});selectedChannel={id:j.channel.id,name:j.channel.name};closeAllGroupPeers();state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint(fivemMode?'HOLD PTT TO TALK ON CHANNEL · HOLD 1 TO CALL CONTROL':'HOLD PTT TO TALK ON CHANNEL · HOLD 1 TO CALL CONTROL');renderMenu();syncGroupPeers().catch(console.error)}
+    try{const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});selectedChannel={id:j.channel.id,name:j.channel.name};tunedChannel=null;menuLevel='home';closeAllGroupPeers();state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL');renderMenu();syncGroupPeers().catch(console.error)}
     catch(e){state(e.message||'TALKGROUP UNAVAILABLE','error')}
   }
 
@@ -221,19 +245,19 @@
   }
   function closeGroupPeer(id){const g=groupPeers.get(id);if(!g)return;try{g.pc.close()}catch{};try{g.audio.remove()}catch{};groupPeers.delete(id)}
   function closeAllGroupPeers(){for(const id of [...groupPeers.keys()])closeGroupPeer(id)}
-  async function attachTrackToGroupPeers(){if(!localTrack)return;for(const g of groupPeers.values()){const has=g.pc.getSenders().some(x=>x.track===localTrack);if(!has){try{g.pc.addTrack(localTrack,localStream)}catch{}}}}
+  async function attachTrackToGroupPeers(){if(!localTrack)return;for(const g of groupPeers.values()){const sender=g.pc.getSenders().find(x=>x.track?.kind==='audio')||g.pc.getTransceivers().find(t=>t.sender&&t.receiver?.track?.kind==='audio')?.sender;if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else{try{g.pc.addTrack(localTrack,localStream)}catch{}}}}
   function createGroupPeer(peer){
     const rtc=new RTCPeerConnection({iceServers});const audio=groupRemoteAudio(peer.id);const g={pc:rtc,audio,peer};groupPeers.set(peer.id,g);
     rtc.onicecandidate=e=>{if(e.candidate&&selectedChannel)signal('ice',{guardianChannel:true,channelId:selectedChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
     rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
     rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeGroupPeer(peer.id)};
-    if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'recvonly'})}catch{}}
+    if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}}
     return g;
   }
   async function startGroupOffer(peer){const g=groupPeers.get(peer.id)||createGroupPeer(peer);const offer=await g.pc.createOffer();await g.pc.setLocalDescription(offer);await signal('offer',{guardianChannel:true,channelId:selectedChannel.id,sdp:offer},peer.id)}
   async function syncGroupPeers(){
     if(!powered||!clientId||!selectedChannel){closeAllGroupPeers();return}
-    const wanted=(presence||[]).filter(c=>c.id!==clientId&&['mdt','vehicle'].includes(c.role)&&c.channelId===selectedChannel.id);const ids=new Set(wanted.map(c=>c.id));
+    const wanted=(presence||[]).filter(c=>c.id!==clientId&&['mdt','vehicle','control'].includes(c.role)&&c.channelId===selectedChannel.id);const ids=new Set(wanted.map(c=>c.id));
     for(const id of [...groupPeers.keys()])if(!ids.has(id))closeGroupPeer(id);
     for(const peer of wanted){if(!groupPeers.has(peer.id)){createGroupPeer(peer);if(String(clientId)<String(peer.id))await startGroupOffer(peer)}}
   }
@@ -295,9 +319,8 @@
     });
   }
   async function requestSpeech(urgency){
-    if(!selectedChannel){state('SELECT A TALKGROUP FIRST','error');hint('CONTACTS → SERVICE → TALKGROUP');return}
     if(!clientId){await ensureRadio(true);if(!clientId)return}
-    try{closeAllGroupPeers();const j=await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'request',channelId:selectedChannel.id,urgency:String(urgency)}))});activeCall=j.call;state('CALL REQUEST SENT','ringing');hint(`WAITING FOR CONTROL — URGENCY ${urgency}`,'ringing');setMic('MIC STANDBY')}
+    try{closeAllGroupPeers();const j=await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'request',channelId:selectedChannel?.id||null,serviceId:selectedService?.id||null,urgency:String(urgency)}))});activeCall=j.call;state('CALL REQUEST SENT','ringing');hint(`WAITING FOR CONTROL — URGENCY ${urgency}`,'ringing');setMic('MIC STANDBY')}
     catch(e){state(e.message||'CALL REQUEST FAILED','error');hint('TRY AGAIN','error')}
   }
   function handleCallEvent(m){const c=m.call;if(!c)return;if(activeCall&&c.id!==activeCall.id)return;
@@ -305,7 +328,7 @@
       closeAllGroupPeers();activeCall=c;activeCall.status='ringing';powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');setLink('INCOMING');setCallsign();
       state('CONTROL CALLING','ringing');hint('PRESS GREEN OR PTT TO ANSWER — RED TO REJECT','ringing');setMic('MIC STANDBY');startIncomingRing();notifyParent('guardianRadioIncoming',{active:true,callsign:c.callsign||'',channel:c.channelName||''});
     }
-    else if(m.action==='answered'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});activeCall=c;connectTone();state('CONNECTING AUDIO…','connected');hint(fivemMode?'CONTROL ANSWERED — HOLD PTT TO TRANSMIT':'CONTROL ANSWERED — OPENING VOICE LINK','connected');beginPeer(true).then(()=>{if(localTrack)localTrack.enabled=!fivemMode;setMic(fivemMode?'PTT READY':'MIC LIVE')}).catch(e=>{console.error(e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error')})}
+    else if(m.action==='answered'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});activeCall=c;connectTone();state('CONNECTING AUDIO…','connected');hint('CONTROL ANSWERED — HOLD PTT TO TRANSMIT','connected');beginPeer(true).then(()=>{if(localTrack)localTrack.enabled=false;setMic('PTT READY')}).catch(e=>{console.error(e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error')})}
     else if(m.action==='rejected'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});state('CALL REJECTED','error');hint('CONTROL REJECTED REQUEST','error');resetCallSoon()}
     else if(m.action==='ended'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});state('CALL ENDED');hint('HOLD 1 OR PTT FOR 2 SECONDS TO REQUEST SPEECH');teardownPeer(false);resetCallSoon()}
   }
@@ -369,7 +392,7 @@
     const update=()=>{
       if(!pc)return;
       const st=pc.connectionState||pc.iceConnectionState||'';
-      if(st==='connected'||st==='completed'){state('CONNECTED TO CONTROL','connected');if(fivemMode){if(localTrack)localTrack.enabled=false;setMic('PTT READY');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}else{hint('LIVE VOICE — SPEAK NORMALLY','connected')}playRemote()}
+      if(st==='connected'||st==='completed'){state('CONNECTED TO CONTROL','connected');if(localTrack)localTrack.enabled=false;setMic('PTT READY');hint('HOLD PTT TO TRANSMIT TO CONTROL · RELEASE TO LISTEN','connected');playRemote()}
       else if(st==='failed'){state('VOICE LINK FAILED','error');hint('WEBRTC CONNECTION FAILED — CHECK NETWORK / TURN','error')}
       else if(st==='disconnected'){state('VOICE LINK INTERRUPTED','error')}
     };
@@ -377,14 +400,14 @@
     return pc;
   }
   async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian ICE]',e)}}}
-  async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=!fivemMode;const peer=makePeer();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
+  async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=false;const peer=makePeer();if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
   async function handleSignal(m){
     if(!activeCall||!m.from)return;
     if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;
     const peer=makePeer();
     await ensureMic();
-    if(localTrack)localTrack.enabled=!fivemMode;
-    if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
+    if(localTrack)localTrack.enabled=false;
+    if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}
     if(m.kind==='answer'){
       await peer.setRemoteDescription(m.data);
       await flushIce(peer);
@@ -399,11 +422,11 @@
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
   function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic();activeCall=null}
-  function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — OPEN CONTACTS');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL':'SELECT CONTACTS / CHANNEL');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
+  function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — TALKGROUP NULL');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · CONTACTS SELECTS SERVICE');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
   function resetCallSoon(){setTimeout(resetCall,1300)}
 
   async function softwarePttStart(){
-    if(!fivemMode||softwarePttDown||!powered)return;
+    if(softwarePttDown||!powered)return;
     softwarePttDown=true;
     // Incoming direct call: PTT doubles as answer.
     if(activeCall?.direction==='control_to_unit'&&activeCall.status==='ringing'){
@@ -414,7 +437,7 @@
     }
     // Connected call: hold-to-transmit.
     if(activeCall?.status==='connected'){
-      try{await ensureMic();if(localTrack)localTrack.enabled=true;setMic('TX');state('TRANSMITTING','connected');hint('PTT HELD — TRANSMITTING TO CONTROL','connected');startHoldTone()}
+      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);localTrack.enabled=true;}setMic('TX');state('TRANSMITTING TO CONTROL','connected');hint('PTT HELD — CONTROL CAN HEAR YOU','connected');startHoldTone()}
       catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
       return;
     }
@@ -425,10 +448,9 @@
     hint('SELECT A CHANNEL FIRST');
   }
   function softwarePttStop(){
-    if(!fivemMode)return;
     softwarePttDown=false;clearTimeout(softwarePttTimer);softwarePttTimer=null;stopHoldTone();
     if(activeCall?.status==='connected'){if(localTrack)localTrack.enabled=false;setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
-    else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL':'SELECT A TALKGROUP')}
+    else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · LEFT/RIGHT AFTER SELECTING SERVICE')}
   }
 
   function bindControls(){
@@ -449,10 +471,10 @@
     // Capture fallback in case the head unit dispatches the event to a child/text node.
     tab.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true});
     tab.addEventListener('touchstart',e=>{const b=e.target?.closest?.('#radioPowerOn,#radioPowerOff');if(b)invokePower(b.id==='radioPowerOn'?powerOn:powerOff,e)},{capture:true,passive:false});
-    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();channelPttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();channelPttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',channelPttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',goHome);
-    $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',()=>{if(!cycleChannel(-1))goBack()});$('radioNavRight')?.addEventListener('click',()=>{if(!cycleChannel(1))selectMenuItem()});$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
+    $('radioChannelPtt')?.addEventListener('pointerdown',e=>{e.preventDefault();softwarePttStart()});$('radioChannelPtt')?.addEventListener('pointerup',e=>{e.preventDefault();softwarePttStop()});$('radioChannelPtt')?.addEventListener('pointercancel',softwarePttStop);$('radioScreenBack')?.addEventListener('click',screenTopAction);$('radioScreenSelect')?.addEventListener('click',screenBottomAction);$('radioHardwareBack')?.addEventListener('click',goBack);$('radioHardwareEnter')?.addEventListener('click',selectMenuItem);$('radioMenuHome')?.addEventListener('click',goHome);
+    $('radioNavUp')?.addEventListener('click',()=>moveCursor(-1));$('radioNavDown')?.addEventListener('click',()=>moveCursor(1));$('radioNavLeft')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(-1);return;}if(!cycleChannel(-1))goBack()});$('radioNavRight')?.addEventListener('click',()=>{if(menuLevel==='home'&&selectedService){tuneHomeChannel(1);return;}if(!cycleChannel(1))selectMenuItem()});$('radioNavSelect')?.addEventListener('click',selectMenuItem);$('radioSelectSoft')?.addEventListener('click',selectMenuItem);$('radioBackSoft')?.addEventListener('click',goBack);bindNumberKeys();
     $('radioStatusBtn')?.addEventListener('click',()=>{if(powered)ensureRadio(false);renderMenu();playRemote()});tab.addEventListener('pointerdown',()=>{if(remoteAudio?.srcObject)playRemote()},{passive:true});
-    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(!cycleChannel(-1))goBack();}else if(c==='right'){if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();}})}
+    if(fivemMode){window.addEventListener('message',e=>{const d=e.data||{};if(d.type==='guardianFivemPtt'){d.down?softwarePttStart():softwarePttStop();return}if(d.type==='guardianFivemKeypad'){d.down?radioKeyDown(String(d.key||'')):radioKeyUp(String(d.key||''));return}if(d.type==='guardianFivemControl'){const c=String(d.control||'');if(c==='up')moveCursor(-1);else if(c==='down')moveCursor(1);else if(c==='left'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(-1);else if(!cycleChannel(-1))goBack();}else if(c==='right'){if(menuLevel==='home'&&selectedService)tuneHomeChannel(1);else if(!cycleChannel(1))selectMenuItem();}else if(c==='back')goBack();else if(c==='select'||c==='enter')selectMenuItem();else if(c==='menu'||c==='home')goHome();}})}
   }
   function watchIdentity(){
     const reauth=()=>{setCallsign();if(!powered)return;const k=`${radioRole}:${currentCallsign()}`;if(k!==lastIdentityKey){identity=null;clientId='';eventSource?.close();eventSource=null;ensureRadio(true)}};

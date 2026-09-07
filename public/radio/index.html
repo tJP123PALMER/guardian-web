@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Guardian MTM800E Radio v33</title>
-<link rel="stylesheet" href="/radio/standalone.css?v=33">
+<link rel="stylesheet" href="/radio/standalone.css?v=35">
 </head>
 <body>
 <div id="callsignBox" hidden>UNSET</div>
@@ -26,7 +26,7 @@
           <div class="mtmMenuTitle" id="radioMenuTitle"></div>
           <div class="mtmMenuList" id="radioMenuList"></div>
           <div class="mtmLcdState" id="radioCallState">PRESS GREEN TO START RADIO</div>
-          <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NONE</b></div>
+          <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NULL</b></div>
           <div class="mtmSignalBars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
           <div class="mtmScreenSoftRail"><button type="button" id="radioScreenBack">Contacts</button><button type="button" id="radioScreenSelect">Opts</button></div>
         </div>
@@ -76,6 +76,6 @@
   if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
 })();
 </script>
-<script src="/mdt/radio.js?v=33"></script>
+<script src="/mdt/radio.js?v=35"></script>
 </body>
 </html>

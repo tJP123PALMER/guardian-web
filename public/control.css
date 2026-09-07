@@ -257,3 +257,12 @@
 .radioChannelAdmin.radioChannelStatus strong{font-size:12px;color:#eaf7ff;overflow:hidden;text-overflow:ellipsis}
 .radioDirectoryPanel header p{margin:4px 0 0;color:#8faebe;font-size:11px}
 .radioChannelStatus strong{display:flex;flex-direction:column;gap:2px}.radioChannelStatus strong small{font-size:8px;color:#6fa6bb;letter-spacing:.04em}.radioChannelStatus span:last-child{font-weight:900;color:#66dca4}.radioChannelStatus:has(input:not(:checked)) span:last-child{color:#aebbc1}
+
+/* Guardian Radio v35 — Control channel console */
+.radioControlChannelOps{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:12px;margin:0 0 12px;border:1px solid #315467;border-radius:7px;background:#061822}
+.radioControlChannelOps select{min-width:0;height:40px;background:#07131a;color:#e8f4f8;border:1px solid #315467;border-radius:5px;padding:0 10px;font-weight:800}
+.radioControlChannelOps button{height:40px;min-width:105px;font-weight:900}
+.radioControlChannelOps .channelPtt{background:#145d3f;border-color:#43b87e}.radioControlChannelOps .channelPtt.tx{background:#9d2e36;border-color:#ed6e76}
+.radioControlChannelStatus{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;color:#9fb6c1;font-size:11px}.radioControlChannelStatus strong{color:#eaf7fb}
+.radioChannelAdmin.radioChannelStatus .radioMonitorBtn{height:30px;min-width:80px;background:#173e52;border:1px solid #3c6b83;color:#fff;border-radius:4px;font-weight:800}
+@media(max-width:900px){.radioControlChannelOps{grid-template-columns:1fr 1fr}.radioControlChannelOps select{grid-column:1/-1}}

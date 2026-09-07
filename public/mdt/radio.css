@@ -104,3 +104,79 @@
 .radioKeyGrid{gap:5px!important}.radioKeyGrid button{height:36px!important;font-size:13px!important}
 .mtmFunctionRow button{height:31px!important}.radioKeyHelp{font-size:5px!important}
 @media(max-width:1050px){.guardianMtmBody{grid-template-columns:74px minmax(300px,1fr) 104px 176px!important}.mtmVolumeKnob{width:54px!important;height:54px!important}.mtmNavCluster{grid-template-columns:25px 70px!important;grid-template-rows:29px 29px 70px 29px 29px!important}.mtmUpperAux,.mtmLowerAux{width:25px!important;height:29px!important}.mtmMenuKey{width:25px!important}.mtmDpad{width:70px!important;height:70px!important}.mtmRedPhone,.mtmGreenPhone{width:58px!important;height:29px!important}.radioKeyGrid button{height:30px!important}}
+
+/* Guardian Radio v34 — WEB MDT isolation/final layout fix.
+   The standalone /radio stylesheet must never size the MDT radio pane.
+   This block deliberately scopes the web-MDT control head and fixes its aspect ratio. */
+body:not(.guardianStandaloneRadio) #tab-radio{
+  overflow:hidden!important;
+  background:#071019!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .guardianRadioPage{
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  padding:10px 8px!important;
+  background:#071019!important;
+  overflow:auto hidden!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .guardianMtmBody{
+  flex:0 0 auto!important;
+  width:min(100%,1120px)!important;
+  height:350px!important;
+  min-width:760px!important;
+  min-height:350px!important;
+  max-height:350px!important;
+  grid-template-columns:104px minmax(430px,1fr) 145px 245px!important;
+  gap:8px!important;
+  padding:34px 12px 12px!important;
+  overflow:hidden!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmDisplayWrap{
+  min-width:0!important;
+  height:100%!important;
+  grid-template-rows:minmax(0,1fr) 34px!important;
+  gap:5px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLcd{
+  height:auto!important;
+  min-height:0!important;
+  padding:9px 92px 8px 12px!important;
+  grid-template-rows:27px 22px minmax(90px,1fr) 27px 23px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmScreenSoftRail{width:82px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmSignalBars{right:95px!important;top:38px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmVolumeKnob{width:76px!important;height:76px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmEmergency{width:46px!important;height:46px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerKnob{width:68px!important;height:68px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmMicPort{width:58px!important;height:58px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmNavCluster{
+  grid-template-columns:38px 96px!important;
+  grid-template-rows:45px 45px 96px 45px 45px!important;
+  gap:3px 6px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmUpperAux,
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerAux{width:38px!important;height:45px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmMenuKey{width:38px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmDpad{width:96px!important;height:96px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmRedPhone,
+body:not(.guardianStandaloneRadio) #tab-radio .mtmGreenPhone{width:78px!important;height:45px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .radioKeyGrid button{height:42px!important;font-size:15px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmFunctionRow button{height:36px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .radioKeyHelp{font-size:6px!important}
+
+@media(max-width:1000px){
+  body:not(.guardianStandaloneRadio) #tab-radio .guardianMtmBody{
+    width:900px!important;height:300px!important;min-height:300px!important;max-height:300px!important;
+    grid-template-columns:82px 390px 120px 205px!important;padding-top:30px!important;
+    transform-origin:top center;
+  }
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmVolumeKnob{width:62px!important;height:62px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmEmergency{width:38px!important;height:38px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerKnob{width:56px!important;height:56px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmMicPort{width:48px!important;height:48px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .radioKeyGrid button{height:35px!important}
+}

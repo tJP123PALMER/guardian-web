@@ -498,6 +498,7 @@ app.post("/api/radio/channel",(req,res)=>{
   if(ident.error)return res.status(ident.status||400).json({ok:false,error:ident.error});
   const clientId=guardianRadioClientId(req.body?.clientId),channelId=guardianRadioClientId(req.body?.channelId);
   const client=guardianRadioClients.get(clientId);if(!client||client.username!==ident.username||client.role!==ident.role)return res.status(403).json({ok:false,error:"Radio client session mismatch"});
+  if(!channelId){client.channelId=null;client.channelName=null;client.serviceId=null;client.serviceName=null;guardianRadioPresence();return res.json({ok:true,channel:null});}
   const found=guardianRadioFindChannel(channelId);if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Channel is not open"});
   client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceId=found.service.id;client.serviceName=found.service.name;
   guardianRadioPresence();
@@ -511,9 +512,13 @@ app.post("/api/radio/call",(req,res)=>{
   if(action==="request"){
     if(!["vehicle","mdt"].includes(ident.role))return res.status(400).json({ok:false,error:"Only MDT clients initiate this call type"});
     const found=guardianRadioFindChannel(req.body?.channelId||client.channelId);
-    if(!found||found.ch.open!==true)return res.status(409).json({ok:false,error:"Select an open channel first"});
-    client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
-    const call={id:crypto.randomUUID(),direction:"unit_to_control",status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found.service.id,serviceName:found.service.name,channelId:found.ch.id,channelName:found.ch.name,urgency:String(req.body?.urgency||req.body?.dialed||"1").replace(/[^0-9]/g,"").slice(0,2)||"1",createdAt:new Date().toISOString(),controlClientId:null};
+    // Keypad private calls to Control do not require a talkgroup. If the unit is
+    // already on a channel we include it as context, otherwise the direct call is
+    // explicitly marked NULL / PRIVATE CONTROL.
+    if(found&&found.ch.open===true){
+      client.channelId=found.ch.id;client.channelName=found.ch.name;client.serviceName=found.service.name;
+    }
+    const call={id:crypto.randomUUID(),direction:"unit_to_control",status:"ringing",vehicleClientId:client.id,callsign:client.callsign,username:client.username,serviceId:found?.service?.id||client.serviceId||req.body?.serviceId||null,serviceName:found?.service?.name||client.serviceName||"PRIVATE CONTROL",channelId:found?.ch?.id||null,channelName:found?.ch?.name||"NULL",urgency:String(req.body?.urgency||req.body?.dialed||"1").replace(/[^0-9]/g,"").slice(0,2)||"1",createdAt:new Date().toISOString(),controlClientId:null};
     guardianRadioCalls.set(call.id,call);
     guardianRadioBroadcast({type:"radio_call",action:"ringing",call},c=>c.role==="control");
     return res.json({ok:true,call});
