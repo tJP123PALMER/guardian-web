@@ -72,7 +72,37 @@ let guardianConfig=guardianReadJson(guardianConfigFile,{
     showPolice:false,
     ambulanceLabel:"Coming later",
     policeLabel:"Coming later",
-    applicationQuestions:["Why do you want to join Guardian?","Tell us about your roleplay experience.","Why are you interested in Fire & Rescue?"]
+    applicationQuestions:["Why do you want to join Guardian?","Tell us about your roleplay experience.","Why are you interested in Fire & Rescue?"],
+    brandLogoUrl:"/assets/lothian-borders-logo.png",
+    communityLogoUrl:"/assets/lothian-borders-logo.png",
+    heroImageUrl:"",
+    heroEyebrow:"LOTHIAN & BORDERS | GUARDIAN OPERATIONS",
+    heroDescription:"Access your operational systems, manage your profile, complete forms and use community tools — all in one place.",
+    heroStrapline:"PEOPLE | PROFESSIONALISM | COMMUNITY",
+    guidesUrl:"",
+    leaveUrl:"",
+    primaryColor:"#2397ff",
+    backgroundColor:"#07131d",
+    panelColor:"#0b1c28",
+    operationalTitle:"Core Operational Systems",
+    operationalIntro:"Access the core systems used across Guardian Operations. Tools are available once your whitelist application is approved.",
+    mdtTitle:"Player MDT",
+    mdtDescription:"Incidents, appliance status, messages and operational information.",
+    controlTitle:"Control Centre",
+    controlDescription:"Call handling, mobilisation, resources and live radio control.",
+    radioTitle:"Radio",
+    radioDescription:"Guardian IP radio channels and point-to-point communications.",
+    formsTitle:"Community Forms",
+    formsIntro:"Submit applications and requests to the Guardian team.",
+    whitelistFormTitle:"Whitelist Application",
+    whitelistFormSubtitle:"Join our community",
+    leaveTitle:"Leave of Absence",
+    leaveSubtitle:"Request time away",
+    supportTitle:"Support Request",
+    supportSubtitle:"Get help from staff",
+    futureTitle:"Expanding Our Services",
+    futureIntro:"More emergency services coming soon to Guardian Operations.",
+    footerText:"Built by the community, for the community."
   }
 });
 
@@ -171,8 +201,20 @@ function guardianPortalConfig(){
     communityName:String(p.communityName||"Guardian Operations"),discordUrl:String(p.discordUrl||""),formsUrl:String(p.formsUrl||""),supportUrl:String(p.supportUrl||""),
     applyEnabled:p.applyEnabled!==false,whitelistRequired:p.whitelistRequired!==false,minimumAge:Number(p.minimumAge||16),
     showMdt:p.showMdt!==false,showControl:p.showControl!==false,showRadio:p.showRadio!==false,showFire:p.showFire!==false,
-    showAmbulance:p.showAmbulance===true,showPolice:p.showPolice===true,ambulanceLabel:String(p.ambulanceLabel||"Coming later"),policeLabel:String(p.policeLabel||"Coming later"),
-    applicationQuestions:Array.isArray(p.applicationQuestions)?p.applicationQuestions:[]
+    showAmbulance:p.showAmbulance!==false,showPolice:p.showPolice!==false,ambulanceLabel:String(p.ambulanceLabel||"Coming Soon"),policeLabel:String(p.policeLabel||"Coming Soon"),
+    applicationQuestions:Array.isArray(p.applicationQuestions)?p.applicationQuestions:[],
+    brandLogoUrl:String(p.brandLogoUrl||"/assets/lothian-borders-logo.png"),communityLogoUrl:String(p.communityLogoUrl||p.brandLogoUrl||"/assets/lothian-borders-logo.png"),heroImageUrl:String(p.heroImageUrl||""),
+    heroEyebrow:String(p.heroEyebrow||"LOTHIAN & BORDERS | GUARDIAN OPERATIONS"),heroDescription:String(p.heroDescription||p.welcomeSubtitle||"Access your operational systems, manage your profile, complete forms and use community tools — all in one place."),heroStrapline:String(p.heroStrapline||"PEOPLE | PROFESSIONALISM | COMMUNITY"),
+    guidesUrl:String(p.guidesUrl||""),leaveUrl:String(p.leaveUrl||""),
+    primaryColor:String(p.primaryColor||"#2397ff"),backgroundColor:String(p.backgroundColor||"#07131d"),panelColor:String(p.panelColor||"#0b1c28"),
+    operationalTitle:String(p.operationalTitle||"Core Operational Systems"),operationalIntro:String(p.operationalIntro||"Access the core systems used across Guardian Operations. Tools are available once your whitelist application is approved."),
+    mdtTitle:String(p.mdtTitle||"Player MDT"),mdtDescription:String(p.mdtDescription||"Incidents, appliance status, messages and operational information."),
+    controlTitle:String(p.controlTitle||"Control Centre"),controlDescription:String(p.controlDescription||"Call handling, mobilisation, resources and live radio control."),
+    radioTitle:String(p.radioTitle||"Radio"),radioDescription:String(p.radioDescription||"Guardian IP radio channels and point-to-point communications."),
+    formsTitle:String(p.formsTitle||"Community Forms"),formsIntro:String(p.formsIntro||"Submit applications and requests to the Guardian team."),
+    whitelistFormTitle:String(p.whitelistFormTitle||"Whitelist Application"),whitelistFormSubtitle:String(p.whitelistFormSubtitle||"Join our community"),
+    leaveTitle:String(p.leaveTitle||"Leave of Absence"),leaveSubtitle:String(p.leaveSubtitle||"Request time away"),supportTitle:String(p.supportTitle||"Support Request"),supportSubtitle:String(p.supportSubtitle||"Get help from staff"),
+    futureTitle:String(p.futureTitle||"Expanding Our Services"),futureIntro:String(p.futureIntro||"More emergency services coming soon to Guardian Operations."),footerText:String(p.footerText||"Built by the community, for the community.")
   };
 }
 

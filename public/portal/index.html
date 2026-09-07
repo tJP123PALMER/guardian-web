@@ -1,8 +1,107 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guardian Operations · Portal</title><link rel="stylesheet" href="/portal/portal.css?v=42"></head><body>
-<header class="top"><a class="brand" href="/portal/"><img src="/assets/guardian-projects-shield.png"><span><b>GUARDIAN OPERATIONS</b><small>Fire & Rescue Command Platform</small></span></a><nav><a class="active" href="#home">Portal</a><a href="#profile">Your Profile</a><a href="#forms">Forms</a><div class="drop"><button>Misc ▾</button><div><a href="#community">Community Info</a><a id="supportNav" href="#">Support</a></div></div></nav><div id="sessionActions"></div></header>
-<main id="home"><section class="hero"><div class="shade"></div><div class="heroInner"><img class="heroLogo" src="/assets/guardian-projects-logo.png"><div class="eyebrow">GUARDIAN PROJECTS · OPERATIONAL PORTAL</div><h1 id="welcomeTitle">Welcome to <span>Guardian Operations</span></h1><p id="welcomeSubtitle">British emergency services roleplay platform</p><div class="heroBtns"><a class="btn primary" id="enterBtn" href="/login/?next=%2Fportal%2F">MEMBER LOGIN</a><a class="btn" id="applyBtn" href="/apply/">APPLY / WHITELIST</a><a class="btn ghost" id="discordBtn" href="#">JOIN DISCORD</a></div><div id="accessBanner" class="accessBanner hidden"></div></div></section>
-<section class="wrap" id="community"><div class="sectionHead"><div><div class="eyebrow">MEMBERS AREA</div><h2>Operational systems</h2><p>Operational tools stay locked until your Guardian whitelist application is approved.</p></div><div id="memberState" class="memberState">Checking access…</div></div><div class="systemGrid"><a class="sys" id="mdtCard" data-route="/mdt/" href="#"><div class="ico">▣</div><div><h3>Player MDT</h3><p>Incidents, appliance status, messages and operational information.</p><span>FIRE & RESCUE</span></div><b>→</b></a><a class="sys" id="controlCard" data-route="/control/" href="#"><div class="ico">◉</div><div><h3>Control Centre</h3><p>Call handling, mobilisation, resources and live radio control.</p><span>AUTHORISED ROLES</span></div><b>→</b></a><a class="sys" id="radioCard" data-route="/radio/" href="#"><div class="ico">▥</div><div><h3>Radio</h3><p>Guardian IP radio channels and point-to-point communications.</p><span>VOICE COMMS</span></div><b>→</b></a></div></section>
-<section class="wrap modules"><div class="sectionHead"><div><div class="eyebrow">SERVICES</div><h2>Guardian modules</h2></div></div><div class="moduleGrid"><article id="fireModule" class="module live"><img src="/assets/guardian-projects-shield.png"><h3>Fire & Rescue</h3><p>Current operational module.</p><span>LIVE</span></article><article id="ambulanceModule" class="module"><div class="futureIcon">✚</div><h3>Ambulance</h3><p id="ambulanceLabel">Coming later</p><span>FUTURE</span></article><article id="policeModule" class="module"><div class="futureIcon">★</div><h3>Police</h3><p id="policeLabel">Coming later</p><span>FUTURE</span></article></div></section>
-<section class="wrap profile" id="profile"><div class="sectionHead"><div><div class="eyebrow">ACCOUNT</div><h2>Your Profile</h2></div></div><div id="profileBox" class="profileBox">Sign in to view your Guardian profile.</div></section>
-<section class="wrap forms" id="forms"><div class="sectionHead"><div><div class="eyebrow">FORMS</div><h2>Community forms</h2><p>Applications and community forms configured by Guardian administrators.</p></div></div><div class="formsRow"><a class="btn primary" href="/apply/">WHITELIST APPLICATION</a><a class="btn" id="formsLink" href="#">OTHER FORMS</a></div></section></main>
-<footer><div><b>GUARDIAN OPERATIONS</b><span>Guardian Projects</span></div><p>Operational access is controlled by whitelist status and role permissions.</p></footer><script src="/portal/portal.js?v=42"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Guardian Operations · Portal</title>
+  <link rel="stylesheet" href="/portal/portal.css?v=43">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/portal/" aria-label="Guardian Operations portal">
+    <img id="brandLogo" src="/assets/lothian-borders-logo.png" alt="Guardian Operations">
+    <span><b id="brandName">GUARDIAN OPERATIONS</b><small id="brandTagline">Fire & Rescue Command Platform</small></span>
+  </a>
+  <nav class="mainnav" aria-label="Portal navigation">
+    <a class="active" href="#home">⌂ <span>Portal</span></a>
+    <a href="#profile">♙ <span>Your Profile</span></a>
+    <a href="#forms">▤ <span>Forms</span></a>
+    <div class="drop"><button type="button">▦ <span>Misc</span>⌄</button><div><a href="#future">Future Services</a><a id="supportNav" href="#">Help & Support</a></div></div>
+    <a id="adminSettingsNav" class="adminNav hidden" href="/settings.html#portal">⚙ <span>Settings</span></a>
+  </nav>
+  <div id="sessionActions" class="sessionActions"></div>
+</header>
+
+<main id="home">
+  <section class="heroShell">
+    <div class="heroCard" id="heroCard">
+      <div class="heroOverlay"></div>
+      <div class="heroCopy">
+        <div class="eyebrow" id="heroEyebrow">LOTHIAN &amp; BORDERS | GUARDIAN OPERATIONS</div>
+        <h1 id="welcomeTitle">Welcome to <span>Guardian Operations</span></h1>
+        <p class="heroDescription" id="heroDescription">Access your operational systems, manage your profile, complete forms and use community tools — all in one place.</p>
+        <div class="heroButtons">
+          <a class="btn primary" id="enterBtn" href="/login/?next=%2Fportal%2F">GET STARTED</a>
+          <a class="btn" id="guidesBtn" href="#forms">VIEW GUIDES</a>
+        </div>
+        <div class="heroStrap"><span></span><b id="heroStrapline">PEOPLE &nbsp; | &nbsp; PROFESSIONALISM &nbsp; | &nbsp; COMMUNITY</b></div>
+      </div>
+      <div class="heroMark" aria-hidden="true"><img id="heroWatermark" src="/assets/lothian-borders-logo.png" alt=""></div>
+    </div>
+
+    <aside class="accessCard">
+      <div class="accessHead"><div><div class="eyebrow">YOUR ACCESS</div><h2>Operational Status</h2></div><span id="systemState" class="onlineDot">● Online</span></div>
+      <p>Your current access and permissions.</p>
+      <div class="statusRows">
+        <div class="statusRow"><span class="statusIcon">♙</span><div><b>Account Status</b><small id="accountStatusText">Guest</small></div><em id="accountStatusBadge">SIGNED OUT</em></div>
+        <div class="statusRow"><span class="statusIcon">◇</span><div><b>Whitelist Status</b><small id="whitelistText">Not checked</small></div><em id="whitelistBadge">LOCKED</em></div>
+        <div class="statusRow"><span class="statusIcon">♧</span><div><b>Your Role</b><small id="roleText">Guest</small></div><em id="roleBadge">GUEST</em></div>
+        <div class="statusRow"><span class="statusIcon">▱</span><div><b>Operational Access</b><small id="accessText">Fire &amp; Rescue</small></div><em id="accessBadge">LOCKED</em></div>
+      </div>
+      <a class="manageBtn" id="manageProfileBtn" href="#profile">⚙ <span>Manage Profile</span><b>→</b></a>
+    </aside>
+  </section>
+
+  <div id="accessBanner" class="accessBanner hidden"></div>
+
+  <section class="contentSection" id="systems">
+    <div class="sectionTitle"><div><div class="eyebrow">OPERATIONAL SYSTEMS</div><h2 id="operationalTitle">Core Operational Systems</h2><p id="operationalIntro">Access the core systems used across Guardian Operations. Tools are available once your whitelist application is approved.</p></div><span>REAL OPERATIONS. REAL PEOPLE.</span></div>
+    <div class="systemGrid">
+      <a class="systemCard" id="mdtCard" data-route="/mdt/" href="#"><div class="systemIcon">▣</div><div><h3 id="mdtTitle">Player MDT</h3><p id="mdtDescription">Incidents, appliance status, messages and operational information.</p><small>FIRE &amp; RESCUE</small></div><b>→</b></a>
+      <a class="systemCard" id="controlCard" data-route="/control/" href="#"><div class="systemIcon">◉</div><div><h3 id="controlTitle">Control Centre</h3><p id="controlDescription">Call handling, mobilisation, resources and live radio control.</p><small>AUTHORISED ROLES</small></div><b>→</b></a>
+      <a class="systemCard" id="radioCard" data-route="/radio/" href="#"><div class="systemIcon">▥</div><div><h3 id="radioTitle">Radio</h3><p id="radioDescription">Guardian IP radio channels and point-to-point communications.</p><small>VOICE COMMS</small></div><b>→</b></a>
+    </div>
+  </section>
+
+  <section class="lowerGrid">
+    <section class="contentSection compact" id="forms">
+      <div class="sectionTitle"><div><div class="eyebrow">COMMUNITY FORMS</div><h2 id="formsTitle">Community Forms</h2><p id="formsIntro">Submit applications and requests to the Guardian team.</p></div></div>
+      <div class="miniGrid">
+        <a class="miniCard" href="/apply/"><span>▤</span><div><b id="whitelistFormTitle">Whitelist Application</b><small id="whitelistFormSubtitle">Join our community</small></div><strong>→</strong></a>
+        <a class="miniCard" id="leaveBtn" href="#"><span>▦</span><div><b id="leaveTitle">Leave of Absence</b><small id="leaveSubtitle">Request time away</small></div><strong>→</strong></a>
+        <a class="miniCard" id="supportBtn" href="#"><span>◌</span><div><b id="supportTitle">Support Request</b><small id="supportSubtitle">Get help from staff</small></div><strong>→</strong></a>
+      </div>
+    </section>
+
+    <section class="contentSection compact adminPanel hidden" id="adminPanel">
+      <div class="sectionTitle"><div><div class="eyebrow">ADMIN SETTINGS <span class="adminPill">ADMIN ONLY</span></div><h2>Content &amp; Settings</h2><p>Manage the website, branding, applications and operational access.</p></div></div>
+      <div class="adminGrid">
+        <a href="/settings.html#portal">Branding &amp; Media <small>Logos, images, theme</small></a>
+        <a href="/settings.html#portal">Homepage Content <small>Hero, headings, text</small></a>
+        <a href="/settings.html#applications">Whitelist &amp; Applications <small>Approve applications</small></a>
+        <a href="/settings.html#users">Roles &amp; Permissions <small>Users and access</small></a>
+        <a href="/settings.html#config">Operational Systems <small>Core configuration</small></a>
+        <a href="/settings.html#radio">Radio / Channels <small>Talkgroups and channels</small></a>
+      </div>
+    </section>
+  </section>
+
+  <section class="contentSection" id="future">
+    <div class="sectionTitle"><div><div class="eyebrow">FUTURE SERVICES</div><h2 id="futureTitle">Expanding Our Services</h2><p id="futureIntro">More emergency services coming soon to Guardian Operations.</p></div></div>
+    <div class="futureGrid">
+      <article id="fireModule" class="futureCard live"><img src="/assets/guardian-projects-shield.png" alt=""><div><h3>Fire &amp; Rescue</h3><p>Current operational module.</p></div><span>LIVE</span></article>
+      <article id="ambulanceModule" class="futureCard"><div class="futureIcon">✚</div><div><h3>Ambulance</h3><p id="ambulanceLabel">Coming Soon</p></div><span>LOCKED</span></article>
+      <article id="policeModule" class="futureCard"><div class="futureIcon">★</div><div><h3>Police</h3><p id="policeLabel">Coming Soon</p></div><span>LOCKED</span></article>
+    </div>
+  </section>
+
+  <section class="contentSection profileSection" id="profile">
+    <div class="sectionTitle"><div><div class="eyebrow">ACCOUNT</div><h2>Your Profile</h2></div></div>
+    <div id="profileBox" class="profileBox">Sign in to view your Guardian profile.</div>
+  </section>
+</main>
+
+<footer><div><b id="footerBrand">GUARDIAN OPERATIONS</b><small id="footerTagline">Fire &amp; Rescue Command Platform</small></div><nav><a href="#home">Portal</a><a href="#profile">Your Profile</a><a href="#forms">Forms</a><a id="footerSettings" class="hidden" href="/settings.html#portal">Settings</a></nav><p id="footerText">Built by the community, for the community.</p></footer>
+<script src="/portal/portal.js?v=43"></script>
+</body>
+</html>

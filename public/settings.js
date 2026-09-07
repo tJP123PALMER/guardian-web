@@ -23,6 +23,8 @@ function notify(msg){const n=document.createElement("div");n.className="toast";n
 async function boot(){
   try{
     me=(await api("/api/admin/me")).user;
+    const wanted=String(location.hash||"").replace(/^#/,"");
+    if(wanted && document.querySelector(`.nav[data-tab="${wanted}"]`)){active=wanted;document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.tab===wanted));$("pageTitle").textContent=document.querySelector(`.nav[data-tab="${wanted}"]`).textContent}
     showApp();
     await refreshAll();
   }catch(_){
@@ -35,7 +37,7 @@ $("loginBtn").onclick=async()=>{
   catch(e){$("loginError").textContent=e.message}
 };
 $("logoutBtn").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};
-document.querySelectorAll(".nav").forEach(b=>b.onclick=()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");active=b.dataset.tab;$("pageTitle").textContent=b.textContent;render()});
+document.querySelectorAll(".nav").forEach(b=>b.onclick=()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");active=b.dataset.tab;location.hash=active;$("pageTitle").textContent=b.textContent;render()});
 function showApp(){$("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("who").innerHTML=`${esc(me.displayName||me.username)} · <span class="badge ${me.role==="owner"?"owner":""}">${esc(me.role.toUpperCase())}</span>`}
 async function refreshAll(){
   setContent(`<div class="card"><h3>Loading Guardian data…</h3></div>`);
@@ -270,9 +272,86 @@ function renderConfig(){
 function renderPortal(){
   config.portal ||= {};
   const p=config.portal;
-  setContent(`<div class="configGrid"><div class="card wide"><div class="eyebrow">PORTAL BRANDING</div><h3>Landing Portal</h3><p>Change the first page members see without editing code.</p><div class="formGrid"><label>Site name<input id="pSite" value="${esc(p.siteName||'Guardian Operations')}"></label><label>Header tagline<input id="pTag" value="${esc(p.tagline||'Fire & Rescue Command Platform')}"></label><label>Welcome heading<input id="pWelcome" value="${esc(p.welcomeTitle||'Welcome to Guardian Operations')}"></label><label>Welcome subtitle<input id="pSub" value="${esc(p.welcomeSubtitle||'British emergency services roleplay platform')}"></label><label>Discord URL<input id="pDiscord" value="${esc(p.discordUrl||'')}"></label><label>Forms URL<input id="pForms" value="${esc(p.formsUrl||'')}"></label><label>Support URL<input id="pSupport" value="${esc(p.supportUrl||'')}"></label><label>Minimum age<input id="pAge" type="number" value="${Number(p.minimumAge||16)}"></label></div></div><div class="card"><div class="eyebrow">ACCESS GATE</div><h3>Whitelist</h3><div class="toggleList"><label><input id="pWhitelist" type="checkbox" ${p.whitelistRequired!==false?'checked':''}> Require approved whitelist before MDT / Control / Radio</label><label><input id="pApply" type="checkbox" ${p.applyEnabled!==false?'checked':''}> Accept new applications</label></div></div><div class="card"><div class="eyebrow">PORTAL CARDS</div><h3>Operational systems</h3><div class="toggleList"><label><input id="pMdt" type="checkbox" ${p.showMdt!==false?'checked':''}> Show Player MDT</label><label><input id="pControl" type="checkbox" ${p.showControl!==false?'checked':''}> Show Control Centre</label><label><input id="pRadio" type="checkbox" ${p.showRadio!==false?'checked':''}> Show Radio</label></div></div><div class="card"><div class="eyebrow">SERVICE MODULES</div><h3>Current / future services</h3><div class="toggleList"><label><input id="pFire" type="checkbox" ${p.showFire!==false?'checked':''}> Fire & Rescue</label><label><input id="pAmb" type="checkbox" ${p.showAmbulance===true?'checked':''}> Ambulance card</label><label><input id="pPolice" type="checkbox" ${p.showPolice===true?'checked':''}> Police card</label></div><label>Ambulance label<input id="pAmbLabel" value="${esc(p.ambulanceLabel||'Coming later')}"></label><label>Police label<input id="pPoliceLabel" value="${esc(p.policeLabel||'Coming later')}"></label></div><div class="card wide"><div class="eyebrow">APPLICATION FORM</div><h3>Whitelist Questions</h3><p>One question per line. Changes appear on /apply/ immediately.</p><textarea id="pQuestions" rows="10">${esc((p.applicationQuestions||[]).join('\n'))}</textarea></div></div><div class="card saveBar"><div><h3>Save Portal & Access</h3><p>This controls the public portal, application gate and future service modules.</p></div><button id="savePortal">SAVE PORTAL SETTINGS</button></div>`);
-  $('savePortal').onclick=async()=>{config.portal={...config.portal,siteName:$('pSite').value.trim(),tagline:$('pTag').value.trim(),welcomeTitle:$('pWelcome').value.trim(),welcomeSubtitle:$('pSub').value.trim(),discordUrl:$('pDiscord').value.trim(),formsUrl:$('pForms').value.trim(),supportUrl:$('pSupport').value.trim(),minimumAge:Number($('pAge').value||16),whitelistRequired:$('pWhitelist').checked,applyEnabled:$('pApply').checked,showMdt:$('pMdt').checked,showControl:$('pControl').checked,showRadio:$('pRadio').checked,showFire:$('pFire').checked,showAmbulance:$('pAmb').checked,showPolice:$('pPolice').checked,ambulanceLabel:$('pAmbLabel').value.trim(),policeLabel:$('pPoliceLabel').value.trim(),applicationQuestions:$('pQuestions').value.split('\n').map(x=>x.trim()).filter(Boolean)};await api('/api/admin/config',{method:'POST',body:JSON.stringify({config})});notify('Portal & whitelist settings saved');await refreshAll()}
+  const val=(x,d='')=>esc(x??d);
+  setContent(`<div class="configGrid">
+    <div class="card wide"><div class="sectionHead"><div><div class="eyebrow">PORTAL STUDIO</div><h3>Branding & Identity</h3><p>These settings drive the member portal. No code edit is required.</p></div><a class="buttonLike" href="/portal/" target="_blank">OPEN LIVE PORTAL ↗</a></div>
+      <div class="formGrid">
+        <label>Site name<input id="pSite" value="${val(p.siteName,'Guardian Operations')}"></label>
+        <label>Header tagline<input id="pTag" value="${val(p.tagline,'Fire & Rescue Command Platform')}"></label>
+        <label>Brand / header logo URL<input id="pLogo" value="${val(p.brandLogoUrl,'/assets/lothian-borders-logo.png')}"></label>
+        <label>Community / hero badge URL<input id="pCommunityLogo" value="${val(p.communityLogoUrl,'/assets/lothian-borders-logo.png')}"></label>
+        <label>Primary colour<input id="pPrimary" type="color" value="${val(p.primaryColor,'#2397ff')}"></label>
+        <label>Background colour<input id="pBackground" type="color" value="${val(p.backgroundColor,'#07131d')}"></label>
+        <label>Panel colour<input id="pPanel" type="color" value="${val(p.panelColor,'#0b1c28')}"></label>
+      </div>
+    </div>
+
+    <div class="card wide"><div class="eyebrow">HOMEPAGE HERO</div><h3>Welcome Banner</h3><p>Use your own real community photo here. Paste a direct image URL, or leave blank for the clean Guardian gradient.</p>
+      <div class="formGrid">
+        <label>Hero image URL<input id="pHeroImage" value="${val(p.heroImageUrl)}" placeholder="https://.../station-photo.jpg"></label>
+        <label>Small top line<input id="pHeroEyebrow" value="${val(p.heroEyebrow,'LOTHIAN & BORDERS | GUARDIAN OPERATIONS')}"></label>
+        <label>Welcome heading<input id="pWelcome" value="${val(p.welcomeTitle,'Welcome to Guardian Operations')}"></label>
+        <label>Hero description<textarea id="pHeroDesc" rows="3">${val(p.heroDescription,p.welcomeSubtitle||'')}</textarea></label>
+        <label>Bottom strapline<input id="pHeroStrap" value="${val(p.heroStrapline,'PEOPLE | PROFESSIONALISM | COMMUNITY')}"></label>
+        <label>Guides URL<input id="pGuides" value="${val(p.guidesUrl)}" placeholder="https://..."></label>
+      </div>
+    </div>
+
+    <div class="card wide"><div class="eyebrow">OPERATIONAL CARDS</div><h3>MDT, Control & Radio</h3><p>Edit the text shown on each launcher card. Visibility is controlled below.</p>
+      <div class="formGrid">
+        <label>Section title<input id="pOpTitle" value="${val(p.operationalTitle,'Core Operational Systems')}"></label>
+        <label>Section description<textarea id="pOpIntro" rows="3">${val(p.operationalIntro)}</textarea></label>
+        <label>MDT title<input id="pMdtTitle" value="${val(p.mdtTitle,'Player MDT')}"></label>
+        <label>MDT description<textarea id="pMdtDesc" rows="3">${val(p.mdtDescription)}</textarea></label>
+        <label>Control title<input id="pControlTitle" value="${val(p.controlTitle,'Control Centre')}"></label>
+        <label>Control description<textarea id="pControlDesc" rows="3">${val(p.controlDescription)}</textarea></label>
+        <label>Radio title<input id="pRadioTitle" value="${val(p.radioTitle,'Radio')}"></label>
+        <label>Radio description<textarea id="pRadioDesc" rows="3">${val(p.radioDescription)}</textarea></label>
+      </div>
+      <div class="toggleList"><label><input id="pMdt" type="checkbox" ${p.showMdt!==false?'checked':''}> Show Player MDT</label><label><input id="pControl" type="checkbox" ${p.showControl!==false?'checked':''}> Show Control Centre</label><label><input id="pRadio" type="checkbox" ${p.showRadio!==false?'checked':''}> Show Radio</label></div>
+    </div>
+
+    <div class="card wide"><div class="eyebrow">COMMUNITY FORMS</div><h3>Forms & Links</h3>
+      <div class="formGrid">
+        <label>Forms section title<input id="pFormsTitle" value="${val(p.formsTitle,'Community Forms')}"></label>
+        <label>Forms intro<textarea id="pFormsIntro" rows="3">${val(p.formsIntro)}</textarea></label>
+        <label>Whitelist card title<input id="pWhitelistFormTitle" value="${val(p.whitelistFormTitle,'Whitelist Application')}"></label>
+        <label>Whitelist card subtitle<input id="pWhitelistFormSubtitle" value="${val(p.whitelistFormSubtitle,'Join our community')}"></label>
+        <label>Leave card title<input id="pLeaveTitle" value="${val(p.leaveTitle,'Leave of Absence')}"></label>
+        <label>Leave card subtitle<input id="pLeaveSubtitle" value="${val(p.leaveSubtitle,'Request time away')}"></label>
+        <label>Leave / forms URL<input id="pLeaveUrl" value="${val(p.leaveUrl||p.formsUrl)}"></label>
+        <label>Support card title<input id="pSupportTitle" value="${val(p.supportTitle,'Support Request')}"></label>
+        <label>Support card subtitle<input id="pSupportSubtitle" value="${val(p.supportSubtitle,'Get help from staff')}"></label>
+        <label>Support URL<input id="pSupport" value="${val(p.supportUrl)}"></label>
+        <label>Discord URL<input id="pDiscord" value="${val(p.discordUrl)}"></label>
+      </div>
+    </div>
+
+    <div class="card"><div class="eyebrow">ACCESS GATE</div><h3>Whitelist</h3><div class="toggleList"><label><input id="pWhitelist" type="checkbox" ${p.whitelistRequired!==false?'checked':''}> Require approved whitelist before MDT / Control / Radio</label><label><input id="pApply" type="checkbox" ${p.applyEnabled!==false?'checked':''}> Accept new applications</label></div><label>Minimum age<input id="pAge" type="number" value="${Number(p.minimumAge||16)}"></label></div>
+
+    <div class="card"><div class="eyebrow">SERVICE MODULES</div><h3>Current / Future Services</h3><div class="toggleList"><label><input id="pFire" type="checkbox" ${p.showFire!==false?'checked':''}> Show Fire & Rescue</label><label><input id="pAmb" type="checkbox" ${p.showAmbulance!==false?'checked':''}> Show Ambulance</label><label><input id="pPolice" type="checkbox" ${p.showPolice!==false?'checked':''}> Show Police</label></div><label>Future section title<input id="pFutureTitle" value="${val(p.futureTitle,'Expanding Our Services')}"></label><label>Future section intro<textarea id="pFutureIntro" rows="3">${val(p.futureIntro)}</textarea></label><label>Ambulance label<input id="pAmbLabel" value="${val(p.ambulanceLabel,'Coming Soon')}"></label><label>Police label<input id="pPoliceLabel" value="${val(p.policeLabel,'Coming Soon')}"></label></div>
+
+    <div class="card wide"><div class="eyebrow">APPLICATION FORM</div><h3>Whitelist Questions</h3><p>One question per line. Changes appear on /apply/ immediately.</p><textarea id="pQuestions" rows="10">${esc((p.applicationQuestions||[]).join('\n'))}</textarea></div>
+
+    <div class="card wide"><div class="eyebrow">FOOTER / SITE TEXT</div><h3>Footer</h3><label>Footer message<input id="pFooterText" value="${val(p.footerText,'Built by the community, for the community.')}"></label></div>
+  </div>
+  <div class="card saveBar"><div><h3>Save Portal Studio</h3><p>Changes appear on /portal/ after save and refresh.</p></div><button id="savePortal">SAVE PORTAL SETTINGS</button></div>`);
+
+  $('savePortal').onclick=async()=>{
+    config.portal={...config.portal,
+      siteName:$('pSite').value.trim(),tagline:$('pTag').value.trim(),brandLogoUrl:$('pLogo').value.trim(),communityLogoUrl:$('pCommunityLogo').value.trim(),
+      primaryColor:$('pPrimary').value,backgroundColor:$('pBackground').value,panelColor:$('pPanel').value,
+      heroImageUrl:$('pHeroImage').value.trim(),heroEyebrow:$('pHeroEyebrow').value.trim(),welcomeTitle:$('pWelcome').value.trim(),heroDescription:$('pHeroDesc').value.trim(),heroStrapline:$('pHeroStrap').value.trim(),guidesUrl:$('pGuides').value.trim(),
+      operationalTitle:$('pOpTitle').value.trim(),operationalIntro:$('pOpIntro').value.trim(),mdtTitle:$('pMdtTitle').value.trim(),mdtDescription:$('pMdtDesc').value.trim(),controlTitle:$('pControlTitle').value.trim(),controlDescription:$('pControlDesc').value.trim(),radioTitle:$('pRadioTitle').value.trim(),radioDescription:$('pRadioDesc').value.trim(),
+      formsTitle:$('pFormsTitle').value.trim(),formsIntro:$('pFormsIntro').value.trim(),whitelistFormTitle:$('pWhitelistFormTitle').value.trim(),whitelistFormSubtitle:$('pWhitelistFormSubtitle').value.trim(),leaveTitle:$('pLeaveTitle').value.trim(),leaveSubtitle:$('pLeaveSubtitle').value.trim(),leaveUrl:$('pLeaveUrl').value.trim(),supportTitle:$('pSupportTitle').value.trim(),supportSubtitle:$('pSupportSubtitle').value.trim(),supportUrl:$('pSupport').value.trim(),discordUrl:$('pDiscord').value.trim(),
+      whitelistRequired:$('pWhitelist').checked,applyEnabled:$('pApply').checked,minimumAge:Number($('pAge').value||16),showMdt:$('pMdt').checked,showControl:$('pControl').checked,showRadio:$('pRadio').checked,showFire:$('pFire').checked,showAmbulance:$('pAmb').checked,showPolice:$('pPolice').checked,
+      futureTitle:$('pFutureTitle').value.trim(),futureIntro:$('pFutureIntro').value.trim(),ambulanceLabel:$('pAmbLabel').value.trim(),policeLabel:$('pPoliceLabel').value.trim(),footerText:$('pFooterText').value.trim(),
+      applicationQuestions:$('pQuestions').value.split('\n').map(x=>x.trim()).filter(Boolean)
+    };
+    await api('/api/admin/config',{method:'POST',body:JSON.stringify({config})});notify('Portal Studio settings saved');await refreshAll()
+  };
 }
+
 async function renderApplications(){
   setContent('<div class="card"><h3>Loading whitelist applications…</h3></div>');
   try{const rows=(await api('/api/admin/applications')).applications||[];const draw=()=>{setContent(`<div class="card"><div class="sectionHead"><div><div class="eyebrow">WHITELIST</div><h3>Applications</h3><p>Approve an applicant to unlock Guardian operational systems.</p></div><span class="statusBadge warn">${rows.filter(x=>x.status==='pending').length} PENDING</span></div><div class="tableWrap"><table><thead><tr><th>Applicant</th><th>Discord / Age</th><th>Answers</th><th>Status</th><th>Review</th></tr></thead><tbody>${rows.map(a=>`<tr><td><b>${esc(a.displayName||a.username)}</b><br><small>${esc(a.username)}</small><br><small>${a.submittedAt?new Date(a.submittedAt).toLocaleString():''}</small></td><td>${esc(a.discord||'—')}<br>Age ${esc(a.age||'—')}</td><td>${(a.answers||[]).map((x,i)=>`<div><b>Q${i+1}</b> ${esc(x)}</div>`).join('')}</td><td><span class="statusBadge ${a.status==='approved'?'ok':a.status==='rejected'?'off':'warn'}">${esc(String(a.status||'pending').toUpperCase())}</span></td><td>${a.status==='pending'?`<button data-app-ok="${a.id}">APPROVE</button> <button class="danger" data-app-no="${a.id}">REJECT</button>`:`<small>${esc(a.reviewedBy||'')} ${a.reviewedAt?new Date(a.reviewedAt).toLocaleString():''}</small>`}</td></tr>`).join('')||'<tr><td colspan="5">No applications yet.</td></tr>'}</tbody></table></div></div>`);document.querySelectorAll('[data-app-ok]').forEach(b=>b.onclick=async()=>{await api('/api/admin/applications/'+b.dataset.appOk+'/review',{method:'POST',body:JSON.stringify({decision:'approved'})});notify('Whitelist approved');renderApplications()});document.querySelectorAll('[data-app-no]').forEach(b=>b.onclick=async()=>{const note=prompt('Optional rejection note')||'';await api('/api/admin/applications/'+b.dataset.appNo+'/review',{method:'POST',body:JSON.stringify({decision:'rejected',note})});notify('Application rejected');renderApplications()})};draw()}catch(e){errorView('Whitelist Applications',e)}
