@@ -51,7 +51,29 @@ let guardianConfig=guardianReadJson(guardianConfigFile,{
   ],
   map:{stations:{}},
   alerts:{},
-  general:{}
+  general:{},
+  portal:{
+    siteName:"Guardian Operations",
+    tagline:"Fire & Rescue Command Platform",
+    welcomeTitle:"Welcome to Guardian Operations",
+    welcomeSubtitle:"British emergency services roleplay platform",
+    communityName:"Guardian Operations",
+    discordUrl:"",
+    applyEnabled:true,
+    whitelistRequired:true,
+    minimumAge:16,
+    formsUrl:"",
+    supportUrl:"",
+    showMdt:true,
+    showControl:true,
+    showRadio:true,
+    showFire:true,
+    showAmbulance:false,
+    showPolice:false,
+    ambulanceLabel:"Coming later",
+    policeLabel:"Coming later",
+    applicationQuestions:["Why do you want to join Guardian?","Tell us about your roleplay experience.","Why are you interested in Fire & Rescue?"]
+  }
 });
 
 function guardianAdminCookieMap(req){
@@ -121,6 +143,38 @@ function guardianBootstrapOwner(){
   guardianAdminAuditLog("SYSTEM","OWNER_BOOTSTRAPPED",{username:GUARDIAN_OWNER_USERNAME});
 }
 guardianBootstrapOwner();
+
+// ============================================================
+// Guardian Portal / Whitelist applications
+// ============================================================
+const guardianApplicationsFile=path.join(guardianAdminDataDir,"guardian-applications.json");
+let guardianApplications=guardianReadJson(guardianApplicationsFile,[]);
+if(!Array.isArray(guardianApplications))guardianApplications=[];
+function guardianSaveUsers(){guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()])}
+function guardianSaveApplications(){guardianWriteJson(guardianApplicationsFile,guardianApplications)}
+// Existing operational accounts pre-date the whitelist gateway. Preserve their access.
+let guardianWhitelistMigrated=false;
+for(const u of guardianAdminUsers.values()){
+  if(!u.whitelistStatus){u.whitelistStatus="approved";u.whitelistUpdatedAt=u.createdAt||new Date().toISOString();guardianWhitelistMigrated=true}
+}
+if(guardianWhitelistMigrated)guardianSaveUsers();
+function guardianUserWhitelisted(username){
+  const u=guardianAdminUsers.get(String(username||""));
+  return !!u&&String(u.whitelistStatus||"").toLowerCase()==="approved";
+}
+function guardianSessionWhitelisted(session){return !!session&&guardianUserWhitelisted(session.username)}
+function guardianPortalConfig(){
+  const p=guardianConfig.portal||{};
+  return {
+    siteName:String(p.siteName||"Guardian Operations"),tagline:String(p.tagline||"Fire & Rescue Command Platform"),
+    welcomeTitle:String(p.welcomeTitle||"Welcome to Guardian Operations"),welcomeSubtitle:String(p.welcomeSubtitle||"British emergency services roleplay platform"),
+    communityName:String(p.communityName||"Guardian Operations"),discordUrl:String(p.discordUrl||""),formsUrl:String(p.formsUrl||""),supportUrl:String(p.supportUrl||""),
+    applyEnabled:p.applyEnabled!==false,whitelistRequired:p.whitelistRequired!==false,minimumAge:Number(p.minimumAge||16),
+    showMdt:p.showMdt!==false,showControl:p.showControl!==false,showRadio:p.showRadio!==false,showFire:p.showFire!==false,
+    showAmbulance:p.showAmbulance===true,showPolice:p.showPolice===true,ambulanceLabel:String(p.ambulanceLabel||"Coming later"),policeLabel:String(p.policeLabel||"Coming later"),
+    applicationQuestions:Array.isArray(p.applicationQuestions)?p.applicationQuestions:[]
+  };
+}
 
 function guardianAdminReadSession(req){
   const raw=guardianAdminCookieMap(req).guardian_admin;
@@ -199,14 +253,16 @@ app.post("/api/login",(req,res)=>{
   const vehicle=req.body?.vehicle===true||String(req.query?.vehicle||"")==="1";
   const requestedNext=String(req.body?.next||"").trim();
   const safeNext=requestedNext.startsWith("/")&&!requestedNext.startsWith("//")?requestedNext:"";
-  const fallback=vehicle?"/vehicle/":(["control","supervisor","admin","dev","owner"].includes(user.role)?"/control/":"/mdt/");
-  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role},redirect:safeNext||fallback,remembered:remember});
+  const approved=guardianUserWhitelisted(user.username);
+  const fallback=!approved?"/portal/?status=pending":(vehicle?"/vehicle/":(["control","supervisor","admin","dev","owner"].includes(user.role)?"/control/":"/portal/"));
+  const redirect=approved&&safeNext?safeNext:fallback;
+  res.json({ok:true,user:{username:user.username,displayName:user.displayName,role:user.role,whitelistStatus:user.whitelistStatus||"pending"},redirect,remembered:remember});
 });
 app.post("/api/logout",(req,res)=>{guardianUserClearCookie(res);guardianAdminClearCookie(res);res.json({ok:true})});
 app.get("/api/session",(req,res)=>{
   const session=guardianUserReadSession(req);if(!session)return res.status(401).json({ok:false,authenticated:false});
   const user=guardianAdminUsers.get(session.username);
-  res.json({ok:true,authenticated:true,user:{username:session.username,displayName:user?.displayName||session.username,role:session.role},callsign:guardianVehicleAssignment(session.username)});
+  res.json({ok:true,authenticated:true,user:{username:session.username,displayName:user?.displayName||session.username,role:session.role,whitelistStatus:user?.whitelistStatus||"pending"},whitelisted:guardianUserWhitelisted(session.username),callsign:guardianVehicleAssignment(session.username)});
 });
 app.get("/api/vehicle/session",(req,res)=>{
   const session=guardianUserReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Vehicle login required"});
@@ -734,8 +790,10 @@ app.post("/api/admin/config",guardianRequireAdmin("settings.edit"),(req,res)=>{
     ...incoming,
     map:{...(guardianConfig.map||{}),...(incoming.map||{})},
     alerts:{...(guardianConfig.alerts||{}),...(incoming.alerts||{})},
-    general:{...(guardianConfig.general||{}),...(incoming.general||{})}
+    general:{...(guardianConfig.general||{}),...(incoming.general||{})},
+    portal:{...(guardianConfig.portal||{}),...(incoming.portal||{})}
   };
+  guardianWriteJson(guardianConfigFile,guardianConfig);
   applyGuardianBaselineToState();
   guardianAdminAuditLog(req.guardianAdmin.username,"CONFIG_UPDATED");
   res.json({ok:true,config:guardianConfig});
@@ -743,7 +801,7 @@ app.post("/api/admin/config",guardianRequireAdmin("settings.edit"),(req,res)=>{
 
 app.get("/api/admin/users",guardianRequireAdmin("settings.view"),(req,res)=>{
   const users=[...guardianAdminUsers.values()].map(u=>({
-    username:u.username,displayName:u.displayName,role:u.role,protected:!!u.protected,createdAt:u.createdAt
+    username:u.username,displayName:u.displayName,role:u.role,protected:!!u.protected,createdAt:u.createdAt,whitelistStatus:u.whitelistStatus||"pending",whitelistUpdatedAt:u.whitelistUpdatedAt||null
   }));
   res.json({ok:true,users});
 });
@@ -757,7 +815,7 @@ app.post("/api/admin/users",guardianRequireAdmin("settings.edit"),(req,res)=>{
   if(!["player","control","supervisor","admin","dev","readonly"].includes(role))return res.status(400).json({ok:false,error:"Invalid role"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"Username already exists"});
   const pw=guardianAdminHashPassword(password);
-  guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString()});
+  guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString(),whitelistStatus:"approved",whitelistUpdatedAt:new Date().toISOString()});
   guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"USER_CREATED",{username,role});
   res.json({ok:true});
@@ -786,6 +844,60 @@ app.delete("/api/admin/users/:username",guardianRequireAdmin("users.delete"),(re
   guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"USER_DELETED",{username});
   res.json({ok:true});
+});
+
+// Portal public configuration and application workflow
+app.get("/api/portal/config",(_req,res)=>res.json({ok:true,portal:guardianPortalConfig()}));
+app.get("/api/portal/me",(req,res)=>{
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);
+  if(!session)return res.json({ok:true,authenticated:false,whitelisted:false});
+  const user=guardianAdminUsers.get(session.username);
+  const application=guardianApplications.find(a=>a.username===session.username)||null;
+  res.json({ok:true,authenticated:true,whitelisted:guardianUserWhitelisted(session.username),user:{username:session.username,displayName:user?.displayName||session.username,role:session.role,whitelistStatus:user?.whitelistStatus||"pending"},application:application?{id:application.id,status:application.status,submittedAt:application.submittedAt,reviewedAt:application.reviewedAt||null}:null});
+});
+app.post("/api/applications",(req,res)=>{
+  const portal=guardianPortalConfig();
+  if(!portal.applyEnabled)return res.status(403).json({ok:false,error:"Applications are currently closed"});
+  const username=String(req.body?.username||"").trim();
+  const displayName=String(req.body?.displayName||username).trim();
+  const password=String(req.body?.password||"");
+  const discord=String(req.body?.discord||"").trim();
+  const age=Number(req.body?.age||0);
+  const answers=Array.isArray(req.body?.answers)?req.body.answers.map(x=>String(x||"").trim()):[];
+  if(!/^[a-zA-Z0-9_.-]{3,32}$/.test(username))return res.status(400).json({ok:false,error:"Username must be 3–32 characters using letters, numbers, dot, dash or underscore"});
+  if(password.length<8)return res.status(400).json({ok:false,error:"Password must be at least 8 characters"});
+  if(!discord)return res.status(400).json({ok:false,error:"Discord username / ID is required"});
+  if(age<portal.minimumAge)return res.status(400).json({ok:false,error:`Applicants must be at least ${portal.minimumAge}`});
+  if(req.body?.rulesAccepted!==true)return res.status(400).json({ok:false,error:"You must confirm the community rules"});
+  if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"That Guardian username already exists"});
+  const pw=guardianAdminHashPassword(password),nowIso=new Date().toISOString();
+  guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso});
+  guardianSaveUsers();
+  const application={id:crypto.randomUUID(),username,displayName,discord,age,answers,rulesAccepted:true,status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
+  guardianApplications.unshift(application);guardianSaveApplications();guardianAdminAuditLog(username,"WHITELIST_APPLICATION_SUBMITTED",{applicationId:application.id});
+  guardianUserSetCookie(res,guardianAdminUsers.get(username),12*60*60);
+  res.json({ok:true,status:"pending",redirect:"/portal/?status=pending"});
+});
+app.get("/api/admin/applications",guardianRequireAdmin("settings.view"),(req,res)=>{
+  res.json({ok:true,applications:guardianApplications});
+});
+app.post("/api/admin/applications/:id/review",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const application=guardianApplications.find(a=>a.id===req.params.id);
+  if(!application)return res.status(404).json({ok:false,error:"Application not found"});
+  const decision=String(req.body?.decision||"").toLowerCase();
+  if(!["approved","rejected"].includes(decision))return res.status(400).json({ok:false,error:"Decision must be approved or rejected"});
+  const user=guardianAdminUsers.get(application.username);
+  if(!user)return res.status(404).json({ok:false,error:"Applicant account not found"});
+  application.status=decision;application.reviewedAt=new Date().toISOString();application.reviewedBy=req.guardianAdmin.username;application.reviewNote=String(req.body?.note||"").trim();
+  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;
+  guardianSaveUsers();guardianSaveApplications();guardianAdminAuditLog(req.guardianAdmin.username,"WHITELIST_APPLICATION_REVIEWED",{applicationId:application.id,username:application.username,decision});
+  res.json({ok:true,application});
+});
+app.post("/api/admin/users/:username/whitelist",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const user=guardianAdminUsers.get(String(req.params.username||""));if(!user)return res.status(404).json({ok:false,error:"User not found"});
+  const status=String(req.body?.status||"").toLowerCase();if(!["approved","pending","rejected"].includes(status))return res.status(400).json({ok:false,error:"Invalid whitelist status"});
+  if(user.protected&&status!=="approved")return res.status(403).json({ok:false,error:"Protected owner access cannot be revoked"});
+  user.whitelistStatus=status;user.whitelistUpdatedAt=new Date().toISOString();guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"USER_WHITELIST_CHANGED",{username:user.username,status});res.json({ok:true,status});
 });
 
 app.get("/api/admin/audit",guardianRequireAdmin("audit.view"),(req,res)=>{
@@ -2181,29 +2293,55 @@ app.get("/api/operational/cover",(_req,res)=>{
 
 const controlFile = path.join(__dirname,"public","control","index.html");
 const mdtFile = path.join(__dirname,"public","mdt","index.html");
+const radioFile = path.join(__dirname,"public","radio","index.html");
 const loginFile = path.join(__dirname,"public","login.html");
+const portalFile = path.join(__dirname,"public","portal","index.html");
+const applicationFile = path.join(__dirname,"public","apply","index.html");
+function guardianSafeSession(req){return guardianUserReadSession(req)||guardianAdminReadSession(req)}
+function guardianFivemEmbed(req){return String(req.query?.fivem||"")==="1"||String(req.query?.directNui||"")==="1"}
+function guardianNeedWhitelist(req,res,nextPath){
+  const session=guardianSafeSession(req);
+  if(!session)return res.redirect(`/login/?next=${encodeURIComponent(nextPath)}&reason=portal`);
+  if((guardianConfig.portal?.whitelistRequired!==false)&&!guardianSessionWhitelisted(session))return res.redirect("/portal/?access=whitelist");
+  return session;
+}
 function guardianControlPage(req,res){
-  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);
-  if(!session||!guardianRadioControlRole(session.role)){
-    const next=encodeURIComponent("/control/");
-    return res.redirect(`/login/?next=${next}&reason=control`);
-  }
+  const session=guardianNeedWhitelist(req,res,"/control/");if(!session||res.headersSent)return;
+  if(!guardianRadioControlRole(session.role))return res.status(403).sendFile(portalFile);
   return res.sendFile(controlFile);
 }
+function guardianMdtPage(req,res){
+  if(guardianFivemEmbed(req))return res.sendFile(mdtFile);
+  const session=guardianNeedWhitelist(req,res,"/mdt/");if(!session||res.headersSent)return;
+  return res.sendFile(mdtFile);
+}
+function guardianRadioPage(req,res){
+  if(guardianFivemEmbed(req))return res.sendFile(radioFile);
+  const session=guardianNeedWhitelist(req,res,"/radio/");if(!session||res.headersSent)return;
+  return res.sendFile(radioFile);
+}
 app.get(["/login","/login/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(loginFile)});
-app.get("/",(q,r)=>{
-  const session=guardianUserReadSession(q)||guardianAdminReadSession(q);
-  if(session&&guardianRadioControlRole(session.role))return r.redirect("/control/");
-  return r.redirect("/login/?next=%2Fcontrol%2F");
-});
+app.get(["/apply","/apply/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(applicationFile)});
+app.get(["/portal","/portal/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(portalFile)});
+app.get("/",(_q,r)=>r.sendFile(portalFile));
 app.get(["/control","/control/"],guardianControlPage);
-app.get("/mdt",(_q,r)=>r.sendFile(mdtFile));
-app.get("/mdt/",(_q,r)=>r.sendFile(mdtFile));
+app.get(["/mdt","/mdt/"],guardianMdtPage);
+app.get(["/radio","/radio/"],guardianRadioPage);
 app.get(["/vehicle","/vehicle/"],(q,r)=>{
   r.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
   const session=guardianUserReadSession(q);
-  if(!session)return r.redirect("/login.html?vehicle=1");
-  return r.redirect("/mdt/?vehicle=1&build=6");
+  if(!session)return r.redirect("/login/?vehicle=1&next=%2Fvehicle%2F");
+  if((guardianConfig.portal?.whitelistRequired!==false)&&!guardianSessionWhitelisted(session))return r.redirect("/portal/?access=whitelist");
+  return r.redirect("/mdt/?vehicle=1&build=42");
+});
+// Prevent direct HTML-file bypasses while leaving CSS/JS/assets usable by FiveM NUI.
+app.use((req,res,next)=>{
+  const p=req.path.toLowerCase();
+  const protectedHtml=(p==="/mdt/index.html"||p==="/control/index.html"||p==="/radio/index.html");
+  if(!protectedHtml||guardianFivemEmbed(req))return next();
+  const session=guardianNeedWhitelist(req,res,req.path);if(!session||res.headersSent)return;
+  if(p==="/control/index.html"&&!guardianRadioControlRole(session.role))return res.status(403).sendFile(portalFile);
+  next();
 });
 
 // MDT/Control are operational screens: never leave an Android WebView stuck on an old
