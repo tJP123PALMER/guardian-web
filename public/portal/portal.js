@@ -4,14 +4,16 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const text=(id,v)=>{const e=$(id);if(e&&v!==undefined&&v!==null)e.textContent=v};
 async function get(url){const r=await fetch(url,{cache:'no-store',credentials:'same-origin'});if(!r.ok)throw new Error(`${r.status}`);return r.json()}
 function isAdmin(){return ['owner','admin','dev'].includes(String(me.user?.role||'').toLowerCase())}
+function can(permission){return me.permissions?.[permission]!==false}
+function setVisible(sel,visible){const el=$(sel);if(el)el.classList.toggle('hidden',!visible)}
 function setHref(sel,url,fallback='#'){const e=$(sel);if(e)e.href=url||fallback}
-function cleanView(v){return ['portal','profile','forms','misc'].includes(v)?v:'portal'}
+function cleanView(v){return ['portal','profile','forms','patrols','training','guides','misc'].includes(v)?v:'portal'}
 function showView(view,{push=true}={}){
   currentView=cleanView(view);
   $$('.appView').forEach(v=>{const active=v.dataset.view===currentView;v.hidden=!active;v.classList.toggle('active',active)});
   $$('[data-view-link]').forEach(n=>{const active=n.dataset.viewLink===currentView;n.classList.toggle('active',active);if(n.matches('.navTab')){if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current')}});
   if(push){history.pushState({view:currentView},'',`#${currentView}`)}
-  window.scrollTo({top:0,behavior:'instant'});$('#appMain')?.focus({preventScroll:true});
+  window.scrollTo({top:0,behavior:'instant'});$('#appMain')?.focus({preventScroll:true});setTimeout(()=>loadViewData(currentView),0);
 }
 function bindTabs(){
   $$('[data-view-link]').forEach(el=>el.addEventListener('click',e=>{const v=el.dataset.viewLink;if(v){e.preventDefault();showView(v)}}));
@@ -19,10 +21,13 @@ function bindTabs(){
 }
 function applyTheme(){const root=document.documentElement.style;if(portal.primaryColor)root.setProperty('--primary',portal.primaryColor);if(portal.backgroundColor)root.setProperty('--bg',portal.backgroundColor);if(portal.panelColor)root.setProperty('--panel',portal.panelColor)}
 function setCardLocked(a,locked){a.classList.toggle('locked',locked);a.setAttribute('aria-disabled',locked?'true':'false');a.onclick=e=>{e.preventDefault();if(locked){showView('profile');const n=$('#accessBanner');n.classList.remove('hidden');n.textContent=me.authenticated?'Operational systems remain locked until your whitelist is approved.':'Sign in and complete the whitelist application to unlock operational systems.'}else location.href=a.dataset.route}}
-function lockCards(locked){$$('.systemCard').forEach(a=>setCardLocked(a,locked))}
+function lockCards(locked){
+  const map={mdtCard:'mdt',controlCard:'control',radioCard:'radio'};
+  $$('.systemCard').forEach(a=>{const perm=map[a.id];setCardLocked(a,locked||(perm&&!can(perm)))})
+}
 function profileHtml(){
   if(!me.authenticated)return '<p>You are not signed in.</p><a class="button primary" href="/login/?next=%2Fportal%2F">Sign in</a>';
-  const u=me.user||{};return `<dl><dt>Name</dt><dd>${esc(u.displayName||u.username||'Member')}</dd><dt>Username</dt><dd>${esc(u.username||'')}</dd><dt>Role</dt><dd>${esc(String(u.role||'member').toUpperCase())}</dd><dt>Whitelist</dt><dd>${esc(String(u.whitelistStatus||'pending').toUpperCase())}</dd></dl>`
+  const u=me.user||{};const services=(u.serviceAssignments||[]).map(x=>typeof x==='string'?x:(x.service||x.serviceId||x.name)).filter(Boolean).join(', ')||'Not assigned';const quals=(u.qualifications||[]).map(x=>typeof x==='string'?x:(x.name||'')).filter(Boolean).join(', ')||'None recorded';return `<dl><dt>Name</dt><dd>${esc(u.displayName||u.username||'Member')}</dd><dt>Username</dt><dd>${esc(u.username||'')}</dd><dt>Membership</dt><dd>${esc(String(u.membershipType||'non-member').toUpperCase())}</dd><dt>Role</dt><dd>${esc(String(u.role||'member').toUpperCase())}</dd><dt>Whitelist</dt><dd>${esc(String(u.whitelistStatus||'pending').toUpperCase())}</dd><dt>Services</dt><dd>${esc(services)}</dd><dt>Qualifications</dt><dd>${esc(quals)}</dd></dl>`
 }
 function applicationHtml(){
   if(!me.authenticated)return '<p>Sign in to view your application status.</p>';
@@ -39,26 +44,32 @@ function applyConfig(){
   setHref('#guidesBtn',portal.guidesUrl);setHref('#miscGuides',portal.guidesUrl);setHref('#supportBtn',portal.supportUrl);setHref('#supportNav',portal.supportUrl);setHref('#leaveBtn',portal.leaveUrl||portal.formsUrl);setHref('#discordBtn',portal.discordUrl);
   $('#ambulanceModule').style.display=portal.showAmbulance===false?'none':'';$('#policeModule').style.display=portal.showPolice===false?'none':'';$('#fireModule').style.display=portal.showFire===false?'none':'';$('#mdtCard').style.display=portal.showMdt===false?'none':'';$('#controlCard').style.display=portal.showControl===false?'none':'';$('#radioCard').style.display=portal.showRadio===false?'none':'';
 }
+function applyPermissions(){
+  const navMap={forms:'forms',patrols:'patrols',training:'training'};
+  Object.entries(navMap).forEach(([view,perm])=>{const n=document.querySelector(`[data-view-link="${view}"]`);if(n)n.classList.toggle('hidden',!can(perm))});
+  setVisible('#adminSettingsNav',isAdmin()&&can('settings'));setVisible('#adminQuick',isAdmin()&&can('settings'));setVisible('#profileSettingsBtn',isAdmin()&&can('settings'));
+  const cards={mdtCard:'mdt',controlCard:'control',radioCard:'radio'};Object.entries(cards).forEach(([id,p])=>{const e=$('#'+id);if(e)e.style.display=(portal['show'+id.replace('Card','').replace(/^./,c=>c.toUpperCase())]===false||!can(p))?'none':''});
+}
+function loadViewData(view=currentView){if(view==='forms')loadDynamicForms();if(view==='patrols')loadPatrols();if(view==='training')loadTraining();if(view==='guides')loadGuides();if(view==='portal')loadAnnouncements()}
 function applySession(){
   const sa=$('#sessionActions'),banner=$('#accessBanner');banner.classList.add('hidden');
   if(me.authenticated){
     const u=me.user||{},name=u.displayName||u.username||'Member';sa.innerHTML=`<a class="userChip" href="#profile" data-view-link="profile"><i>${esc(name.slice(0,1).toUpperCase())}</i><span>${esc(name)}<br><small>${esc(u.role||'member')}</small></span></a>`;bindDynamicTab(sa.querySelector('[data-view-link]'));
     text('#accountStatusText','Active member');text('#accountStatusBadge','ACTIVE');$('#accountStatusBadge').className='badge ok';text('#whitelistText',u.whitelistStatus||'pending');text('#whitelistBadge',String(u.whitelistStatus||'pending').toUpperCase());text('#roleText',u.role||'member');text('#roleBadge',String(u.role||'member').toUpperCase());$('#roleBadge').className='badge blue';
     if(me.whitelisted){text('#accessText','Fire & Rescue');text('#accessBadge','ENABLED');$('#accessBadge').className='badge ok';$('#whitelistBadge').className='badge ok';lockCards(false)}else{text('#accessText','Awaiting approval');text('#accessBadge','LOCKED');lockCards(true);banner.classList.remove('hidden');banner.textContent=u.whitelistStatus==='rejected'?'Your whitelist application was not approved. Contact staff or submit a new application if applications are open.':'Your whitelist application is awaiting review. Operational systems remain locked until approval.'}
-    if(isAdmin())$$('#adminSettingsNav,#adminQuick,#profileSettingsBtn').forEach?.(()=>{});
-    if(isAdmin()){['#adminSettingsNav','#adminQuick','#profileSettingsBtn'].forEach(s=>$(s)?.classList.remove('hidden'))}
+    applyPermissions();
   }else{sa.innerHTML='<a class="sessionBtn" href="/login/?next=%2Fportal%2F">Sign in</a>';text('#accountStatusText','Guest');text('#accountStatusBadge','SIGNED OUT');text('#whitelistText','Sign in required');text('#whitelistBadge','LOCKED');text('#roleText','Guest');text('#roleBadge','GUEST');text('#accessText','Sign in / apply');text('#accessBadge','LOCKED');lockCards(true)}
-  $('#profileBox').innerHTML=profileHtml();$('#applicationBox').innerHTML=applicationHtml();
+  $('#profileBox').innerHTML=profileHtml();$('#applicationBox').innerHTML=applicationHtml();applyPermissions();
 }
 function bindDynamicTab(el){if(!el)return;el.addEventListener('click',e=>{e.preventDefault();showView(el.dataset.viewLink||'profile')})}
 async function refreshConfig(){try{const j=await get(`/api/portal/config?t=${Date.now()}`);const next=j.portal||{};const changed=JSON.stringify(next)!==JSON.stringify(portal);portal=next;if(changed)applyConfig()}catch{}}
 async function boot(){
-  bindTabs();$('#getStartedBtn').addEventListener('click',()=>me.authenticated?showView('portal'):location.assign('/login/?next=%2Fportal%2F'));
+  bindTabs();$('#getStartedBtn').addEventListener('click',()=>{if(!me.authenticated)return location.assign('/login/?next=%2Fportal%2F');showView(me.whitelisted?'patrols':'profile')});
   try{const [pc,pm]=await Promise.all([get(`/api/portal/config?t=${Date.now()}`),get(`/api/portal/me?t=${Date.now()}`)]);portal=pc.portal||{};me=pm||{}}catch{}
   applyConfig();applySession();showView(location.hash.slice(1)||'portal',{push:false});
   addEventListener('storage',e=>{if(e.key==='guardianPortalUpdatedAt')refreshConfig()});
   if('BroadcastChannel' in window){const ch=new BroadcastChannel('guardian-portal');ch.onmessage=e=>{if(e.data?.type==='portal-updated')refreshConfig()}}
-  setInterval(refreshConfig,15000);
+  addEventListener('focus',refreshConfig);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshConfig()});setInterval(refreshConfig,10000);
 }
 boot();
 
@@ -71,11 +82,9 @@ async function loadPatrols(){const box=$('#patrolCards');if(!box)return;try{cons
 
 addEventListener('DOMContentLoaded',()=>{loadDynamicForms();loadPatrols()});
 
-document.addEventListener('click',e=>{const b=e.target.closest('[data-view-link]');if(!b)return;if(b.dataset.viewLink==='forms')setTimeout(loadDynamicForms,0);if(b.dataset.viewLink==='patrols')setTimeout(loadPatrols,0)});
 
 async function loadAnnouncements(){const box=$('#announcementCards'),section=$('#announcementSection');if(!box||!section)return;try{const d=await get('/api/community/announcements?t='+Date.now()),rows=d.announcements||[];section.classList.toggle('hidden',!rows.length);box.innerHTML=rows.map(a=>`<article class="noticeCard ${esc(a.priority||'info')}"><div><span class="badge blue">${esc((a.priority||'info').toUpperCase())}</span><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p></div>${a.requiresAck&&!a.acknowledged?`<button class="button secondary" data-ack="${esc(a.id)}">Acknowledge</button>`:a.requiresAck?'<span class="badge ok">ACKNOWLEDGED</span>':''}</article>`).join('');box.querySelectorAll('[data-ack]').forEach(b=>b.onclick=async()=>{await fetch('/api/community/announcements/'+encodeURIComponent(b.dataset.ack)+'/ack',{method:'POST'});loadAnnouncements()})}catch{section.classList.add('hidden')}}
 function basicMarkdown(v){return esc(v||'').replace(/^# (.*)$/gm,'<h2>$1</h2>').replace(/^## (.*)$/gm,'<h3>$1</h3>').replace(/^\d+\. (.*)$/gm,'<div class="guideStep">$1</div>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')}
 async function loadGuides(){const box=$('#guideCards');if(!box)return;try{const d=await get('/api/community/guides?t='+Date.now()),rows=d.guides||[];box.innerHTML=rows.map(g=>`<button class="guideCard" type="button" data-guide="${esc(g.id)}"><span class="eyebrow">${esc(g.category||'GUIDE')}</span><h2>${esc(g.title)}</h2><p>${esc(g.summary||'')}</p><b>Open guide →</b></button>`).join('')||'<section class="card"><p>No guides published yet.</p></section>';box.querySelectorAll('[data-guide]').forEach(b=>b.onclick=()=>{const g=rows.find(x=>x.id===b.dataset.guide);const dlg=document.createElement('dialog');dlg.className='guardianDialog guideDialog';dlg.innerHTML=`<form method="dialog"><div class="eyebrow">${esc(g.category||'GUIDE')}</div><div class="guideBody"><p>${basicMarkdown(g.body||'')}</p></div><button class="button secondary">Close</button></form>`;document.body.appendChild(dlg);dlg.showModal();dlg.addEventListener('close',()=>dlg.remove(),{once:true})})}catch{box.innerHTML='<section class="card"><p>Unable to load guides.</p></section>'}}
 async function loadTraining(){const box=$('#trainingCards');if(!box)return;try{const d=await get('/api/community/training?t='+Date.now()),rows=d.sessions||[];box.innerHTML=rows.length?rows.map(t=>`<section class="card patrolCard"><div class="panelHead"><div><div class="eyebrow">${esc(t.serviceId||'TRAINING')}</div><h2>${esc(t.title)}</h2></div><span class="badge ${t.booked?'ok':'blue'}">${t.booked?'BOOKED':'OPEN'}</span></div><p>${esc(t.startsAt||'Date TBC')} · ${esc(t.location||'Location TBC')}</p><p>${esc(t.description||'')}</p>${t.qualificationAwarded?`<div class="deployment"><b>Qualification</b><span>${esc(t.qualificationAwarded)}</span></div>`:''}<button class="button ${t.booked?'secondary':'primary'}" data-training="${esc(t.id)}" data-booked="${t.booked?'1':'0'}">${t.booked?'Cancel booking':'Book training'}</button></section>`).join(''):'<section class="card"><h2>No training sessions</h2><p>Staff have not published any training yet.</p></section>';box.querySelectorAll('[data-training]').forEach(b=>b.onclick=async()=>{await fetch('/api/community/training/'+encodeURIComponent(b.dataset.training)+(b.dataset.booked==='1'?'/cancel':'/book'),{method:'POST'});loadTraining()})}catch{box.innerHTML='<section class="card"><p>Sign in and become whitelisted to view training.</p></section>'}}
 addEventListener('DOMContentLoaded',()=>{loadAnnouncements();loadGuides();loadTraining()});
-document.addEventListener('click',e=>{const b=e.target.closest('[data-view-link]');if(!b)return;if(b.dataset.viewLink==='guides')setTimeout(loadGuides,0);if(b.dataset.viewLink==='training')setTimeout(loadTraining,0)});

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Guardian Operations · Portal</title>
-  <link rel="stylesheet" href="/portal/portal.css?v=46">
+  <link rel="stylesheet" href="/portal/portal.css?v=48">
 </head>
 <body>
 <a class="skipLink" href="#appMain">Skip to main content</a>
@@ -40,7 +40,7 @@
           <p id="heroDescription">Access your operational systems, manage your profile, complete forms and use community tools — all in one place.</p>
           <div class="actionRow">
             <button class="button primary" type="button" id="getStartedBtn">Get started</button>
-            <a class="button secondary" id="guidesBtn" href="#">View guides</a>
+            <button class="button secondary" id="guidesBtn" type="button" data-view-link="guides">View guides</button>
           </div>
           <div class="strapline" id="heroStrapline">People · Professionalism · Community</div>
         </div>
@@ -124,7 +124,7 @@
   <section class="appView" data-view="misc" aria-labelledby="miscHeading" hidden>
     <div class="viewHeader"><div><div class="eyebrow">MORE</div><h1 id="miscHeading">Community &amp; future services</h1><p>Useful links and upcoming Guardian modules.</p></div></div>
     <div class="twoCol">
-      <section class="card"><h2>Community links</h2><div class="linkList"><a id="discordBtn" href="#">Discord <span>→</span></a><a id="supportNav" href="#">Help &amp; support <span>→</span></a><a id="miscGuides" href="#">Guides <span>→</span></a></div></section>
+      <section class="card"><h2>Community links</h2><div class="linkList"><a id="discordBtn" href="#">Discord <span>→</span></a><a id="supportNav" href="#">Help &amp; support <span>→</span></a><button id="miscGuides" type="button" class="linkButton" data-view-link="guides">Guides <span>→</span></button></div></section>
       <section class="card"><h2 id="futureTitle">Expanding our services</h2><p id="futureIntro" class="muted">More emergency services coming soon to Guardian Operations.</p><div class="futureCards"><article id="fireModule"><b>Fire &amp; Rescue</b><span class="badge ok">LIVE</span></article><article id="ambulanceModule"><b>Ambulance</b><span id="ambulanceLabel">Coming Soon</span></article><article id="policeModule"><b>Police</b><span id="policeLabel">Coming Soon</span></article></div></section>
     </div>
   </section>
@@ -135,6 +135,6 @@
   <p id="footerText">Built by the community, for the community.</p>
 </footer>
 
-<script src="/portal/portal.js?v=46"></script>
+<script src="/portal/portal.js?v=48"></script>
 </body>
 </html>
