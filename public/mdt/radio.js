@@ -1,4 +1,5 @@
 (() => {
+  console.info('[Guardian Radio] v39 gain-gated microphone build loaded');
   const $ = id => document.getElementById(id);
   const tab = $('tab-radio');
   if (!tab) return;
@@ -11,6 +12,7 @@
   let powered = false, connecting = false, identity = null, clientId = '', eventSource = null;
   let config = {services:[]}, iceServers = [], selectedChannel = null, selectedService = null, tunedChannel = null;
   let menuLevel = 'home', cursor = 0, activeCall = null, pc = null, localStream = null, localTrack = null;
+  let rawMicStream=null, micAudioContext=null, micSourceNode=null, micGainNode=null, micDestination=null;
   let remoteAudio = null, keyHoldTimer = null, keyHoldFired = false, reconnectTimer = null, lastIdentityKey = '';
   let toneCtx=null, holdTone=null, incomingRingTimer=null, softwarePttTimer=null, softwarePttDown=false;
   let keyboardKeyTimer=null, keyboardKeyHeld='', keyboardKeyFired=false;
@@ -49,8 +51,25 @@
   function startIncomingRing(){if(incomingRingTimer)return;ringBurst();incomingRingTimer=setInterval(ringBurst,1450);tab.classList.add('controlIncoming')}
   function stopIncomingRing(){if(incomingRingTimer){clearInterval(incomingRingTimer);incomingRingTimer=null}tab.classList.remove('controlIncoming')}
   function notifyParent(type,payload={}){try{parent.postMessage({type,...payload},'*')}catch{}}
-  const micIsLive=()=>!!(localStream&&localStream.getAudioTracks().some(t=>t.readyState==='live'));
-  function releaseMic(){if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{}}localStream=null;localTrack=null;}
+  const micIsLive=()=>!!(rawMicStream&&rawMicStream.getAudioTracks().some(t=>t.readyState==='live')&&localTrack&&localTrack.readyState==='live');
+  function setMicGate(open){
+    try{
+      if(micAudioContext?.state==='suspended') micAudioContext.resume().catch(()=>{});
+      if(micGainNode){
+        const now=micAudioContext?.currentTime||0;
+        micGainNode.gain.cancelScheduledValues(now);
+        micGainNode.gain.setTargetAtTime(open?1:0,now,.008);
+      }
+    }catch(e){console.warn('[Guardian mic gate]',e)}
+  }
+  function releaseMic(){
+    setMicGate(false);
+    if(rawMicStream){try{rawMicStream.getTracks().forEach(t=>t.stop())}catch{}}
+    if(localStream){try{localStream.getTracks().forEach(t=>t.stop())}catch{}}
+    try{micSourceNode?.disconnect()}catch{};try{micGainNode?.disconnect()}catch{};
+    try{if(micAudioContext&&micAudioContext.state!=='closed')micAudioContext.close()}catch{}
+    rawMicStream=null;localStream=null;localTrack=null;micAudioContext=null;micSourceNode=null;micGainNode=null;micDestination=null;
+  }
 
   function services(){return (config.services||[]).filter(s=>(s.channels||[]).some(c=>c.open===true));}
   function openChannels(s){return (s?.channels||[]).filter(c=>c.open===true);}
@@ -163,7 +182,7 @@
       if(micIsLive()){setMic('MIC READY');hint('MIC READY — SELECT CONTACTS / TALKGROUP');return;}
       setMic('RETRYING MIC…');hint('RELEASING AUDIO DEVICE AND RETRYING…');releaseMic();
       await sleep(450);
-      try{await ensureMic();if(localTrack)localTrack.enabled=false;setMic('MIC READY');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
+      try{await ensureMic();setMicGate(false);setMic('MIC READY');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
       catch(e){console.error('[Guardian vehicle mic retry]',e);setMic('MIC ERROR');hint(friendlyMicError(e),'error');}
       return;
     }
@@ -188,7 +207,7 @@
     // failure is reported separately and does not switch the radio back off.
     try{
       await ensureMic();
-      if(localTrack)localTrack.enabled=false;
+      setMicGate(false);
       setMic('MIC READY');
       hint('SELECT CONTACTS AND AN OPEN TALKGROUP');
     }catch(e){
@@ -240,7 +259,7 @@
       // Prime an audio sender before group negotiation. This fixes the one-way
       // channel case where Control could be heard but the unit never advertised
       // a usable microphone sender until after the first offer was already made.
-      try{await ensureMic();if(localTrack)localTrack.enabled=false;}catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
+      try{await ensureMic();setMicGate(false);}catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
       await syncGroupPeers();
     }
     catch(e){state(e.message||'TALKGROUP UNAVAILABLE','error')}
@@ -281,10 +300,10 @@
   }
   async function channelPttStart(){
     if(!powered||!selectedChannel||groupTx)return;groupTx=true;startHoldTone();
-    try{await ensureMic();await attachTrackToGroupPeers();if(localTrack)localTrack.enabled=true;document.getElementById('radioChannelPtt')?.classList.add('tx');setMic('TX');state(`TX ${selectedChannel.name}`,'connected');hint(`TRANSMITTING ON ${selectedChannel.name}`,'connected')}
+    try{await ensureMic();await attachTrackToGroupPeers();setMicGate(true);document.getElementById('radioChannelPtt')?.classList.add('tx');setMic('TX');state(`TX ${selectedChannel.name}`,'connected');hint(`TRANSMITTING ON ${selectedChannel.name}`,'connected')}
     catch(e){groupTx=false;stopHoldTone();setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
   }
-  function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();if(localTrack)localTrack.enabled=false;document.getElementById('radioChannelPtt')?.classList.remove('tx');setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
+  function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();setMicGate(false);document.getElementById('radioChannelPtt')?.classList.remove('tx');setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
 
   function keypadButton(key){return document.querySelector(`[data-radio-key="${CSS.escape(String(key))}"]`)}
   function radioKeyDown(key,btn=keypadButton(key)){
@@ -339,7 +358,7 @@
       closeAllGroupPeers();activeCall=c;activeCall.status='ringing';powered=true;tab.classList.remove('radioOff');$('radioPowerOn')?.classList.add('on');setLink('INCOMING');setCallsign();
       state('CONTROL CALLING','ringing');hint('PRESS GREEN OR PTT TO ANSWER — RED TO REJECT','ringing');setMic('MIC STANDBY');startIncomingRing();notifyParent('guardianRadioIncoming',{active:true,callsign:c.callsign||'',channel:c.channelName||''});
     }
-    else if(m.action==='answered'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});activeCall=c;connectTone();state('CONNECTING AUDIO…','connected');hint('CONTROL ANSWERED — HOLD PTT TO TRANSMIT','connected');beginPeer(true).then(()=>{if(localTrack)localTrack.enabled=false;setMic('PTT READY')}).catch(e=>{console.error(e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error')})}
+    else if(m.action==='answered'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});activeCall=c;connectTone();state('CONNECTING AUDIO…','connected');hint('CONTROL ANSWERED — HOLD PTT TO TRANSMIT','connected');beginPeer(true).then(()=>{setMicGate(false);setMic('PTT READY')}).catch(e=>{console.error(e);setMic('MIC ERROR');state('MIC / AUDIO ERROR','error');hint(friendlyMicError(e),'error')})}
     else if(m.action==='rejected'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});state('CALL REJECTED','error');hint('CONTROL REJECTED REQUEST','error');resetCallSoon()}
     else if(m.action==='ended'){stopIncomingRing();notifyParent('guardianRadioIncoming',{active:false});state('CALL ENDED');hint('HOLD 1 OR PTT FOR 2 SECONDS TO REQUEST SPEECH');teardownPeer(false);resetCallSoon()}
   }
@@ -372,13 +391,32 @@
     throw firstErr||new DOMException('Could not start audio source','NotReadableError');
   }
   async function ensureMic(){
-    if(micIsLive()){localTrack=localStream.getAudioTracks()[0]||null;return localStream;}
+    if(micIsLive()) return localStream;
     releaseMic();
-    await sleep(300);
-    localStream=await openDefaultMic();
+    await sleep(180);
+    rawMicStream=await openDefaultMic();
+    const rawTrack=rawMicStream.getAudioTracks()[0]||null;
+    if(!rawTrack)throw new DOMException('No microphone detected','NotFoundError');
+    rawTrack.enabled=true;
+    rawTrack.onended=()=>{setMic('MIC DISCONNECTED');};
+
+    // v39: keep the real microphone capture alive continuously and gate audio
+    // with WebAudio. FiveM/CEF can fail to resume outbound RTP after repeatedly
+    // disabling MediaStreamTrack.enabled, which caused Control to hear silence.
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)throw new Error('WebAudio microphone gate unavailable');
+    micAudioContext=new AC();
+    try{await micAudioContext.resume()}catch{}
+    micSourceNode=micAudioContext.createMediaStreamSource(rawMicStream);
+    micGainNode=micAudioContext.createGain();
+    micGainNode.gain.value=0;
+    micDestination=micAudioContext.createMediaStreamDestination();
+    micSourceNode.connect(micGainNode);
+    micGainNode.connect(micDestination);
+    localStream=micDestination.stream;
     localTrack=localStream.getAudioTracks()[0]||null;
-    if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
-    localTrack.onended=()=>{setMic('MIC DISCONNECTED');};
+    if(!localTrack)throw new DOMException('Could not create radio microphone stream','NotReadableError');
+    localTrack.enabled=true; // never toggle this track; PTT uses setMicGate().
     await attachTrackToGroupPeers();
     return localStream;
   }
@@ -403,7 +441,7 @@
     const update=()=>{
       if(!pc)return;
       const st=pc.connectionState||pc.iceConnectionState||'';
-      if(st==='connected'||st==='completed'){state('CONNECTED TO CONTROL','connected');if(localTrack)localTrack.enabled=false;setMic('PTT READY');hint('HOLD PTT TO TRANSMIT TO CONTROL · RELEASE TO LISTEN','connected');playRemote()}
+      if(st==='connected'||st==='completed'){state('CONNECTED TO CONTROL','connected');setMicGate(false);setMic('PTT READY');hint('HOLD PTT TO TRANSMIT TO CONTROL · RELEASE TO LISTEN','connected');playRemote()}
       else if(st==='failed'){state('VOICE LINK FAILED','error');hint('WEBRTC CONNECTION FAILED — CHECK NETWORK / TURN','error')}
       else if(st==='disconnected'){state('VOICE LINK INTERRUPTED','error')}
     };
@@ -411,13 +449,13 @@
     return pc;
   }
   async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian ICE]',e)}}}
-  async function beginPeer(offerer){await ensureMic();if(localTrack)localTrack.enabled=false;const peer=makePeer();if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
+  async function beginPeer(offerer){await ensureMic();setMicGate(false);const peer=makePeer();if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
   async function handleSignal(m){
     if(!activeCall||!m.from)return;
     if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;
     const peer=makePeer();
     await ensureMic();
-    if(localTrack)localTrack.enabled=false;
+    setMicGate(false);
     if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}
     if(m.kind==='answer'){
       await peer.setRemoteDescription(m.data);
@@ -432,8 +470,8 @@
   }
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
-  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;if(localTrack)localTrack.enabled=false;if(stopStream)releaseMic();activeCall=null}
-  function resetCall(){activeCall=null;if(localTrack)localTrack.enabled=false;setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — TALKGROUP NULL');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · CONTACTS SELECTS SERVICE');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
+  function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;setMicGate(false);if(stopStream)releaseMic();activeCall=null}
+  function resetCall(){activeCall=null;setMicGate(false);setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — TALKGROUP NULL');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · CONTACTS SELECTS SERVICE');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
   function resetCallSoon(){setTimeout(resetCall,1300)}
 
   async function softwarePttStart(){
@@ -448,7 +486,7 @@
     }
     // Connected call: hold-to-transmit.
     if(activeCall?.status==='connected'){
-      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);localTrack.enabled=true;}setMic('TX');state('TRANSMITTING TO CONTROL','connected');hint('PTT HELD — CONTROL CAN HEAR YOU','connected');startHoldTone()}
+      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);setMicGate(true);}setMic('TX');state('TRANSMITTING TO CONTROL','connected');hint('PTT HELD — CONTROL CAN HEAR YOU','connected');startHoldTone()}
       catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
       return;
     }
@@ -460,7 +498,7 @@
   }
   function softwarePttStop(){
     softwarePttDown=false;clearTimeout(softwarePttTimer);softwarePttTimer=null;stopHoldTone();
-    if(activeCall?.status==='connected'){if(localTrack)localTrack.enabled=false;setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
+    if(activeCall?.status==='connected'){setMicGate(false);setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
     else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · LEFT/RIGHT AFTER SELECTING SERVICE')}
   }
 

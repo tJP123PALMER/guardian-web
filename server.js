@@ -2185,7 +2185,7 @@ app.get(["/vehicle","/vehicle/"],(q,r)=>{
 // MDT/Control are operational screens: never leave an Android WebView stuck on an old
 // JavaScript/CSS build after a Render deployment.
 app.use((req,res,next)=>{
-  if(req.path.startsWith("/mdt/")||req.path.startsWith("/control/")||req.path.startsWith("/vehicle")){
+  if(req.path.startsWith("/mdt/")||req.path.startsWith("/control/")||req.path.startsWith("/vehicle")||req.path.startsWith("/radio/")){
     res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
     res.setHeader("Pragma","no-cache");
     res.setHeader("Expires","0");
