@@ -19,3 +19,37 @@ button,.buttonLike{border-radius:8px!important;font-weight:750!important;letter-
 .toast{border-radius:9px!important;background:#0e4f3c!important;border:1px solid #2a8465!important;box-shadow:0 15px 35px #0007!important}
 @media(max-width:1200px){.g63-layout{grid-template-columns:1fr}.g63-side{grid-template-columns:repeat(2,1fr)}.g63-toolgrid{grid-template-columns:repeat(2,1fr)}.g62-discord{grid-template-columns:1fr!important}}
 @media(max-width:820px){.app{display:block!important}.sidebar{display:none!important}.topbar{grid-template-columns:1fr!important}.topTools{display:none!important}#content{padding:16px!important}.g63-settings-head{align-items:flex-start;flex-direction:column}.g63-find{min-width:0;width:100%}.g63-toolgrid,.g63-side{grid-template-columns:1fr}.g62-grid2,.g62-grid3,.g62-features{grid-template-columns:1fr!important}}
+
+/* Guardian v64 emergency layout repair: v60 forced .app to block and hid the sidebar.
+   These rules intentionally come last and restore the two-column administration shell. */
+#appView.app:not(.hidden){
+  display:grid!important;
+  grid-template-columns:232px minmax(0,1fr)!important;
+  align-items:stretch!important;
+  width:100%!important;
+  min-height:100vh!important;
+}
+#appView.app:not(.hidden)>.sidebar{
+  display:flex!important;
+  grid-column:1!important;
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+#appView.app:not(.hidden)>main{
+  display:block!important;
+  grid-column:2!important;
+  min-width:0!important;
+  width:auto!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:visible!important;
+}
+#appView.app:not(.hidden)>main>.topbar{display:grid!important;width:auto!important;margin:0!important}
+#appView.app:not(.hidden)>main>#content{display:block!important;width:auto!important;min-width:0!important}
+@media(max-width:820px){
+  #appView.app:not(.hidden){display:block!important}
+  #appView.app:not(.hidden)>.sidebar{display:none!important}
+  #appView.app:not(.hidden)>main{display:block!important;width:100%!important}
+}
