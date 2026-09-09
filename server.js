@@ -1057,12 +1057,25 @@ app.post('/api/discord/interactions',async(req,res)=>{
   if(body.type!==3)return res.json({type:4,data:{content:'Unsupported Guardian interaction.',flags:64}});
   const custom=String(body.data?.custom_id||'');const m=custom.match(/^guardian_patrol_(attend|decline):(.+)$/);if(!m)return res.json({type:4,data:{content:'This Guardian button is no longer supported.',flags:64}});
   const p=guardianPatrols.find(x=>String(x.id)===m[2]);if(!p)return res.json({type:4,data:{content:'That patrol no longer exists.',flags:64}});
-  p.discordMessageId=String(body.message?.id||p.discordMessageId||'');p.discordChannelId=String(body.channel_id||p.discordChannelId||guardianDiscord.patrolChannelId||'');
-  if(guardianPatrolBookingsClosed(p)){guardianSavePatrols();return res.json({type:7,data:guardianPatrolDiscordPayload(p)})}
-  const user=guardianFindUserFromDiscordInteraction(body);if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.json({type:4,data:{content:'Your Discord account is not linked to an approved Guardian account. Ask staff to add your Discord User ID in Guardian before booking.',flags:64}});
-  guardianEnsureDefaultPolice(user);guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===user.username);if(!b){b={username:user.username,displayName:user.displayName||user.username,discordUserId:String(body.member?.user?.id||''),discordDisplayName:String(body.member?.nick||body.member?.user?.global_name||body.member?.user?.username||''),bookedAt:new Date().toISOString(),status:'attending',deployment:null};p.bookings.push(b)}
-  b.status=m[1]==='attend'?'attending':'not-attending';b.respondedAt=new Date().toISOString();b.source='discord';guardianSavePatrols();guardianAdminAuditLog(user.username,b.status==='attending'?'PATROL_ATTENDING':'PATROL_NOT_ATTENDING',{patrolId:p.id,source:'discord'});
-  return res.json({type:7,data:guardianPatrolDiscordPayload(p)});
+  // ACK component clicks immediately. Discord requires a response within ~3 seconds;
+  // Render/cold-start latency can otherwise show “The application didn’t respond in time”.
+  // Type 6 defers the message update without showing a loading reply.
+  res.json({type:6});
+  setImmediate(async()=>{
+    try{
+      p.discordMessageId=String(body.message?.id||p.discordMessageId||'');p.discordChannelId=String(body.channel_id||p.discordChannelId||guardianDiscord.patrolChannelId||'');
+      if(guardianPatrolBookingsClosed(p)){guardianSavePatrols();await guardianPatrolSyncDiscord(p,{createIfMissing:false});return}
+      const user=guardianFindUserFromDiscordInteraction(body);
+      if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved'){
+        // Keep the public patrol card valid; the user can be linked by staff and retry.
+        await guardianPatrolSyncDiscord(p,{createIfMissing:false});return;
+      }
+      guardianEnsureDefaultPolice(user);guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===user.username);if(!b){b={username:user.username,displayName:user.displayName||user.username,discordUserId:String(body.member?.user?.id||''),discordDisplayName:String(body.member?.nick||body.member?.user?.global_name||body.member?.user?.username||''),bookedAt:new Date().toISOString(),status:'attending',deployment:null};p.bookings.push(b)}
+      b.status=m[1]==='attend'?'attending':'not-attending';b.respondedAt=new Date().toISOString();b.source='discord';guardianSavePatrols();guardianAdminAuditLog(user.username,b.status==='attending'?'PATROL_ATTENDING':'PATROL_NOT_ATTENDING',{patrolId:p.id,source:'discord'});
+      await guardianPatrolSyncDiscord(p,{createIfMissing:false});
+    }catch(e){console.error('[Guardian] Discord patrol interaction failed after acknowledgement:',e)}
+  });
+  return;
 });
 
 let guardianPatrolCloseSweepBusy=false;
