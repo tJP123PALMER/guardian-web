@@ -987,7 +987,7 @@ function guardianPatrolStartMs(p){const n=Date.parse(String(p?.startsAt||''));re
 function guardianPatrolCloseMs(p){const explicit=Date.parse(String(p?.bookingClosesAt||''));if(Number.isFinite(explicit))return explicit;const start=guardianPatrolStartMs(p);return start?start-(60*60*1000):0}
 function guardianPatrolBookingsClosed(p){if(p?.bookingsManuallyClosed===true)return true;const close=guardianPatrolCloseMs(p);return !!close&&Date.now()>=close}
 function guardianPatrolStatusText(p){return guardianPatrolBookingsClosed(p)?'BOOKINGS CLOSED':'BOOKINGS OPEN'}
-function guardianPatrolDisplayDate(v){const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'TBC'}
+function guardianPatrolDisplayDate(v){if(v===null||v===undefined||v===''||v===0||v==='0')return 'TBC';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'TBC'}
 function guardianPatrolAttendees(p,status='attending'){return (p?.bookings||[]).filter(b=>status==='attending'?['attending','booked'].includes(String(b.status)):String(b.status)===status)}
 function guardianPatrolNameList(rows){if(!rows.length)return 'None yet';const text=rows.map(b=>`• ${b.displayName||b.discordDisplayName||b.username||'Unknown'}`).join('\n');return text.length>1000?text.slice(0,990)+'…':text}
 function guardianPatrolDiscordPayload(p){
@@ -1044,39 +1044,68 @@ function guardianDiscordVerifyInteraction(req){
   if(!publicKeyHex||!/^[0-9a-f]{64}$/i.test(publicKeyHex)||!/^[0-9a-f]+$/i.test(sig)||!ts||!req.rawBody)return false;
   try{const raw=Buffer.from(publicKeyHex,'hex');const spki=Buffer.concat([Buffer.from('302a300506032b6570032100','hex'),raw]);const key=crypto.createPublicKey({key:spki,format:'der',type:'spki'});return crypto.verify(null,Buffer.concat([Buffer.from(ts),req.rawBody]),key,Buffer.from(sig,'hex'))}catch{return false}
 }
-function guardianFindUserFromDiscordInteraction(body){
-  const du=body?.member?.user||body?.user||{};const id=String(du.id||'');const username=String(du.username||'').toLowerCase();
+function guardianFindUserFromDiscordIdentity(identity={}){
+  const id=String(identity.id||'');const username=String(identity.username||'').replace(/^@/,'').toLowerCase();
   let user=[...guardianAdminUsers.values()].find(u=>String(u.discordUserId||'')===id);
   if(!user&&username){const appRow=guardianApplications?.find(a=>String(a.discord||'').replace(/^@/,'').toLowerCase()===username);if(appRow)user=guardianAdminUsers.get(appRow.username)}
   if(user&&id&&String(user.discordUserId||'')!==id){user.discordUserId=id;guardianSaveUsers()}
   return user||null;
 }
-app.post('/api/discord/interactions',async(req,res)=>{
+function guardianFindUserFromDiscordInteraction(body){const du=body?.member?.user||body?.user||{};return guardianFindUserFromDiscordIdentity({id:du.id,username:du.username})}
+function guardianApplyPatrolDiscordResponse({customId,discordUserId,discordUsername,discordDisplayName,discordNick,messageId,channelId}){
+  const m=String(customId||'').match(/^guardian_patrol_(attend|decline):(.+)$/);if(!m)return {ok:false,error:'This Guardian button is no longer supported.'};
+  const p=guardianPatrols.find(x=>String(x.id)===m[2]);if(!p)return {ok:false,error:'That patrol no longer exists.'};
+  p.discordMessageId=String(messageId||p.discordMessageId||'');p.discordChannelId=String(channelId||p.discordChannelId||guardianDiscord.patrolChannelId||'');
+  if(guardianPatrolBookingsClosed(p)){guardianSavePatrols();return {ok:false,error:'Bookings for this patrol are closed.',patrol:p};}
+  const user=guardianFindUserFromDiscordIdentity({id:discordUserId,username:discordUsername});
+  if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return {ok:false,error:'Your Discord account is not linked to an approved Guardian profile.',patrol:p};
+  guardianEnsureDefaultPolice(user);guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===user.username);
+  if(!b){b={username:user.username,displayName:user.displayName||user.username,discordUserId:String(discordUserId||''),discordDisplayName:String(discordNick||discordDisplayName||discordUsername||''),bookedAt:new Date().toISOString(),status:'attending',deployment:null};p.bookings.push(b)}
+  b.discordUserId=String(discordUserId||b.discordUserId||'');b.discordDisplayName=String(discordNick||discordDisplayName||discordUsername||b.discordDisplayName||'');b.status=m[1]==='attend'?'attending':'not-attending';b.respondedAt=new Date().toISOString();b.source='discord';
+  guardianSavePatrols();guardianAdminAuditLog(user.username,b.status==='attending'?'PATROL_ATTENDING':'PATROL_NOT_ATTENDING',{patrolId:p.id,source:'discord'});
+  return {ok:true,patrol:p,booking:b,status:b.status,user};
+}
+async function guardianDiscordInteractionHttp(req,res){
   if(!guardianDiscordVerifyInteraction(req))return res.status(401).send('invalid request signature');
   const body=req.body||{};if(body.type===1)return res.json({type:1});
   if(body.type!==3)return res.json({type:4,data:{content:'Unsupported Guardian interaction.',flags:64}});
-  const custom=String(body.data?.custom_id||'');const m=custom.match(/^guardian_patrol_(attend|decline):(.+)$/);if(!m)return res.json({type:4,data:{content:'This Guardian button is no longer supported.',flags:64}});
-  const p=guardianPatrols.find(x=>String(x.id)===m[2]);if(!p)return res.json({type:4,data:{content:'That patrol no longer exists.',flags:64}});
-  // ACK component clicks immediately. Discord requires a response within ~3 seconds;
-  // Render/cold-start latency can otherwise show “The application didn’t respond in time”.
-  // Type 6 defers the message update without showing a loading reply.
-  res.json({type:6});
-  setImmediate(async()=>{
-    try{
-      p.discordMessageId=String(body.message?.id||p.discordMessageId||'');p.discordChannelId=String(body.channel_id||p.discordChannelId||guardianDiscord.patrolChannelId||'');
-      if(guardianPatrolBookingsClosed(p)){guardianSavePatrols();await guardianPatrolSyncDiscord(p,{createIfMissing:false});return}
-      const user=guardianFindUserFromDiscordInteraction(body);
-      if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved'){
-        // Keep the public patrol card valid; the user can be linked by staff and retry.
-        await guardianPatrolSyncDiscord(p,{createIfMissing:false});return;
-      }
-      guardianEnsureDefaultPolice(user);guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===user.username);if(!b){b={username:user.username,displayName:user.displayName||user.username,discordUserId:String(body.member?.user?.id||''),discordDisplayName:String(body.member?.nick||body.member?.user?.global_name||body.member?.user?.username||''),bookedAt:new Date().toISOString(),status:'attending',deployment:null};p.bookings.push(b)}
-      b.status=m[1]==='attend'?'attending':'not-attending';b.respondedAt=new Date().toISOString();b.source='discord';guardianSavePatrols();guardianAdminAuditLog(user.username,b.status==='attending'?'PATROL_ATTENDING':'PATROL_NOT_ATTENDING',{patrolId:p.id,source:'discord'});
-      await guardianPatrolSyncDiscord(p,{createIfMissing:false});
-    }catch(e){console.error('[Guardian] Discord patrol interaction failed after acknowledgement:',e)}
-  });
-  return;
-});
+  const du=body?.member?.user||body?.user||{};
+  const result=guardianApplyPatrolDiscordResponse({customId:body.data?.custom_id,discordUserId:du.id,discordUsername:du.username,discordDisplayName:du.global_name,discordNick:body.member?.nick,messageId:body.message?.id,channelId:body.channel_id});
+  // Return a visible ephemeral acknowledgement immediately. All work above is local and fast,
+  // so Discord receives a response well inside its 3-second deadline.
+  if(!result.ok){setImmediate(()=>result.patrol&&guardianPatrolSyncDiscord(result.patrol,{createIfMissing:false}).catch(()=>{}));return res.json({type:4,data:{content:`⚠️ ${result.error}`,flags:64}})}
+  const label=result.status==='attending'?'✅ You are attending this patrol.':'❌ You are marked as not attending.';
+  res.json({type:4,data:{content:label,flags:64}});
+  setImmediate(()=>guardianPatrolSyncDiscord(result.patrol,{createIfMissing:false}).catch(e=>console.error('[Guardian] Discord patrol message sync failed:',e)));
+}
+app.post('/api/discord/interactions',guardianDiscordInteractionHttp);
+// Compatibility aliases make old Discord Developer Portal endpoint URLs continue working.
+app.post('/discord/interactions',guardianDiscordInteractionHttp);
+app.post('/interactions',guardianDiscordInteractionHttp);
+app.post('/api/interactions',guardianDiscordInteractionHttp);
+
+// Gateway fallback: if no outgoing Interactions Endpoint URL is configured in Discord,
+// buttons arrive over the bot gateway instead. Guardian now supports both delivery modes.
+let guardianDiscordGatewayClient=null;
+async function guardianStartDiscordGateway(){
+  const token=String(process.env.DISCORD_BOT_TOKEN||'').trim();if(!token)return;
+  try{
+    const djs=await import('discord.js');
+    const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds]});guardianDiscordGatewayClient=client;
+    client.on('interactionCreate',async interaction=>{
+      try{
+        if(!interaction.isButton?.())return;const customId=String(interaction.customId||'');if(!/^guardian_patrol_(attend|decline):/.test(customId))return;
+        const result=guardianApplyPatrolDiscordResponse({customId,discordUserId:interaction.user?.id,discordUsername:interaction.user?.username,discordDisplayName:interaction.user?.globalName,discordNick:interaction.member?.nickname,messageId:interaction.message?.id,channelId:interaction.channelId});
+        if(result.ok)await interaction.reply({content:result.status==='attending'?'✅ You are attending this patrol.':'❌ You are marked as not attending.',ephemeral:true});
+        else await interaction.reply({content:`⚠️ ${result.error}`,ephemeral:true});
+        if(result.patrol)await guardianPatrolSyncDiscord(result.patrol,{createIfMissing:false});
+      }catch(e){console.error('[Guardian] Discord gateway patrol interaction failed:',e);try{if(!interaction.replied&&!interaction.deferred)await interaction.reply({content:'⚠️ Guardian could not process that attendance response. Please try again.',ephemeral:true})}catch{}}
+    });
+    client.once('ready',()=>console.log(`[Guardian] Discord gateway connected as ${client.user?.tag||client.user?.id||'bot'}; patrol buttons are live.`));
+    await client.login(token);
+  }catch(e){console.error('[Guardian] Discord gateway unavailable:',e?.message||e)}
+}
+setImmediate(()=>guardianStartDiscordGateway());
 
 let guardianPatrolCloseSweepBusy=false;
 setInterval(async()=>{if(guardianPatrolCloseSweepBusy)return;guardianPatrolCloseSweepBusy=true;try{for(const p of guardianPatrols){if(p.published===false||!p.discordMessageId)continue;const closed=guardianPatrolBookingsClosed(p);if(closed&&!p.discordClosedSyncedAt){await guardianPatrolSyncDiscord(p,{createIfMissing:false});p.discordClosedSyncedAt=new Date().toISOString();guardianSavePatrols()}}}finally{guardianPatrolCloseSweepBusy=false}},60000).unref?.();
