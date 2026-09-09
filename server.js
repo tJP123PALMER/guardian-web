@@ -1238,7 +1238,7 @@ app.post('/api/admin/fleet',guardianRequireAdmin('settings.edit'),(req,res)=>{
   // so Control/MDT/FiveM continue to use the same vehicles without a second admin page.
   guardianConfig.appliances=guardianFleet.filter(v=>v&&v.active!==false&&String(v.status||'').toLowerCase()!=='retired').map(v=>({
     id:v.id,serviceId:String(v.serviceId||'fire'),callsign:String(v.callsign||'').trim().toUpperCase(),
-    station:String(v.station||''),type:String(v.type||v.name||''),skills:Array.isArray(v.capabilities)?v.capabilities:(Array.isArray(v.skills)?v.skills:[]),
+    station:String(v.station||''),division:String(v.division||''),name:String(v.name||''),model:String(v.model||''),type:String(v.type||v.model||v.name||''),skills:Array.isArray(v.capabilities)?v.capabilities:(Array.isArray(v.skills)?v.skills:[]),
     status:String(v.status||'available'),registration:String(v.registration||''),spawnCode:String(v.spawnCode||''),
     liveryNumber:String(v.liveryNumber||''),active:v.active!==false
   }));
