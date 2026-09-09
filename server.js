@@ -10,7 +10,7 @@ const PORT = Number(process.env.PORT || 10000);
 const API_KEY = process.env.GUARDIAN_API_KEY || "";
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "4mb" }));
+app.use(express.json({ limit: "4mb", verify:(req,_res,buf)=>{req.rawBody=Buffer.from(buf)} }));
 
 
 
@@ -880,7 +880,8 @@ app.post("/api/admin/users",guardianRequireAdmin("settings.edit"),(req,res)=>{
   if(!["player","control","supervisor","admin","dev","readonly"].includes(role))return res.status(400).json({ok:false,error:"Invalid role"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"Username already exists"});
   const pw=guardianAdminHashPassword(password);
-  guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString(),whitelistStatus:"approved",whitelistUpdatedAt:new Date().toISOString()});
+  guardianAdminUsers.set(username,{username,displayName,role,protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:new Date().toISOString(),whitelistStatus:"approved",whitelistUpdatedAt:new Date().toISOString(),serviceAssignments:[]});
+  guardianEnsureDefaultPolice(guardianAdminUsers.get(username));
   guardianWriteJson(guardianUsersFile,[...guardianAdminUsers.values()]);
   guardianAdminAuditLog(req.guardianAdmin.username,"USER_CREATED",{username,role});
   res.json({ok:true});
@@ -977,6 +978,95 @@ function guardianDiscordEmbed(title,description,opts={}){
   if(Array.isArray(opts.fields)&&opts.fields.length)embed.fields=opts.fields.slice(0,25).map(f=>({name:String(f.name||"").slice(0,256),value:String(f.value||"—").slice(0,1024),inline:!!f.inline}));
   return embed;
 }
+
+
+// ============================================================
+// Guardian v55 Patrol Booking Bot + duty assignment workflow
+// ============================================================
+function guardianPatrolStartMs(p){const n=Date.parse(String(p?.startsAt||''));return Number.isFinite(n)?n:0}
+function guardianPatrolCloseMs(p){const explicit=Date.parse(String(p?.bookingClosesAt||''));if(Number.isFinite(explicit))return explicit;const start=guardianPatrolStartMs(p);return start?start-(60*60*1000):0}
+function guardianPatrolBookingsClosed(p){if(p?.bookingsManuallyClosed===true)return true;const close=guardianPatrolCloseMs(p);return !!close&&Date.now()>=close}
+function guardianPatrolStatusText(p){return guardianPatrolBookingsClosed(p)?'BOOKINGS CLOSED':'BOOKINGS OPEN'}
+function guardianPatrolDisplayDate(v){const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('en-GB',{timeZone:'Europe/London',weekday:'short',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'TBC'}
+function guardianPatrolAttendees(p,status='attending'){return (p?.bookings||[]).filter(b=>status==='attending'?['attending','booked'].includes(String(b.status)):String(b.status)===status)}
+function guardianPatrolNameList(rows){if(!rows.length)return 'None yet';const text=rows.map(b=>`• ${b.displayName||b.discordDisplayName||b.username||'Unknown'}`).join('\n');return text.length>1000?text.slice(0,990)+'…':text}
+function guardianPatrolDiscordPayload(p){
+  const attending=guardianPatrolAttendees(p,'attending'),declined=guardianPatrolAttendees(p,'not-attending'),closed=guardianPatrolBookingsClosed(p);
+  const svc=(guardianServices.find(s=>s.id===p.serviceId)||{}).name||p.serviceId||'Multi-service';
+  const embed=guardianDiscordEmbed(`🚨 ${p.title||'Official Patrol'}`,p.briefing||'Official Guardian Operations patrol.',{color:closed?0x68717a:0x1579c4,fields:[
+    {name:'Patrol starts',value:guardianPatrolDisplayDate(p.startsAt),inline:true},
+    {name:'Bookings close',value:guardianPatrolDisplayDate(p.bookingClosesAt||guardianPatrolCloseMs(p)),inline:true},
+    {name:'Status',value:closed?'🔒 CLOSED':'🟢 OPEN',inline:true},
+    {name:'Operation',value:svc,inline:true},
+    {name:'Attending',value:String(attending.length),inline:true},
+    {name:'Not attending',value:String(declined.length),inline:true},
+    {name:'✅ Attending members',value:guardianPatrolNameList(attending),inline:false}
+  ]});
+  embed.footer={text:'Guardian Operations • FiveM Patrol Booking'};
+  return {embeds:[embed],components:[{type:1,components:[
+    {type:2,style:3,label:`Attending (${attending.length})`,custom_id:`guardian_patrol_attend:${p.id}`,disabled:closed},
+    {type:2,style:4,label:'Not Attending',custom_id:`guardian_patrol_decline:${p.id}`,disabled:closed}
+  ]}]};
+}
+async function guardianPatrolSyncDiscord(p,{createIfMissing=true}={}){
+  const channelId=String(p.discordChannelId||guardianDiscord.patrolChannelId||'').trim();if(!guardianDiscord.enabled||!channelId)return {ok:false,skipped:true,error:'Discord patrol channel is not configured'};
+  const payload=guardianPatrolDiscordPayload(p);
+  let r;
+  if(p.discordMessageId)r=await guardianDiscordRequest('PATCH',`/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(p.discordMessageId)}`,payload);
+  else if(createIfMissing){r=await guardianDiscordSend(channelId,payload);if(r?.ok&&r.data?.id){p.discordMessageId=String(r.data.id);p.discordChannelId=channelId;p.discordPublishedAt=new Date().toISOString();guardianSavePatrols()}}
+  else return {ok:false,skipped:true};
+  return r;
+}
+function guardianEnsureDefaultPolice(user){
+  if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return false;
+  user.serviceAssignments=Array.isArray(user.serviceAssignments)?user.serviceAssignments:[];
+  if(user.serviceAssignments.length)return false;
+  const police=guardianServices.find(s=>s.id==='police');
+  user.serviceAssignments.push({serviceId:'police',rank:police?.ranks?.[0]||'Police Constable',division:police?.divisions?.[0]||'Response',callsign:''});
+  return true;
+}
+function guardianPatrolEligible(user){
+  guardianEnsureDefaultPolice(user);
+  const assignments=Array.isArray(user?.serviceAssignments)?user.serviceAssignments:[];
+  const ids=[...new Set(assignments.map(a=>String(a.serviceId||'')).filter(Boolean))];
+  return ids.length?ids:['police'];
+}
+function guardianPatrolEligibleDivisions(user,serviceId){
+  guardianEnsureDefaultPolice(user);
+  const rows=(user?.serviceAssignments||[]).filter(a=>String(a.serviceId)===String(serviceId));
+  const divs=[...new Set(rows.map(a=>String(a.division||'').trim()).filter(Boolean))];
+  if(divs.length)return divs;
+  if(serviceId==='police')return ['Response'];
+  return [];
+}
+function guardianDiscordVerifyInteraction(req){
+  const publicKeyHex=String(process.env.DISCORD_PUBLIC_KEY||'').trim();const sig=String(req.get('X-Signature-Ed25519')||'');const ts=String(req.get('X-Signature-Timestamp')||'');
+  if(!publicKeyHex||!/^[0-9a-f]{64}$/i.test(publicKeyHex)||!/^[0-9a-f]+$/i.test(sig)||!ts||!req.rawBody)return false;
+  try{const raw=Buffer.from(publicKeyHex,'hex');const spki=Buffer.concat([Buffer.from('302a300506032b6570032100','hex'),raw]);const key=crypto.createPublicKey({key:spki,format:'der',type:'spki'});return crypto.verify(null,Buffer.concat([Buffer.from(ts),req.rawBody]),key,Buffer.from(sig,'hex'))}catch{return false}
+}
+function guardianFindUserFromDiscordInteraction(body){
+  const du=body?.member?.user||body?.user||{};const id=String(du.id||'');const username=String(du.username||'').toLowerCase();
+  let user=[...guardianAdminUsers.values()].find(u=>String(u.discordUserId||'')===id);
+  if(!user&&username){const appRow=guardianApplications?.find(a=>String(a.discord||'').replace(/^@/,'').toLowerCase()===username);if(appRow)user=guardianAdminUsers.get(appRow.username)}
+  if(user&&id&&String(user.discordUserId||'')!==id){user.discordUserId=id;guardianSaveUsers()}
+  return user||null;
+}
+app.post('/api/discord/interactions',async(req,res)=>{
+  if(!guardianDiscordVerifyInteraction(req))return res.status(401).send('invalid request signature');
+  const body=req.body||{};if(body.type===1)return res.json({type:1});
+  if(body.type!==3)return res.json({type:4,data:{content:'Unsupported Guardian interaction.',flags:64}});
+  const custom=String(body.data?.custom_id||'');const m=custom.match(/^guardian_patrol_(attend|decline):(.+)$/);if(!m)return res.json({type:4,data:{content:'This Guardian button is no longer supported.',flags:64}});
+  const p=guardianPatrols.find(x=>String(x.id)===m[2]);if(!p)return res.json({type:4,data:{content:'That patrol no longer exists.',flags:64}});
+  p.discordMessageId=String(body.message?.id||p.discordMessageId||'');p.discordChannelId=String(body.channel_id||p.discordChannelId||guardianDiscord.patrolChannelId||'');
+  if(guardianPatrolBookingsClosed(p)){guardianSavePatrols();return res.json({type:7,data:guardianPatrolDiscordPayload(p)})}
+  const user=guardianFindUserFromDiscordInteraction(body);if(!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.json({type:4,data:{content:'Your Discord account is not linked to an approved Guardian account. Ask staff to add your Discord User ID in Guardian before booking.',flags:64}});
+  guardianEnsureDefaultPolice(user);guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===user.username);if(!b){b={username:user.username,displayName:user.displayName||user.username,discordUserId:String(body.member?.user?.id||''),discordDisplayName:String(body.member?.nick||body.member?.user?.global_name||body.member?.user?.username||''),bookedAt:new Date().toISOString(),status:'attending',deployment:null};p.bookings.push(b)}
+  b.status=m[1]==='attend'?'attending':'not-attending';b.respondedAt=new Date().toISOString();b.source='discord';guardianSavePatrols();guardianAdminAuditLog(user.username,b.status==='attending'?'PATROL_ATTENDING':'PATROL_NOT_ATTENDING',{patrolId:p.id,source:'discord'});
+  return res.json({type:7,data:guardianPatrolDiscordPayload(p)});
+});
+
+let guardianPatrolCloseSweepBusy=false;
+setInterval(async()=>{if(guardianPatrolCloseSweepBusy)return;guardianPatrolCloseSweepBusy=true;try{for(const p of guardianPatrols){if(p.published===false||!p.discordMessageId)continue;const closed=guardianPatrolBookingsClosed(p);if(closed&&!p.discordClosedSyncedAt){await guardianPatrolSyncDiscord(p,{createIfMissing:false});p.discordClosedSyncedAt=new Date().toISOString();guardianSavePatrols()}}}finally{guardianPatrolCloseSweepBusy=false}},60000).unref?.();
 const guardianDiscordTemplate={
   roles:[
     {key:"memberRoleId",name:"GO • Member",color:0x4f545c},
@@ -1054,17 +1144,10 @@ app.post("/api/community/forms/:id/submit",async(req,res)=>{
   res.json({ok:true,submission:sub});
 });
 app.get("/api/community/submissions/me",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});res.json({ok:true,submissions:guardianFormSubmissions.filter(x=>x.username===session.username)})});
-app.get("/api/community/patrols",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.json({ok:true,patrols:[]});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||"").toLowerCase()!=="approved")return res.json({ok:true,patrols:[]});res.json({ok:true,patrols:guardianPatrols.filter(p=>p.published!==false).map(p=>({...p,bookings:(p.bookings||[]).map(b=>({...b,isMe:b.username===session.username}))}))})});
-app.post("/api/community/patrols/:id/book",async(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||"").toLowerCase()!=="approved")return res.status(403).json({ok:false,error:"Whitelist approval required"});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});p.bookings=Array.isArray(p.bookings)?p.bookings:[];let b=p.bookings.find(x=>x.username===session.username);if(!b){b={username:session.username,displayName:u.displayName||session.username,servicePreference:String(req.body?.servicePreference||""),rolePreference:String(req.body?.rolePreference||""),bookedAt:new Date().toISOString(),status:"booked",deployment:null};p.bookings.push(b)}else{b.status="booked";b.servicePreference=String(req.body?.servicePreference||b.servicePreference||"");b.rolePreference=String(req.body?.rolePreference||b.rolePreference||"")};guardianSavePatrols();guardianAdminAuditLog(session.username,"PATROL_BOOKED",{patrolId:p.id});if(guardianDiscord.patrolPosts)guardianDiscordSend(guardianDiscord.patrolChannelId,{embeds:[guardianDiscordEmbed('✅ Patrol Booking',`**${b.displayName}** booked onto **${p.title}**.`,{color:0x2ecc71,fields:[{name:'Service preference',value:b.servicePreference||'Not specified',inline:true},{name:'Role preference',value:b.rolePreference||'Not specified',inline:true}]})]});res.json({ok:true,booking:b})});
-app.post("/api/community/patrols/:id/cancel",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:"Sign in required"});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});const b=(p.bookings||[]).find(x=>x.username===session.username);if(b)b.status="cancelled";guardianSavePatrols();res.json({ok:true})});
 
 app.get("/api/admin/forms",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,forms:guardianForms,submissions:guardianFormSubmissions}));
 app.post("/api/admin/forms",guardianRequireAdmin("settings.edit"),(req,res)=>{const forms=Array.isArray(req.body?.forms)?req.body.forms:[];guardianForms=forms.map((f,i)=>({...f,id:String(f.id||`form-${Date.now()}-${i}`),title:String(f.title||"Untitled Form"),fields:Array.isArray(f.fields)?f.fields:[]}));guardianSaveForms();guardianAdminAuditLog(req.guardianAdmin.username,"FORMS_CONFIG_SAVED",{count:guardianForms.length});res.json({ok:true,forms:guardianForms})});
 app.post("/api/admin/form-submissions/:id/review",guardianRequireAdmin("settings.edit"),(req,res)=>{const sub=guardianFormSubmissions.find(x=>x.id===req.params.id);if(!sub)return res.status(404).json({ok:false,error:"Submission not found"});const status=String(req.body?.status||"under-review");sub.status=status;sub.assignedTo=String(req.body?.assignedTo||sub.assignedTo||"");sub.updatedAt=new Date().toISOString();if(req.body?.note)sub.staffNotes.push({at:sub.updatedAt,by:req.guardianAdmin.username,note:String(req.body.note)});sub.history.push({at:sub.updatedAt,by:req.guardianAdmin.username,action:`STATUS_${status.toUpperCase()}`});guardianSaveFormSubmissions();res.json({ok:true,submission:sub})});
-app.get("/api/admin/patrols",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,patrols:guardianPatrols,services:guardianServices}));
-app.post("/api/admin/patrols",guardianRequireAdmin("settings.edit"),async(req,res)=>{const incoming=req.body?.patrol;if(!incoming)return res.status(400).json({ok:false,error:"Patrol required"});let p=incoming.id?guardianPatrols.find(x=>x.id===incoming.id):null;if(!p){p={id:crypto.randomUUID(),bookings:[],createdAt:new Date().toISOString()};guardianPatrols.unshift(p)}Object.assign(p,{title:String(incoming.title||"Weekly Patrol"),serviceId:String(incoming.serviceId||"fire"),startsAt:String(incoming.startsAt||""),maxSlots:Number(incoming.maxSlots||0),briefing:String(incoming.briefing||""),published:incoming.published!==false,requiredQualifications:Array.isArray(incoming.requiredQualifications)?incoming.requiredQualifications:[]});guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,"PATROL_SAVED",{patrolId:p.id});if(guardianDiscord.patrolPosts&&incoming.announce===true){const base=String(process.env.PUBLIC_BASE_URL||'https://guardian-web-qmnz.onrender.com').replace(/\/$/,'');await guardianDiscordSend(guardianDiscord.patrolChannelId,{embeds:[guardianDiscordEmbed('📅 '+p.title,p.briefing||'Book on through Guardian Operations.',{color:0x1e73ff,fields:[{name:'Starts',value:p.startsAt||'TBC',inline:true},{name:'Service',value:(guardianServices.find(s=>s.id===p.serviceId)||{}).name||p.serviceId||'Joint',inline:true},{name:'Spaces',value:p.maxSlots?String(p.maxSlots):'Unlimited',inline:true}]})],components:[{type:1,components:[{type:2,style:5,label:'Book On in Guardian',url:base+'/portal/#operations'}]}]})}res.json({ok:true,patrol:p})});
-app.delete("/api/admin/patrols/:id",guardianRequireAdmin("settings.edit"),(req,res)=>{guardianPatrols=guardianPatrols.filter(x=>x.id!==req.params.id);guardianSavePatrols();res.json({ok:true})});
-app.post("/api/admin/patrols/:id/deployment",guardianRequireAdmin("settings.edit"),(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:"Patrol not found"});const username=String(req.body?.username||"");const b=(p.bookings||[]).find(x=>x.username===username);if(!b)return res.status(404).json({ok:false,error:"Booking not found"});b.deployment={serviceId:String(req.body?.serviceId||""),callsign:String(req.body?.callsign||"").toUpperCase(),rank:String(req.body?.rank||""),division:String(req.body?.division||""),role:String(req.body?.role||""),vehicle:String(req.body?.vehicle||""),talkgroup:String(req.body?.talkgroup||"")};const u=guardianAdminUsers.get(username);if(u){u.serviceAssignments=Array.isArray(u.serviceAssignments)?u.serviceAssignments:[];const idx=u.serviceAssignments.findIndex(x=>x.serviceId===b.deployment.serviceId);if(idx>=0)u.serviceAssignments[idx]={...u.serviceAssignments[idx],...b.deployment};else u.serviceAssignments.push({...b.deployment});guardianSaveUsers()}guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,"PATROL_DEPLOYMENT_ASSIGNED",{patrolId:p.id,username,deployment:b.deployment});res.json({ok:true,booking:b})});
 app.get("/api/admin/services",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,services:guardianServices}));
 app.post("/api/admin/services",guardianRequireAdmin("settings.edit"),(req,res)=>{if(!Array.isArray(req.body?.services))return res.status(400).json({ok:false,error:"Services required"});guardianServices=req.body.services;guardianSaveServices();guardianAdminAuditLog(req.guardianAdmin.username,"SERVICE_DIRECTORY_SAVED",{count:guardianServices.length});res.json({ok:true,services:guardianServices})});
 app.post("/api/admin/users/:username/community-profile",guardianRequireAdmin("settings.edit"),(req,res)=>{const u=guardianAdminUsers.get(String(req.params.username||""));if(!u)return res.status(404).json({ok:false,error:"User not found"});u.membershipType=["member","non-member"].includes(req.body?.membershipType)?req.body.membershipType:u.membershipType||"non-member";u.discordUserId=String(req.body?.discordUserId||u.discordUserId||"");u.serviceAssignments=Array.isArray(req.body?.serviceAssignments)?req.body.serviceAssignments:u.serviceAssignments||[];u.qualifications=Array.isArray(req.body?.qualifications)?req.body.qualifications:u.qualifications||[];guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"COMMUNITY_PROFILE_UPDATED",{username:u.username,membershipType:u.membershipType});res.json({ok:true,user:guardianUserPublicProfile(u)})});
@@ -1156,6 +1239,33 @@ app.post('/api/admin/patrols/:id/attendance',guardianRequireAdmin('settings.edit
 app.get('/api/admin/role-permissions',guardianRequireAdmin('settings.view'),(_q,res)=>res.json({ok:true,permissions:guardianRolePermissions}));
 app.post('/api/admin/role-permissions',guardianRequireAdmin('settings.edit'),(req,res)=>{if(!req.body?.permissions||typeof req.body.permissions!=='object')return res.status(400).json({ok:false,error:'Permissions required'});guardianRolePermissions=req.body.permissions;guardianWriteJson(guardianRolePermissionsFile,guardianRolePermissions);guardianAdminAuditLog(req.guardianAdmin.username,'ROLE_PERMISSIONS_SAVED');res.json({ok:true})});
 
+
+app.get('/api/community/patrols',(req,res)=>{
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.json({ok:true,patrols:[]});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||'').toLowerCase()!=='approved')return res.json({ok:true,patrols:[]});if(guardianEnsureDefaultPolice(u))guardianSaveUsers();
+  res.json({ok:true,patrols:guardianPatrols.filter(p=>p.published!==false).map(p=>({...p,bookingsClosed:guardianPatrolBookingsClosed(p),bookingClosesAt:p.bookingClosesAt||(guardianPatrolCloseMs(p)?new Date(guardianPatrolCloseMs(p)).toISOString():''),bookings:(p.bookings||[]).map(b=>({...b,isMe:b.username===session.username}))}))});
+});
+app.post('/api/community/patrols/:id/book',(req,res)=>{
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:'Sign in required'});const u=guardianAdminUsers.get(session.username);if(!u||String(u.whitelistStatus||'').toLowerCase()!=='approved')return res.status(403).json({ok:false,error:'Whitelist approval required'});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(guardianPatrolBookingsClosed(p))return res.status(409).json({ok:false,error:'Bookings are closed for this patrol'});if(guardianEnsureDefaultPolice(u))guardianSaveUsers();p.bookings=Array.isArray(p.bookings)?p.bookings:[];const currentAttending=p.bookings.filter(x=>['attending','booked'].includes(String(x.status))).length;const existing=p.bookings.find(x=>x.username===session.username);if(Number(p.maxSlots||0)>0&&currentAttending>=Number(p.maxSlots)&&!existing?.status?.match(/^(attending|booked)$/))return res.status(409).json({ok:false,error:'This patrol is full'});let b=existing;if(!b){b={username:session.username,displayName:u.displayName||session.username,bookedAt:new Date().toISOString(),status:'attending',deployment:null,source:'guardian'};p.bookings.push(b)}else{b.status='attending';b.respondedAt=new Date().toISOString();b.source='guardian'}guardianSavePatrols();guardianAdminAuditLog(session.username,'PATROL_ATTENDING',{patrolId:p.id,source:'guardian'});guardianPatrolSyncDiscord(p,{createIfMissing:false});res.json({ok:true,booking:b});
+});
+app.post('/api/community/patrols/:id/cancel',(req,res)=>{
+  const session=guardianUserReadSession(req)||guardianAdminReadSession(req);if(!session)return res.status(401).json({ok:false,error:'Sign in required'});const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(guardianPatrolBookingsClosed(p))return res.status(409).json({ok:false,error:'Bookings are closed for this patrol'});const b=(p.bookings||[]).find(x=>x.username===session.username);if(b){b.status='not-attending';b.respondedAt=new Date().toISOString();b.source='guardian'}guardianSavePatrols();guardianPatrolSyncDiscord(p,{createIfMissing:false});res.json({ok:true});
+});
+app.get('/api/admin/patrols',guardianRequireAdmin('settings.view'),(req,res)=>{for(const u of guardianAdminUsers.values())if(guardianEnsureDefaultPolice(u)){}guardianSaveUsers();res.json({ok:true,patrols:guardianPatrols.map(p=>({...p,bookingsClosed:guardianPatrolBookingsClosed(p),bookingClosesAt:p.bookingClosesAt||(guardianPatrolCloseMs(p)?new Date(guardianPatrolCloseMs(p)).toISOString():'')})),services:guardianServices,users:[...guardianAdminUsers.values()].map(u=>guardianUserPublicProfile(u)),fleet:guardianFleet||[]})});
+app.post('/api/admin/patrols',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const incoming=req.body?.patrol;if(!incoming)return res.status(400).json({ok:false,error:'Patrol required'});let p=incoming.id?guardianPatrols.find(x=>x.id===incoming.id):null;if(!p){p={id:crypto.randomUUID(),bookings:[],createdAt:new Date().toISOString()};guardianPatrols.unshift(p)}
+  const start=String(incoming.startsAt||p.startsAt||'');let close=String(incoming.bookingClosesAt||p.bookingClosesAt||'');if(!close&&Date.parse(start))close=new Date(Date.parse(start)-3600000).toISOString();
+  Object.assign(p,{title:String(incoming.title||p.title||'Official Patrol'),serviceId:String(incoming.serviceId||p.serviceId||'joint'),startsAt:start,bookingClosesAt:close,maxSlots:Number(incoming.maxSlots??p.maxSlots??0),briefing:String(incoming.briefing??p.briefing??''),published:incoming.published!==false,discordChannelId:String(incoming.discordChannelId||p.discordChannelId||guardianDiscord.patrolChannelId||''),bookingsManuallyClosed:incoming.bookingsManuallyClosed===true,requiredQualifications:Array.isArray(incoming.requiredQualifications)?incoming.requiredQualifications:(p.requiredQualifications||[])});guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_SAVED',{patrolId:p.id});
+  if(incoming.announce===true){const r=await guardianPatrolSyncDiscord(p,{createIfMissing:true});if(!r.ok&&!r.skipped)return res.status(400).json({ok:false,error:r.error||'Discord publish failed'})}
+  res.json({ok:true,patrol:p});
+});
+app.post('/api/admin/patrols/:id/discord',guardianRequireAdmin('settings.edit'),async(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(req.body?.channelId)p.discordChannelId=String(req.body.channelId);const r=await guardianPatrolSyncDiscord(p,{createIfMissing:true});if(!r.ok)return res.status(400).json({ok:false,error:r.error||'Discord publish failed'});res.json({ok:true,messageId:p.discordMessageId,channelId:p.discordChannelId})});
+app.post('/api/admin/patrols/:id/bookings',guardianRequireAdmin('settings.edit'),async(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});const action=String(req.body?.action||'');if(action==='close'){p.bookingsManuallyClosed=true;p.manualClosedAt=new Date().toISOString();p.manualClosedBy=req.guardianAdmin.username}else if(action==='open'){p.bookingsManuallyClosed=false;p.manualClosedAt=null;p.manualClosedBy=null;if(guardianPatrolCloseMs(p)&&Date.now()>=guardianPatrolCloseMs(p))return res.status(409).json({ok:false,error:'The automatic booking close time has already passed. Change the close time before reopening.'})}else return res.status(400).json({ok:false,error:'Use close or open'});guardianSavePatrols();await guardianPatrolSyncDiscord(p,{createIfMissing:false});guardianAdminAuditLog(req.guardianAdmin.username,action==='close'?'PATROL_BOOKINGS_CLOSED':'PATROL_BOOKINGS_OPENED',{patrolId:p.id});res.json({ok:true,closed:guardianPatrolBookingsClosed(p)})});
+app.delete('/api/admin/patrols/:id',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianPatrols=guardianPatrols.filter(x=>x.id!==req.params.id);guardianSavePatrols();res.json({ok:true})});
+app.post('/api/admin/patrols/:id/deployment',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(!guardianPatrolBookingsClosed(p))return res.status(409).json({ok:false,error:'Close patrol bookings before assigning duty details'});const username=String(req.body?.username||'');const b=(p.bookings||[]).find(x=>x.username===username&&['attending','booked'].includes(String(x.status)));if(!b)return res.status(404).json({ok:false,error:'Attending booking not found'});const u=guardianAdminUsers.get(username);if(!u)return res.status(404).json({ok:false,error:'Guardian user not found'});const serviceId=String(req.body?.serviceId||'police');const eligible=guardianPatrolEligible(u);if(!eligible.includes(serviceId))return res.status(403).json({ok:false,error:'This member is not approved for that service'});const division=String(req.body?.division||'');const allowedDivs=guardianPatrolEligibleDivisions(u,serviceId);if(allowedDivs.length&&division&&!allowedDivs.includes(division))return res.status(403).json({ok:false,error:'This member is not approved for that division'});const callsign=String(req.body?.callsign||'').trim().toUpperCase();if(callsign){for(const other of p.bookings||[]){if(other!==b&&['attending','booked'].includes(String(other.status))&&String(other.deployment?.callsign||'').toUpperCase()===callsign)return res.status(409).json({ok:false,error:'That callsign is already assigned on this patrol'})}}
+  b.deployment={serviceId,callsign,division,vehicle:String(req.body?.vehicle||''),assignedAt:new Date().toISOString(),assignedBy:req.guardianAdmin.username};guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DUTY_ASSIGNED',{patrolId:p.id,username,deployment:b.deployment});await guardianPatrolSyncDiscord(p,{createIfMissing:false});res.json({ok:true,booking:b});
+});
+
 // Portal public configuration and application workflow
 app.get("/api/portal/config",(_req,res)=>{res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");res.json({ok:true,portal:guardianPortalConfig(),revision:Number(guardianConfig.portal?.updatedAt||0)})});
 app.get("/api/portal/me",(req,res)=>{
@@ -1199,7 +1309,7 @@ app.post("/api/admin/applications/:id/review",guardianRequireAdmin("settings.edi
   const user=guardianAdminUsers.get(application.username);
   if(!user)return res.status(404).json({ok:false,error:"Applicant account not found"});
   application.status=decision;application.reviewedAt=new Date().toISOString();application.reviewedBy=req.guardianAdmin.username;application.reviewNote=String(req.body?.note||"").trim();
-  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;if(decision==="approved"&&!user.membershipType)user.membershipType="member";
+  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;if(decision==="approved"&&!user.membershipType)user.membershipType="member";if(decision==="approved")guardianEnsureDefaultPolice(user);
   guardianSaveUsers();guardianSaveApplications();guardianAdminAuditLog(req.guardianAdmin.username,"WHITELIST_APPLICATION_REVIEWED",{applicationId:application.id,username:application.username,decision});
   res.json({ok:true,application});
 });
@@ -1207,7 +1317,7 @@ app.post("/api/admin/users/:username/whitelist",guardianRequireAdmin("settings.e
   const user=guardianAdminUsers.get(String(req.params.username||""));if(!user)return res.status(404).json({ok:false,error:"User not found"});
   const status=String(req.body?.status||"").toLowerCase();if(!["approved","pending","rejected"].includes(status))return res.status(400).json({ok:false,error:"Invalid whitelist status"});
   if(user.protected&&status!=="approved")return res.status(403).json({ok:false,error:"Protected owner access cannot be revoked"});
-  user.whitelistStatus=status;user.whitelistUpdatedAt=new Date().toISOString();guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"USER_WHITELIST_CHANGED",{username:user.username,status});res.json({ok:true,status});
+  user.whitelistStatus=status;user.whitelistUpdatedAt=new Date().toISOString();if(status==="approved")guardianEnsureDefaultPolice(user);guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"USER_WHITELIST_CHANGED",{username:user.username,status});res.json({ok:true,status});
 });
 
 app.get("/api/admin/audit",guardianRequireAdmin("audit.view"),(req,res)=>{
