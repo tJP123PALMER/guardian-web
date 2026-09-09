@@ -1326,10 +1326,48 @@ app.post('/api/admin/patrols',guardianRequireAdmin('settings.edit'),async(req,re
 });
 app.post('/api/admin/patrols/:id/discord',guardianRequireAdmin('settings.edit'),async(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(req.body?.channelId)p.discordChannelId=String(req.body.channelId);const r=await guardianPatrolSyncDiscord(p,{createIfMissing:true});if(!r.ok)return res.status(400).json({ok:false,error:r.error||'Discord publish failed'});res.json({ok:true,messageId:p.discordMessageId,channelId:p.discordChannelId})});
 app.post('/api/admin/patrols/:id/bookings',guardianRequireAdmin('settings.edit'),async(req,res)=>{const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});const action=String(req.body?.action||'');if(action==='close'){p.bookingsManuallyClosed=true;p.manualClosedAt=new Date().toISOString();p.manualClosedBy=req.guardianAdmin.username}else if(action==='open'){p.bookingsManuallyClosed=false;p.manualClosedAt=null;p.manualClosedBy=null;if(guardianPatrolCloseMs(p)&&Date.now()>=guardianPatrolCloseMs(p))return res.status(409).json({ok:false,error:'The automatic booking close time has already passed. Change the close time before reopening.'})}else return res.status(400).json({ok:false,error:'Use close or open'});guardianSavePatrols();await guardianPatrolSyncDiscord(p,{createIfMissing:false});guardianAdminAuditLog(req.guardianAdmin.username,action==='close'?'PATROL_BOOKINGS_CLOSED':'PATROL_BOOKINGS_OPENED',{patrolId:p.id});res.json({ok:true,closed:guardianPatrolBookingsClosed(p)})});
-app.delete('/api/admin/patrols/:id',guardianRequireAdmin('settings.edit'),(req,res)=>{guardianPatrols=guardianPatrols.filter(x=>x.id!==req.params.id);guardianSavePatrols();res.json({ok:true})});
+app.delete('/api/admin/patrols/:id',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const p=guardianPatrols.find(x=>x.id===req.params.id);
+  if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});
+  let discordDeleted=false,discordWarning='';
+  if(p.discordMessageId&&p.discordChannelId){
+    const r=await guardianDiscordRequest('DELETE',`/channels/${encodeURIComponent(p.discordChannelId)}/messages/${encodeURIComponent(p.discordMessageId)}`);
+    discordDeleted=!!r.ok;
+    if(!r.ok&&!r.skipped)discordWarning=r.error||'Discord message could not be removed';
+  }
+  guardianPatrols=guardianPatrols.filter(x=>x.id!==req.params.id);
+  guardianSavePatrols();
+  guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DELETED',{patrolId:p.id,title:p.title,discordDeleted,discordWarning});
+  res.json({ok:true,discordDeleted,discordWarning});
+});
 app.post('/api/admin/patrols/:id/deployment',guardianRequireAdmin('settings.edit'),async(req,res)=>{
-  const p=guardianPatrols.find(x=>x.id===req.params.id);if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});if(!guardianPatrolBookingsClosed(p))return res.status(409).json({ok:false,error:'Close patrol bookings before assigning duty details'});const username=String(req.body?.username||'');const b=(p.bookings||[]).find(x=>x.username===username&&['attending','booked'].includes(String(x.status)));if(!b)return res.status(404).json({ok:false,error:'Attending booking not found'});const u=guardianAdminUsers.get(username);if(!u)return res.status(404).json({ok:false,error:'Guardian user not found'});const serviceId=String(req.body?.serviceId||'police');const eligible=guardianPatrolEligible(u);if(!eligible.includes(serviceId))return res.status(403).json({ok:false,error:'This member is not approved for that service'});const division=String(req.body?.division||'');const allowedDivs=guardianPatrolEligibleDivisions(u,serviceId);if(allowedDivs.length&&division&&!allowedDivs.includes(division))return res.status(403).json({ok:false,error:'This member is not approved for that division'});const callsign=String(req.body?.callsign||'').trim().toUpperCase();if(callsign){for(const other of p.bookings||[]){if(other!==b&&['attending','booked'].includes(String(other.status))&&String(other.deployment?.callsign||'').toUpperCase()===callsign)return res.status(409).json({ok:false,error:'That callsign is already assigned on this patrol'})}}
-  b.deployment={serviceId,callsign,division,vehicle:String(req.body?.vehicle||''),assignedAt:new Date().toISOString(),assignedBy:req.guardianAdmin.username};guardianSavePatrols();guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DUTY_ASSIGNED',{patrolId:p.id,username,deployment:b.deployment});await guardianPatrolSyncDiscord(p,{createIfMissing:false});res.json({ok:true,booking:b});
+  const p=guardianPatrols.find(x=>x.id===req.params.id);
+  if(!p)return res.status(404).json({ok:false,error:'Patrol not found'});
+  const username=String(req.body?.username||'');
+  const b=(p.bookings||[]).find(x=>x.username===username&&['attending','booked'].includes(String(x.status)));
+  if(!b)return res.status(404).json({ok:false,error:'Attending booking not found'});
+  const u=guardianAdminUsers.get(username);
+  if(!u)return res.status(404).json({ok:false,error:'Guardian user not found'});
+  const serviceId=String(req.body?.serviceId||p.serviceId||'fire');
+  const service=guardianServices.find(s=>s.id===serviceId&&s.enabled!==false);
+  if(!service)return res.status(400).json({ok:false,error:'Choose a valid enabled service'});
+  // Staff may allocate duty while bookings are open or closed. Member service assignments are
+  // still useful as defaults, but they no longer block operational allocation on the patrol.
+  const division=String(req.body?.division||'').trim();
+  if(division&&Array.isArray(service.divisions)&&service.divisions.length&&!service.divisions.includes(division))
+    return res.status(400).json({ok:false,error:'Choose a division configured for '+service.name});
+  const callsign=String(req.body?.callsign||'').trim().toUpperCase();
+  if(callsign){
+    for(const other of p.bookings||[]){
+      if(other!==b&&['attending','booked'].includes(String(other.status))&&String(other.deployment?.callsign||'').toUpperCase()===callsign)
+        return res.status(409).json({ok:false,error:'That callsign is already assigned on this patrol'});
+    }
+  }
+  b.deployment={serviceId,callsign,division,vehicle:String(req.body?.vehicle||''),assignedAt:new Date().toISOString(),assignedBy:req.guardianAdmin.username};
+  guardianSavePatrols();
+  guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DUTY_ASSIGNED',{patrolId:p.id,username,deployment:b.deployment,bookingsClosed:guardianPatrolBookingsClosed(p)});
+  await guardianPatrolSyncDiscord(p,{createIfMissing:false});
+  res.json({ok:true,booking:b,bookingsClosed:guardianPatrolBookingsClosed(p)});
 });
 
 // Portal public configuration and application workflow
