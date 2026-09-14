@@ -192,6 +192,7 @@
     if(pc)return pc;
     pc=new RTCPeerConnection({iceServers});
     pendingIce=[];
+    try{pc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
     pc.onicecandidate=e=>{if(e.candidate&&activeCall?.vehicleClientId)signal('ice',e.candidate,activeCall.vehicleClientId).catch(console.error)};
     pc.ontrack=e=>{
       if(!remoteAudio)return;
@@ -204,14 +205,13 @@
   }
   async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian control ICE]',e)}}}
   async function beginPeer(offerer){
-    await ensureMic(); const peer=makePeer();
-    if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack)) peer.addTrack(localTrack,localStream);
+    const peer=makePeer();
     if(offerer&&activeCall?.vehicleClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.vehicleClientId)}
   }
   async function handleSignal(m){
     const from=m.from;if(!activeCall||!from)return;
     if(from.id!==activeCall.vehicleClientId)return;
-    const peer=makePeer();await ensureMic();if(localTrack&&!peer.getSenders().some(s=>s.track===localTrack))peer.addTrack(localTrack,localStream);
+    const peer=makePeer();
     if(m.kind==='offer'){
       await peer.setRemoteDescription(m.data);await flushIce(peer);
       const ans=await peer.createAnswer();await peer.setLocalDescription(ans);await signal('answer',ans,from.id);
@@ -239,10 +239,10 @@
     if(!activeCall)return;
     const btn=$('radioDirectPtt');
     if(down){
-      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track?.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);localTrack.enabled=true;}if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}const st=$('radioTxState');if(st)st.textContent='CONTROL TX';}
+      try{await ensureMic();const peer=makePeer();let sender=peer.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||peer.getSenders().find(s=>s.track?.kind==='audio');if(sender&&localTrack)await sender.replaceTrack(localTrack);if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}const st=$('radioTxState');if(st)st.textContent='CONTROL TX';}
       catch(e){alert(friendlyMicError(e))}
     }else{
-      if(localTrack)localTrack.enabled=false;if(btn){btn.classList.remove('tx');btn.textContent='HOLD TO TALK TO UNIT'}const st=$('radioTxState');if(st)st.textContent='LIVE VOICE';
+      try{const sender=pc?.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||pc?.getSenders().find(s=>s.track?.kind==='audio');if(sender)await sender.replaceTrack(null)}catch{}releaseMic();if(btn){btn.classList.remove('tx');btn.textContent='HOLD TO TALK TO UNIT'}const st=$('radioTxState');if(st)st.textContent='LIVE VOICE';
     }
   }
 
@@ -257,7 +257,7 @@
     rtc.onicecandidate=e=>{if(e.candidate&&controlChannel)signal('ice',{guardianChannel:true,channelId:controlChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
     rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
     rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeControlChannelPeer(peer.id)};
-    if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}}
+    try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
     return g;
   }
   async function flushControlGroupIce(g){if(!g?.pc?.remoteDescription)return;for(const c of g.pendingIce.splice(0)){try{await g.pc.addIceCandidate(c)}catch(e){console.warn('[Guardian control channel ICE]',e)}}}
@@ -282,17 +282,15 @@
     const found=(config.services||[]).flatMap(s=>(s.channels||[]).map(c=>({service:s,channel:c}))).find(x=>x.channel.id===channelId);
     if(!found||!found.channel.open)return alert('That channel is closed.');
     await radioFetch('/api/radio/channel',{method:'POST',body:JSON.stringify({role:'control',clientId,channelId})});controlChannel={id:found.channel.id,name:found.channel.name,serviceName:found.service.name};closeAllControlChannelPeers();
-    // Prime Control's microphone before channel negotiation so every peer gets a
-    // bidirectional audio m-line from the start. The track remains muted until PTT.
-    try{await ensureMic();if(localTrack)localTrack.enabled=false;}catch(e){console.warn('[Guardian Control mic prime]',e)}
+    // Receive-first: monitoring a channel must not reserve the PC microphone.
     renderControlChannelOps();renderDirectory();await syncControlChannelPeers();
   }
   async function controlChannelPtt(down){
     if(!controlChannel)return;
     const btn=$('radioControlChannelPtt');
     if(down){
-      try{await ensureMic();for(const g of channelPeers.values()){const sender=g.pc.getSenders().find(s=>s.track?.kind==='audio')||g.pc.getTransceivers().find(t=>t.sender&&t.receiver?.track?.kind==='audio')?.sender;if(sender&&localTrack){try{await sender.replaceTrack(localTrack)}catch{}}}if(localTrack)localTrack.enabled=true;channelTx=true;if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}}catch(e){alert(friendlyMicError(e))}
-    }else{channelTx=false;if(localTrack)localTrack.enabled=false;if(btn){btn.classList.remove('tx');btn.textContent='HOLD PTT'}}
+      try{await ensureMic();for(const g of channelPeers.values()){const sender=g.pc.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||g.pc.getSenders().find(s=>s.track?.kind==='audio');if(sender&&localTrack){try{await sender.replaceTrack(localTrack)}catch{}}}channelTx=true;if(btn){btn.classList.add('tx');btn.textContent='TRANSMITTING'}}catch(e){alert(friendlyMicError(e))}
+    }else{channelTx=false;for(const g of channelPeers.values()){const sender=g.pc.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||g.pc.getSenders().find(s=>s.track?.kind==='audio');if(sender){try{await sender.replaceTrack(null)}catch{}}}releaseMic();if(btn){btn.classList.remove('tx');btn.textContent='HOLD PTT'}}
   }
   function renderControlChannelOps(){
     const box=$('radioControlChannelOps');if(!box)return;

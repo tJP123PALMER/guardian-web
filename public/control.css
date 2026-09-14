@@ -266,22 +266,3 @@
 .radioControlChannelStatus{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;color:#9fb6c1;font-size:11px}.radioControlChannelStatus strong{color:#eaf7fb}
 .radioChannelAdmin.radioChannelStatus .radioMonitorBtn{height:30px;min-width:80px;background:#173e52;border:1px solid #3c6b83;color:#fff;border-radius:4px;font-weight:800}
 @media(max-width:900px){.radioControlChannelOps{grid-template-columns:1fr 1fr}.radioControlChannelOps select{grid-column:1/-1}}
-
-/* Guardian v53 — Incident archive / closed logs */
-.incidentArchiveToolbar{display:grid;grid-template-columns:auto minmax(280px,1fr) 210px;gap:10px;align-items:center;margin:0 0 14px}
-.segmented{display:inline-flex;border:1px solid rgba(94,174,225,.32);border-radius:9px;overflow:hidden;background:#071923}
-.segmented button{border:0;border-radius:0;background:transparent;color:#9ec5dc;padding:10px 14px;font-weight:800}
-.segmented button.active{background:#174c69;color:#fff}
-.incidentCardMeta{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
-.incidentCardMeta span{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid rgba(92,167,211,.25);padding:3px 6px;border-radius:999px;color:#9ec5dc}
-.closedIncidentRecord{max-width:100%}
-.closedIncidentSummary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
-.closedIncidentSummary>div{border:1px solid rgba(92,167,211,.22);background:rgba(6,25,36,.55);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px}
-.closedIncidentSummary span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#68bce8}.closedIncidentSummary b{font-size:14px;color:#fff}
-.closedIncidentDl{display:grid;grid-template-columns:180px 1fr;gap:10px;margin:0}.closedIncidentDl dt{color:#79bfe6;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.closedIncidentDl dd{margin:0;white-space:pre-wrap}
-.status.closed{background:#26343d;color:#d8e0e5}
-@media(max-width:1050px){.incidentArchiveToolbar{grid-template-columns:1fr}.closedIncidentSummary{grid-template-columns:1fr 1fr}.closedIncidentDl{grid-template-columns:1fr}}
-@media print{body *{visibility:hidden!important}.closedIncidentRecord,.closedIncidentRecord *{visibility:visible!important}.closedIncidentRecord{position:absolute;inset:0;background:white!important;color:black!important;padding:18px}.closedIncidentRecord button{display:none!important}}
-
-/* Guardian v54 — Incident command/archive visual refinement */
-.incidentCommandSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0 0 12px}.incidentCommandSummary>div{padding:11px 13px;background:linear-gradient(180deg,#0b2635,#071923);border:1px solid #28495a;border-radius:8px}.incidentCommandSummary b,.incidentCommandSummary span{display:block}.incidentCommandSummary b{font-size:22px;color:#f2fbff}.incidentCommandSummary span{font-size:9px;color:#79a9c0;text-transform:uppercase;letter-spacing:.08em;margin-top:2px}.incidentWorkspace{grid-template-columns:minmax(330px,.78fr) minmax(0,1.6fr);gap:12px}.incidentListPanel{background:#061923}.incidentCard{border-radius:8px!important;border-left:3px solid #2e7ba4!important;padding:12px!important;margin:7px!important;background:#081d28!important}.incidentCard.active{border-left-color:#65c9ff!important;background:#0c2b3b!important;box-shadow:0 0 0 1px rgba(88,182,234,.28)}.incidentCard strong{font-size:13px}.incidentDetailPanel{border-color:#31576b}.commandRecordTop{position:sticky;top:0;z-index:8;background:#071923;padding:12px 0;border-bottom:1px solid #274556}.incidentOpsCard{border-radius:9px!important}.incidentOpsCard>header{background:linear-gradient(90deg,rgba(20,70,96,.38),transparent);padding:10px 12px;border-bottom:1px solid rgba(91,155,188,.18)}@media(max-width:1000px){.incidentCommandSummary{grid-template-columns:1fr 1fr}.incidentWorkspace{grid-template-columns:1fr}}

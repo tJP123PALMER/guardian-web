@@ -286,10 +286,11 @@
       const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});
       selectedChannel={id:j.channel.id,name:j.channel.name};tunedChannel=null;menuLevel='home';closeAllGroupPeers();
       state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL');renderMenu();
-      // Prime an audio sender before group negotiation. This fixes the one-way
-      // channel case where Control could be heard but the unit never advertised
-      // a usable microphone sender until after the first offer was already made.
-      try{await ensureMic();setMicGate(false);}catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
+      // Receive-first negotiation: do NOT open the microphone just to monitor a channel.
+      // A sendrecv transceiver is created with a null sender; the real microphone is
+      // attached only while PTT is held. This stops Guardian from monopolising the
+      // Android head-unit microphone in RX mode.
+      setMic('RX');
       await syncGroupPeers();
     }
     catch(e){state(e.message||'TALKGROUP UNAVAILABLE','error')}
@@ -304,13 +305,13 @@
   }
   function closeGroupPeer(id){const g=groupPeers.get(id);if(!g)return;try{g.pc.close()}catch{};try{g.audio.remove()}catch{};groupPeers.delete(id)}
   function closeAllGroupPeers(){for(const id of [...groupPeers.keys()])closeGroupPeer(id)}
-  async function attachTrackToGroupPeers(){if(!localTrack)return;for(const g of groupPeers.values()){const sender=g.pc.getSenders().find(x=>x.track?.kind==='audio')||g.pc.getTransceivers().find(t=>t.sender&&t.receiver?.track?.kind==='audio')?.sender;if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else{try{g.pc.addTrack(localTrack,localStream)}catch{}}}}
+  async function attachTrackToGroupPeers(){for(const g of groupPeers.values()){let sender=g.pc.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||g.pc.getSenders().find(x=>x.track?.kind==='audio');if(!sender){try{const tr=g.pc.addTransceiver('audio',{direction:'sendrecv'});sender=tr.sender}catch{}}if(sender){try{await sender.replaceTrack(localTrack||null)}catch(e){console.warn('[Guardian channel sender]',e)}}}}
   function createGroupPeer(peer){
     const rtc=new RTCPeerConnection({iceServers});const audio=groupRemoteAudio(peer.id);const g={pc:rtc,audio,peer,pendingIce:[]};groupPeers.set(peer.id,g);
     rtc.onicecandidate=e=>{if(e.candidate&&selectedChannel)signal('ice',{guardianChannel:true,channelId:selectedChannel.id,candidate:e.candidate},peer.id).catch(console.error)};
-    rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(()=>{})};
+    rtc.ontrack=e=>{const st=e.streams&&e.streams[0];if(st)audio.srcObject=st;else if(e.track){const ms=new MediaStream();ms.addTrack(e.track);audio.srcObject=ms}audio.muted=false;audio.volume=1;audio.play().catch(e=>{console.warn('[Guardian channel speaker]',e);hint('TAP RADIO SCREEN ONCE TO ENABLE SPEAKER AUDIO','error')})};
     rtc.onconnectionstatechange=()=>{if(['failed','closed'].includes(rtc.connectionState))closeGroupPeer(peer.id)};
-    if(localTrack){try{rtc.addTrack(localTrack,localStream)}catch{}}else{try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}}
+    try{rtc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
     return g;
   }
   async function flushGroupIce(g){if(!g?.pc?.remoteDescription)return;for(const c of g.pendingIce.splice(0)){try{await g.pc.addIceCandidate(c)}catch(e){console.warn('[Guardian channel ICE]',e)}}}
@@ -333,7 +334,7 @@
     try{await ensureMic();await attachTrackToGroupPeers();setMicGate(true);document.getElementById('radioChannelPtt')?.classList.add('tx');setMic('TX');state(`TX ${selectedChannel.name}`,'connected');hint(`TRANSMITTING ON ${selectedChannel.name}`,'connected')}
     catch(e){groupTx=false;stopHoldTone();setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
   }
-  function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();setMicGate(false);document.getElementById('radioChannelPtt')?.classList.remove('tx');setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
+  function channelPttStop(){if(!groupTx)return;groupTx=false;stopHoldTone();document.getElementById('radioChannelPtt')?.classList.remove('tx');detachAndReleaseMic().catch(console.warn);setMic('RX');state(`CHANNEL ${selectedChannel?.name||''} — MONITORING`,'connected');hint('CHANNEL MONITORING · HOLD PTT TO TALK · HOLD 1 TO CALL CONTROL','connected')}
 
   function keypadButton(key){return document.querySelector(`[data-radio-key="${CSS.escape(String(key))}"]`)}
   function radioKeyDown(key,btn=keypadButton(key)){
@@ -421,34 +422,23 @@
     throw firstErr||new DOMException('Could not start audio source','NotReadableError');
   }
   async function ensureMic(){
-    if(micIsLive()) return localStream;
+    if(rawMicStream&&rawMicStream.getAudioTracks().some(t=>t.readyState==='live')){
+      localStream=rawMicStream;localTrack=rawMicStream.getAudioTracks()[0]||null;return localStream;
+    }
     releaseMic();
-    await sleep(180);
+    await sleep(100);
     rawMicStream=await openDefaultMic();
-    const rawTrack=rawMicStream.getAudioTracks()[0]||null;
-    if(!rawTrack)throw new DOMException('No microphone detected','NotFoundError');
-    rawTrack.enabled=true;
-    rawTrack.onended=()=>{setMic('MIC DISCONNECTED');};
-
-    // v39: keep the real microphone capture alive continuously and gate audio
-    // with WebAudio. FiveM/CEF can fail to resume outbound RTP after repeatedly
-    // disabling MediaStreamTrack.enabled, which caused Control to hear silence.
-    const AC=window.AudioContext||window.webkitAudioContext;
-    if(!AC)throw new Error('WebAudio microphone gate unavailable');
-    micAudioContext=new AC();
-    try{await micAudioContext.resume()}catch{}
-    micSourceNode=micAudioContext.createMediaStreamSource(rawMicStream);
-    micGainNode=micAudioContext.createGain();
-    micGainNode.gain.value=0;
-    micDestination=micAudioContext.createMediaStreamDestination();
-    micSourceNode.connect(micGainNode);
-    micGainNode.connect(micDestination);
-    localStream=micDestination.stream;
-    localTrack=localStream.getAudioTracks()[0]||null;
-    if(!localTrack)throw new DOMException('Could not create radio microphone stream','NotReadableError');
-    localTrack.enabled=true; // never toggle this track; PTT uses setMicGate().
-    await attachTrackToGroupPeers();
+    localStream=rawMicStream;
+    localTrack=rawMicStream.getAudioTracks()[0]||null;
+    if(!localTrack)throw new DOMException('No microphone detected','NotFoundError');
+    localTrack.enabled=true;
+    localTrack.onended=()=>{setMic('MIC DISCONNECTED');};
     return localStream;
+  }
+  async function detachAndReleaseMic(){
+    try{for(const g of groupPeers.values()){const sender=g.pc.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||g.pc.getSenders().find(x=>x.track?.kind==='audio');if(sender)await sender.replaceTrack(null)}}catch(e){console.warn('[Guardian channel release]',e)}
+    try{if(pc){const sender=pc.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||pc.getSenders().find(x=>x.track?.kind==='audio');if(sender)await sender.replaceTrack(null)}}catch(e){console.warn('[Guardian direct release]',e)}
+    releaseMic();
   }
   async function playRemote(){
     if(!remoteAudio)return;
@@ -460,6 +450,7 @@
     if(pc)return pc;
     pc=new RTCPeerConnection({iceServers});
     pendingIce=[];
+    try{pc.addTransceiver('audio',{direction:'sendrecv'})}catch{}
     pc.onicecandidate=e=>{if(e.candidate&&activeCall?.controlClientId)signal('ice',e.candidate,activeCall.controlClientId).catch(console.error)};
     pc.ontrack=e=>{
       if(!remoteAudio)return;
@@ -479,14 +470,11 @@
     return pc;
   }
   async function flushIce(peer){if(!peer.remoteDescription)return;const q=pendingIce.splice(0);for(const c of q){try{await peer.addIceCandidate(c)}catch(e){console.warn('[Guardian ICE]',e)}}}
-  async function beginPeer(offerer){await ensureMic();setMicGate(false);const peer=makePeer();if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
+  async function beginPeer(offerer){const peer=makePeer();if(offerer&&activeCall?.controlClientId){const offer=await peer.createOffer();await peer.setLocalDescription(offer);await signal('offer',offer,activeCall.controlClientId)}}
   async function handleSignal(m){
     if(!activeCall||!m.from)return;
     if(activeCall.controlClientId&&m.from.id!==activeCall.controlClientId)return;
     const peer=makePeer();
-    await ensureMic();
-    setMicGate(false);
-    if(localTrack){const audioSender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(audioSender){try{await audioSender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);}
     if(m.kind==='answer'){
       await peer.setRemoteDescription(m.data);
       await flushIce(peer);
@@ -516,7 +504,7 @@
     }
     // Connected call: hold-to-transmit.
     if(activeCall?.status==='connected'){
-      try{await ensureMic();const peer=makePeer();if(localTrack){const sender=peer.getSenders().find(s=>s.track&&s.track.kind==='audio');if(sender){try{await sender.replaceTrack(localTrack)}catch{}}else peer.addTrack(localTrack,localStream);setMicGate(true);}setMic('TX');state('TRANSMITTING TO CONTROL','connected');hint('PTT HELD — CONTROL CAN HEAR YOU','connected');startHoldTone()}
+      try{await ensureMic();const peer=makePeer();let sender=peer.getTransceivers().find(t=>t.receiver?.track?.kind==='audio')?.sender||peer.getSenders().find(s=>s.track?.kind==='audio');if(sender&&localTrack)await sender.replaceTrack(localTrack);setMic('TX');state('TRANSMITTING TO CONTROL','connected');hint('PTT HELD — CONTROL CAN HEAR YOU','connected');startHoldTone()}
       catch(e){setMic('MIC ERROR');hint(friendlyMicError(e),'error')}
       return;
     }
@@ -528,7 +516,7 @@
   }
   function softwarePttStop(){
     softwarePttDown=false;clearTimeout(softwarePttTimer);softwarePttTimer=null;stopHoldTone();
-    if(activeCall?.status==='connected'){setMicGate(false);setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
+    if(activeCall?.status==='connected'){detachAndReleaseMic().catch(console.warn);setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
     else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · LEFT/RIGHT AFTER SELECTING SERVICE')}
   }
 
