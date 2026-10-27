@@ -1,0 +1,73 @@
+/* Guardian v74 — visual refresh overlay. CSS only; preserves existing behavior and data. */
+:root {
+  --g-bg: #06121b;
+  --g-panel: #0a1d2a;
+  --g-panel-2: #0d2636;
+  --g-panel-3: #102f42;
+  --g-border: rgba(93, 177, 218, .24);
+  --g-border-strong: rgba(64, 183, 255, .48);
+  --g-text: #edf7ff;
+  --g-muted: #a4c1d5;
+  --g-cyan: #39c5ff;
+  --g-blue: #168ce0;
+  --g-blue-dark: #0964ad;
+  --g-radius: 15px;
+  --g-shadow: 0 12px 32px rgba(0,0,0,.20);
+}
+html { color-scheme: dark; }
+body { background: radial-gradient(ellipse at 70% -20%, rgba(18,100,146,.16), transparent 45%), var(--g-bg) !important; color: var(--g-text); }
+button, input, select, textarea { font: inherit; }
+button { transition: transform .15s ease, filter .15s ease, border-color .15s ease, box-shadow .15s ease; }
+button:hover { filter: brightness(1.09); }
+button:active { transform: translateY(1px); }
+:focus-visible { outline: 2px solid var(--g-cyan) !important; outline-offset: 3px; }
+.app { background: transparent; }
+.sidebar { background: linear-gradient(180deg, #071a27 0%, #06141e 100%) !important; border-right: 1px solid var(--g-border) !important; box-shadow: 8px 0 28px rgba(0,0,0,.12); }
+.brand { letter-spacing: .11em; text-shadow: 0 0 24px rgba(57,197,255,.14); }
+.navGroupLabel { color: var(--g-cyan) !important; letter-spacing: .18em !important; font-size: 10px !important; font-weight: 800 !important; }
+.nav { border: 1px solid transparent !important; border-radius: 10px !important; margin: 2px 8px !important; width: calc(100% - 16px) !important; transition: background .15s ease, border-color .15s ease, color .15s ease !important; }
+.nav:hover { background: rgba(31,137,194,.12) !important; border-color: var(--g-border) !important; color: #fff !important; }
+.nav.active { background: linear-gradient(100deg, rgba(19,137,206,.28), rgba(19,137,206,.09)) !important; border-color: var(--g-border-strong) !important; box-shadow: inset 3px 0 0 var(--g-cyan), 0 5px 18px rgba(0,0,0,.12); }
+.topbar { background: rgba(5,17,26,.88) !important; border-bottom: 1px solid var(--g-border) !important; backdrop-filter: blur(14px); }
+.topbar h1, main h1 { letter-spacing: -.035em; }
+.eyebrow { color: var(--g-cyan) !important; letter-spacing: .17em !important; font-weight: 800 !important; }
+#content { padding-bottom: 36px; }
+#content .card, #content .panel, #content .section, #content .settingsCard, #content .statCard, #content .metricCard,
+#content [class*="card"], #content [class*="panel"] { border-radius: var(--g-radius); }
+#content .card, #content .panel, #content .settingsCard, #content .statCard, #content .metricCard {
+  border-color: var(--g-border) !important;
+  box-shadow: var(--g-shadow);
+}
+#content > * { animation: gFadeIn .22s ease both; }
+@keyframes gFadeIn { from { opacity: .65; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+#content button, #loginBtn, .logout { border-radius: 10px !important; font-weight: 750 !important; }
+#content button:not(.nav), #loginBtn { box-shadow: 0 5px 14px rgba(0,94,165,.13); }
+#content input, #content select, #content textarea, #globalSearch, #loginUser, #loginPass {
+  background: #061722 !important; color: var(--g-text) !important; border: 1px solid var(--g-border-strong) !important; border-radius: 10px !important;
+}
+#content input::placeholder, #content textarea::placeholder, #globalSearch::placeholder { color: #7598ae !important; }
+#content input:focus, #content select:focus, #content textarea:focus, #globalSearch:focus { border-color: var(--g-cyan) !important; box-shadow: 0 0 0 3px rgba(57,197,255,.10) !important; outline: none; }
+#content table { border-collapse: separate !important; border-spacing: 0; overflow: hidden; border: 1px solid var(--g-border) !important; border-radius: 12px; }
+#content thead th { background: #102d3e !important; color: #bfeaff !important; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }
+#content tbody tr { transition: background .12s ease; }
+#content tbody tr:hover { background: rgba(35,147,204,.09) !important; }
+#content td, #content th { border-color: var(--g-border) !important; }
+#content hr { border: 0; border-top: 1px solid var(--g-border); }
+#content a { color: #65ceff; }
+#content code, #content pre { background: #04111a; border: 1px solid var(--g-border); border-radius: 8px; }
+#loginView .loginCard, .loginCard { border: 1px solid var(--g-border-strong) !important; border-radius: 20px !important; box-shadow: 0 22px 70px rgba(0,0,0,.35), 0 0 40px rgba(18,142,206,.08); }
+#who { border: 1px solid var(--g-border) !important; border-radius: 10px; }
+/* Make existing compact stat tiles read as a consistent dashboard grid. */
+#content [class*="stat"], #content [class*="metric"] { background: linear-gradient(145deg, rgba(14,43,60,.98), rgba(7,25,37,.98)) !important; }
+/* Keep the new incident detail modal above all existing settings overlays. */
+.guardian-incident-modal, .g73-modal, [data-guardian-modal] { backdrop-filter: blur(7px); }
+@media (min-width: 1200px) { #content { padding-left: 24px; padding-right: 24px; } }
+@media (max-width: 760px) {
+  .topbar { gap: 12px; align-items: flex-start !important; }
+  .topTools { flex-wrap: wrap; width: 100%; }
+  #globalSearch { max-width: 100%; width: 100%; }
+  #content { padding-left: 12px !important; padding-right: 12px !important; }
+  #content table { display: block; max-width: 100%; overflow-x: auto; }
+  #content button { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
