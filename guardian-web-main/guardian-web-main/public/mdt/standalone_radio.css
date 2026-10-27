@@ -1,0 +1,48 @@
+/* Guardian v22 standalone MTM-style FiveM radio mode. Activated by ?standaloneRadio=1. */
+html:has(body.guardianStandaloneRadio),body.guardianStandaloneRadio{margin:0!important;width:100%!important;height:100%!important;background:transparent!important;overflow:hidden!important}
+body.guardianStandaloneRadio .frame{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:hidden!important}
+body.guardianStandaloneRadio .top,
+body.guardianStandaloneRadio .statusStrip,
+body.guardianStandaloneRadio .bottom,
+body.guardianStandaloneRadio #guardianCoreBadge,
+body.guardianStandaloneRadio .mobilising-overlay,
+body.guardianStandaloneRadio .adminPopup{display:none!important}
+body.guardianStandaloneRadio .body,
+body.guardianStandaloneRadio .main{position:fixed!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important}
+body.guardianStandaloneRadio .pane{display:none!important}
+body.guardianStandaloneRadio #tab-radio{display:block!important;position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important}
+body.guardianStandaloneRadio #tab-radio .guardianRadioPage{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;padding:0!important;background:transparent!important;box-sizing:border-box!important;overflow:hidden!important}
+body.guardianStandaloneRadio #tab-radio .guardianMtmBody{position:absolute!important;inset:4px!important;width:auto!important;height:auto!important;min-height:0!important;margin:0!important;box-sizing:border-box!important;grid-template-columns:58px minmax(330px,1fr) 76px 176px!important;gap:5px!important;padding:6px!important;border-radius:10px!important;border-width:2px!important;overflow:hidden!important}
+body.guardianStandaloneRadio .mtmLeftRail{gap:5px!important;padding-top:2px!important}
+body.guardianStandaloneRadio .mtmVolumeKnob{width:46px!important;height:46px!important}
+body.guardianStandaloneRadio .mtmVolumeKnob:before{height:14px!important;margin-top:3px!important}
+body.guardianStandaloneRadio .mtmSpeaker{width:45px!important;gap:5px!important}
+body.guardianStandaloneRadio .mtmSpeaker i{height:3px!important}
+body.guardianStandaloneRadio .mtmDisplayWrap{grid-template-rows:16px minmax(145px,1fr) 27px 29px!important;gap:3px!important}
+body.guardianStandaloneRadio .mtmBrandRow{font-size:6px!important}
+body.guardianStandaloneRadio .mtmLcd{padding:5px 7px!important;border-width:2px!important;grid-template-rows:20px 17px minmax(70px,1fr) 22px 18px!important}
+body.guardianStandaloneRadio .mtmLcdTop{font-size:7px!important}
+body.guardianStandaloneRadio .mtmLcdTop strong{font-size:13px!important}
+body.guardianStandaloneRadio .mtmMenuTitle{font-size:8px!important}
+body.guardianStandaloneRadio .mtmMenuItem{height:17px!important;font-size:7px!important;padding:0 4px!important;gap:4px!important}
+body.guardianStandaloneRadio .mtmMenuIcon{width:10px!important}
+body.guardianStandaloneRadio .mtmLcdState{font-size:8px!important;padding-top:3px!important}
+body.guardianStandaloneRadio .mtmLcdTalkgroup{font-size:6px!important;gap:4px!important}
+body.guardianStandaloneRadio .mtmLcdTalkgroup b{font-size:11px!important}
+body.guardianStandaloneRadio .mtmSoftKeys{gap:3px!important}
+body.guardianStandaloneRadio .mtmSoftKeys button{min-height:25px!important;font-size:7px!important}
+body.guardianStandaloneRadio .mtmCallHint{height:29px!important;padding:3px 5px!important;gap:4px!important}
+body.guardianStandaloneRadio .mtmCallHint span,body.guardianStandaloneRadio .mtmCallHint b{font-size:6px!important}
+body.guardianStandaloneRadio .mtmNavCluster{gap:5px!important}
+body.guardianStandaloneRadio .mtmRedPhone,body.guardianStandaloneRadio .mtmGreenPhone{width:38px!important;height:25px!important;font-size:14px!important}
+body.guardianStandaloneRadio .mtmDpad{width:62px!important;height:62px!important;padding:2px!important}
+body.guardianStandaloneRadio .mtmDpad button{font-size:10px!important}
+body.guardianStandaloneRadio .guardianRadioKeypad{padding:4px!important;border-radius:4px!important}
+body.guardianStandaloneRadio .radioKeyGrid{gap:3px!important}
+body.guardianStandaloneRadio .radioKeyGrid button{height:31px!important;font-size:11px!important;border-radius:3px!important}
+body.guardianStandaloneRadio .radioKeyGrid button small{font-size:5px!important;margin-top:1px!important}
+body.guardianStandaloneRadio .radioKeyHelp{margin-top:4px!important;padding:3px!important;font-size:5px!important;line-height:1.2!important}
+body.guardianStandaloneRadio .mtmSignalBars{right:6px!important;top:29px!important}
+body.guardianStandaloneRadio .mtmSignalBars i{width:2px!important}
+/* Keep radio absent from normal FiveM MDT when wrapper passes hideRadioTab=1. */
+body.guardianHideRadioTab #radioStatusBtn{display:none!important}

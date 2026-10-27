@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Guardian Operations · Portal</title>
+  <link rel="stylesheet" href="/portal/portal.css?v=55">
+<link rel="stylesheet" href="/portal/portal_v65.css?v=65"></head>
+<body>
+<a class="skipLink" href="#appMain">Skip to main content</a>
+<header class="topbar">
+  <a class="brand" href="#portal" data-view-link="portal" aria-label="Guardian Operations home">
+    <img id="brandLogo" src="/assets/lothian-borders-logo.png" alt="">
+    <span><b id="brandName">GUARDIAN OPERATIONS</b><small id="brandTagline">Fire &amp; Rescue Command Platform</small></span>
+  </a>
+
+  <nav class="mainnav" aria-label="Portal navigation">
+    <button class="navTab active" type="button" data-view-link="portal" aria-current="page"><span aria-hidden="true">⌂</span> Portal</button>
+    <button class="navTab" type="button" data-view-link="profile"><span aria-hidden="true">♙</span> Your Profile</button>
+    <button class="navTab" type="button" data-view-link="forms"><span aria-hidden="true">▤</span> Forms</button>
+    <button class="navTab" type="button" data-view-link="patrols"><span aria-hidden="true">◫</span> Operations</button>
+    <button class="navTab" type="button" data-view-link="training"><span aria-hidden="true">⌁</span> Training</button>
+    <button class="navTab" type="button" data-view-link="guides"><span aria-hidden="true">?</span> Guides</button>
+    <button class="navTab" type="button" data-view-link="misc"><span aria-hidden="true">▦</span> Misc</button>
+    <a id="adminSettingsNav" class="navTab adminNav hidden" href="/settings.html#portal"><span aria-hidden="true">⚙</span> Settings</a>
+  </nav>
+
+  <div id="sessionActions" class="sessionActions"></div>
+</header>
+
+<main id="appMain" tabindex="-1">
+  <section class="appView active" data-view="portal" aria-labelledby="portalHeading">
+    <div class="dashboardGrid">
+      <section class="welcomePanel" id="heroCard">
+        <div class="welcomeShade"></div>
+        <div class="welcomeContent">
+          <div class="eyebrow" id="heroEyebrow">GUARDIAN OPERATIONS</div>
+          <h1 id="portalHeading"><span id="welcomePrefix">Welcome to</span> <strong id="welcomeBrand">Guardian Operations</strong></h1>
+          <p id="heroDescription">Access your operational systems, manage your profile, complete forms and use community tools — all in one place.</p>
+          <div class="actionRow">
+            <button class="button primary" type="button" id="getStartedBtn">Get started</button>
+            <button class="button secondary" id="guidesBtn" type="button" data-view-link="guides">View guides</button>
+          </div>
+          <div class="strapline" id="heroStrapline">People · Professionalism · Community</div>
+        </div>
+      </section>
+
+      <aside class="statusPanel" aria-labelledby="statusHeading">
+        <div class="panelHead">
+          <div><div class="eyebrow">YOUR ACCESS</div><h2 id="statusHeading">Operational status</h2></div>
+          <span class="liveState"><i></i> Online</span>
+        </div>
+        <p class="muted">Your current account and access permissions.</p>
+        <div class="statusList">
+          <div class="statusItem"><span class="statusIcon" aria-hidden="true">◎</span><div><b>Account</b><small id="accountStatusText">Guest</small></div><span class="badge" id="accountStatusBadge">SIGNED OUT</span></div>
+          <div class="statusItem"><span class="statusIcon" aria-hidden="true">◇</span><div><b>Whitelist</b><small id="whitelistText">Not checked</small></div><span class="badge" id="whitelistBadge">LOCKED</span></div>
+          <div class="statusItem"><span class="statusIcon" aria-hidden="true">♙</span><div><b>Role</b><small id="roleText">Guest</small></div><span class="badge" id="roleBadge">GUEST</span></div>
+          <div class="statusItem"><span class="statusIcon" aria-hidden="true">▱</span><div><b>Operational access</b><small id="accessText">Fire &amp; Rescue</small></div><span class="badge" id="accessBadge">LOCKED</span></div>
+        </div>
+        <button class="panelLink" type="button" data-view-link="profile">Manage your profile <span aria-hidden="true">→</span></button>
+      </aside>
+    </div>
+
+    <div id="accessBanner" class="notice hidden" role="status"></div>
+
+    <section id="announcementSection" class="pageSection hidden" aria-labelledby="annHeading"><div class="sectionHead"><div><div class="eyebrow">LATEST</div><h2 id="annHeading">Announcements & orders</h2></div></div><div id="announcementCards" class="announcementGrid"></div></section>
+
+    <section class="pageSection" aria-labelledby="systemsHeading">
+      <div class="sectionHead">
+        <div><div class="eyebrow">OPERATIONAL SYSTEMS</div><h2 id="systemsHeading">Core operational systems</h2><p id="operationalIntro" class="muted">Access the main Guardian systems from one place.</p></div>
+      </div>
+      <div class="systemGrid">
+        <a class="systemCard" id="mdtCard" data-route="/mdt/" href="#"><span class="launchIcon">▣</span><div><h3 id="mdtTitle">Player MDT</h3><p id="mdtDescription">Incidents, appliance status, messages and operational information.</p><small>FIRE &amp; RESCUE</small></div><span class="launchArrow" aria-hidden="true">→</span></a>
+        <a class="systemCard" id="controlCard" data-route="/control/" href="#"><span class="launchIcon">◉</span><div><h3 id="controlTitle">Control Centre</h3><p id="controlDescription">Call handling, mobilisation, resources and live radio control.</p><small>AUTHORISED ROLES</small></div><span class="launchArrow" aria-hidden="true">→</span></a>
+        <a class="systemCard" id="radioCard" data-route="/radio/" href="#"><span class="launchIcon">▥</span><div><h3 id="radioTitle">Radio</h3><p id="radioDescription">Guardian IP radio channels and point-to-point communications.</p><small>VOICE COMMS</small></div><span class="launchArrow" aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
+    <section id="adminQuick" class="adminQuick hidden" aria-labelledby="adminQuickHeading">
+      <div><div class="eyebrow">ADMIN ONLY</div><h2 id="adminQuickHeading">Website administration</h2><p class="muted">Edit portal content, applications, users and operational configuration.</p></div>
+      <div class="adminActions">
+        <a href="/settings.html#portal">Portal &amp; branding</a><a href="/settings.html#applications">Applications</a><a href="/settings.html#users">Users &amp; access</a><a href="/settings.html#radio">Radio settings</a>
+      </div>
+    </section>
+  </section>
+
+  <section class="appView" data-view="profile" aria-labelledby="profileHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">ACCOUNT</div><h1 id="profileHeading">Your profile</h1><p>Account details, access status and application progress.</p></div></div>
+    <div class="twoCol">
+      <section class="card"><h2>Account details</h2><div id="profileBox" class="profileDetails">Sign in to view your Guardian profile.</div></section>
+      <section class="card"><h2>Application &amp; whitelist</h2><div id="applicationBox" class="applicationDetails">Sign in to view your application status.</div></section>
+    </div>
+    <section class="card profileActions"><h2>Quick actions</h2><div class="buttonGroup"><a class="button secondary" href="/apply/">Whitelist application</a><button class="button secondary" type="button" data-view-link="forms">Community forms</button><a id="profileSettingsBtn" class="button secondary hidden" href="/settings.html#users">Manage users &amp; access</a></div></section>
+  </section>
+
+  <section class="appView" data-view="forms" aria-labelledby="formsHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">COMMUNITY</div><h1 id="formsHeading">Forms &amp; requests</h1><p id="formsIntro">Submit applications and requests to the Guardian team.</p></div></div>
+    <div id="dynamicForms" class="formCards"></div>
+    <h2 class="legacyFormsTitle">Quick forms</h2>
+    <div class="formCards">
+      <a class="formCard" href="/apply/"><span>▤</span><div><h2 id="whitelistFormTitle">Whitelist application</h2><p id="whitelistFormSubtitle">Join our community</p></div><b>→</b></a>
+      <a class="formCard" id="leaveBtn" href="#"><span>▦</span><div><h2 id="leaveTitle">Leave of absence</h2><p id="leaveSubtitle">Request time away</p></div><b>→</b></a>
+      <a class="formCard" id="supportBtn" href="#"><span>◌</span><div><h2 id="supportTitle">Support request</h2><p id="supportSubtitle">Get help from staff</p></div><b>→</b></a>
+    </div>
+  </section>
+
+
+  <section class="appView" data-view="patrols" aria-labelledby="patrolsHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">OPERATIONS</div><h1 id="patrolsHeading">Patrols &amp; Book On</h1><p>Book onto upcoming Guardian patrols and view your deployment.</p></div></div>
+    <div id="patrolCards" class="patrolCards"><section class="card"><p>Sign in and become whitelisted to view patrols.</p></section></div>
+  </section>
+
+  <section class="appView" data-view="training" aria-labelledby="trainingHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">DEVELOPMENT</div><h1 id="trainingHeading">Training & Qualifications</h1><p>Book training, track qualifications and prepare for specialist roles.</p></div></div>
+    <div id="trainingCards" class="patrolCards"><section class="card"><p>Loading training…</p></section></div>
+  </section>
+
+  <section class="appView" data-view="guides" aria-labelledby="guidesHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">KNOWLEDGE BASE</div><h1 id="guidesHeading">Rules & How to Use Guardian</h1><p>Community standards, getting started, MDT/radio instructions and operational guides.</p></div></div>
+    <div id="guideCards" class="guideGrid"><section class="card"><p>Loading guides…</p></section></div>
+  </section>
+
+  <section class="appView" data-view="misc" aria-labelledby="miscHeading" hidden>
+    <div class="viewHeader"><div><div class="eyebrow">MORE</div><h1 id="miscHeading">Community &amp; future services</h1><p>Useful links and upcoming Guardian modules.</p></div></div>
+    <div class="twoCol">
+      <section class="card"><h2>Community links</h2><div class="linkList"><a id="discordBtn" href="#">Discord <span>→</span></a><a id="supportNav" href="#">Help &amp; support <span>→</span></a><button id="miscGuides" type="button" class="linkButton" data-view-link="guides">Guides <span>→</span></button></div></section>
+      <section class="card"><h2 id="futureTitle">Expanding our services</h2><p id="futureIntro" class="muted">More emergency services coming soon to Guardian Operations.</p><div class="futureCards"><article id="fireModule"><b>Fire &amp; Rescue</b><span class="badge ok">LIVE</span></article><article id="ambulanceModule"><b>Ambulance</b><span id="ambulanceLabel">Coming Soon</span></article><article id="policeModule"><b>Police</b><span id="policeLabel">Coming Soon</span></article></div></section>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div><b id="footerBrand">GUARDIAN OPERATIONS</b><small id="footerTagline">Fire &amp; Rescue Command Platform</small></div>
+  <p id="footerText">Built by the community, for the community.</p>
+</footer>
+
+<script src="/portal/portal.js?v=55"></script>
+<script src="/portal/portal_v65.js?v=65"></script>
+</body>
+</html>

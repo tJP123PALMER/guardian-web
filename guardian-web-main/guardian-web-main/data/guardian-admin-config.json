@@ -1,0 +1,342 @@
+{
+  "stations": [
+    {
+      "name": "Area Commander",
+      "postal": "",
+      "active": true
+    },
+    {
+      "name": "Berwick Fire Station",
+      "postal": "4011",
+      "active": true
+    },
+    {
+      "name": "Coldstream Fire Station",
+      "postal": "7287",
+      "active": true
+    },
+    {
+      "name": "Crewe Toll Fire Station",
+      "postal": "7039",
+      "active": true
+    },
+    {
+      "name": "Dalkeith Fire Station",
+      "postal": "",
+      "active": true
+    },
+    {
+      "name": "McDonald Road Fire Station",
+      "postal": "7326",
+      "active": true
+    },
+    {
+      "name": "Musselburgh Fire Station",
+      "postal": "9092",
+      "active": true
+    },
+    {
+      "name": "North Berwick Fire Station",
+      "postal": "",
+      "active": true
+    },
+    {
+      "name": "Pegswood Fire Station",
+      "postal": "",
+      "active": true
+    },
+    {
+      "name": "Sighthill Fire Station",
+      "postal": "7246",
+      "active": true
+    },
+    {
+      "name": "Station Commander",
+      "postal": "",
+      "active": true
+    },
+    {
+      "name": "Tollcross Fire Station",
+      "postal": "",
+      "active": true
+    }
+  ],
+  "appliances": [
+    {
+      "callsign": "K02P1",
+      "station": "McDonald Road Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K02P2",
+      "station": "McDonald Road Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K02A1",
+      "station": "McDonald Road Fire Station",
+      "type": "Aerial Appliance",
+      "skills": [
+        "Aerial Appliance"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K02H1",
+      "station": "McDonald Road Fire Station",
+      "type": "Specialist Appliance",
+      "skills": [
+        "Specialist Appliance"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K07A1",
+      "station": "Tollcross Fire Station",
+      "type": "Turntable Ladder",
+      "skills": [
+        "Turntable Ladder"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K06R1",
+      "station": "Sighthill Fire Station",
+      "type": "Rescue Appliance",
+      "skills": [
+        "Rescue Appliance"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K06P1",
+      "station": "Sighthill Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K06P2",
+      "station": "Sighthill Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J01C1",
+      "station": "Dalkeith Fire Station",
+      "type": "Command Unit",
+      "skills": [
+        "Command Unit"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J02G1",
+      "station": "Musselburgh Fire Station",
+      "type": "Wildfire Unit",
+      "skills": [
+        "Wildfire Unit"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J02G2",
+      "station": "Musselburgh Fire Station",
+      "type": "Wildfire Unit",
+      "skills": [
+        "Wildfire Unit"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J02P1",
+      "station": "Musselburgh Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K01P1",
+      "station": "Crewe Toll Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K01P2",
+      "station": "Crewe Toll Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "K01T1",
+      "station": "Crewe Toll Fire Station",
+      "type": "Water Carrier",
+      "skills": [
+        "Water Carrier"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J22Z6",
+      "station": "North Berwick Fire Station",
+      "type": "Specialist Appliance",
+      "skills": [
+        "Specialist Appliance"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "oge07",
+      "station": "Station Commander",
+      "type": "Station Commander",
+      "skills": [
+        "Station Commander"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "oge26",
+      "station": "Station Commander",
+      "type": "Station Commander",
+      "skills": [
+        "Station Commander"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "ose04",
+      "station": "Area Commander",
+      "type": "Area Commander",
+      "skills": [
+        "Area Commander"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "ose26",
+      "station": "Area Commander",
+      "type": "Area Commander",
+      "skills": [
+        "Area Commander"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "J27P6",
+      "station": "Coldstream Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "N14P1",
+      "station": "Berwick Fire Station",
+      "type": "Pump",
+      "skills": [
+        "Pump"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "N14W1",
+      "station": "Berwick Fire Station",
+      "type": "Swift Water Rescue",
+      "skills": [
+        "Swift Water Rescue"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "N14P6",
+      "station": "Berwick Fire Station",
+      "type": "Wildfire Unit",
+      "skills": [
+        "Wildfire Unit"
+      ],
+      "active": true
+    },
+    {
+      "callsign": "N04A1",
+      "station": "Pegswood Fire Station",
+      "type": "Aerial Appliance",
+      "skills": [
+        "Aerial Appliance"
+      ],
+      "active": true
+    }
+  ],
+  "applianceTypes": [
+    "Pump",
+    "Aerial Appliance",
+    "Specialist Appliance",
+    "Turntable Ladder",
+    "Rescue Appliance",
+    "Command Unit",
+    "Wildfire Unit",
+    "Water Carrier",
+    "Station Commander",
+    "Area Commander",
+    "Swift Water Rescue"
+  ],
+  "skills": [
+    "Pump",
+    "Aerial Appliance",
+    "Specialist Appliance",
+    "Turntable Ladder",
+    "Rescue Appliance",
+    "Command Unit",
+    "Wildfire Unit",
+    "Water Carrier",
+    "Station Commander",
+    "Area Commander",
+    "Swift Water Rescue"
+  ],
+  "statuses": [
+    "Available",
+    "Mobilised",
+    "Mobile to Incident",
+    "In Attendance at Incident",
+    "Available At Incident",
+    "Mobile And Available",
+    "Home Station",
+    "Mobile to Standby Station",
+    "Available Standby Station",
+    "Return to Home Station",
+    "Off Run"
+  ],
+  "map": {
+    "stations": {}
+  },
+  "alerts": {
+    "turnoutSound": true,
+    "messageSound": true
+  },
+  "general": {
+    "mode": "AUTO",
+    "allowStandalone": true,
+    "fiveMIntegration": true
+  }
+}

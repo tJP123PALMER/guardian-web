@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Guardian Hardware Key Tester</title>
+  <style>
+    :root{
+      color-scheme: dark;
+      --bg:#071018; --panel:#0d1a24; --panel2:#122331; --line:#284252;
+      --text:#ecf7ff; --muted:#9db2bf; --accent:#20d4c7; --warn:#ffbf47; --danger:#ff5c62;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    body{padding:10px}
+    .app{height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:10px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+    .brand{display:flex;align-items:center;gap:10px;min-width:0}
+    .brand img{width:44px;height:44px;object-fit:contain;border-radius:8px;background:#fff}
+    .brand h1{font-size:20px;margin:0;white-space:nowrap}
+    .brand p{font-size:12px;color:var(--muted);margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .status{font-weight:700;font-size:13px;padding:8px 10px;border-radius:999px;background:#16313a;border:1px solid #235360;color:#b9fff8}
+    main{min-height:0;display:grid;grid-template-columns:minmax(280px,.9fr) minmax(420px,1.4fr);gap:10px}
+    .panel{min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;overflow:hidden}
+    .latest{display:grid;grid-template-rows:auto 1fr;gap:10px}
+    .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .hero{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:var(--panel2);border:1px dashed #36576a;border-radius:10px;padding:12px;min-height:0}
+    .hero .big{font-size:clamp(28px,5vw,58px);font-weight:900;line-height:1;word-break:break-word;color:var(--accent)}
+    .hero .sub{margin-top:9px;font:600 14px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;color:#d5e6ef}
+    .hero .hint{margin-top:12px;color:var(--muted);font-size:12px;max-width:42ch}
+    .logwrap{display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0}
+    .loghead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    button{appearance:none;border:1px solid #3c6175;background:#173041;color:var(--text);border-radius:9px;padding:9px 13px;font-weight:800;font-size:13px;min-height:42px}
+    button:active{transform:translateY(1px)}
+    #log{min-height:0;overflow:auto;background:#071018;border:1px solid #233a49;border-radius:9px;padding:6px}
+    .row{display:grid;grid-template-columns:90px 1fr 1fr 80px 90px;gap:8px;padding:8px 9px;border-bottom:1px solid #172a36;font:600 12px/1.25 ui-monospace,SFMono-Regular,Consolas,monospace;align-items:center}
+    .row:last-child{border-bottom:0}
+    .row.down{background:#0c2827}.row.up{opacity:.7}
+    .tag{display:inline-flex;justify-content:center;border-radius:6px;padding:4px 6px;font-weight:900}.down .tag{background:#123f3b;color:#7df8e9}.up .tag{background:#29343c;color:#c1ced5}
+    footer{display:flex;justify-content:space-between;gap:12px;align-items:center;color:var(--muted);font-size:12px;padding:0 4px}
+    .count{color:var(--text);font-weight:800}
+    @media (max-width:760px){main{grid-template-columns:1fr}.latest{max-height:38vh}.row{grid-template-columns:70px 1fr 1fr}.row span:nth-child(4),.row span:nth-child(5){display:none}.brand p{display:none}}
+  </style>
+</head>
+<body tabindex="0">
+  <div class="app">
+    <header>
+      <div class="brand">
+        <img src="/assets/guardian-projects-shield.png" alt="Guardian Projects" onerror="this.style.display='none'" />
+        <div><h1>Guardian Hardware Key Tester</h1><p>Press, hold, release and rotate every control on the USB macro pad.</p></div>
+      </div>
+      <div class="status" id="focusStatus">READY — TAP PAGE ONCE</div>
+    </header>
+
+    <main>
+      <section class="panel latest">
+        <div class="label">Latest input</div>
+        <div class="hero" id="hero">
+          <div class="big" id="heroKey">WAITING</div>
+          <div class="sub" id="heroMeta">No keyboard event received yet</div>
+          <div class="hint">Tap anywhere on this page, then test all square buttons, round buttons, knob presses and both directions of every knob.</div>
+        </div>
+      </section>
+
+      <section class="panel logwrap">
+        <div class="loghead"><div class="label">Event log</div><button type="button" id="clearBtn">CLEAR LOG</button></div>
+        <div id="log" role="log" aria-live="polite" aria-label="Keyboard event log"></div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Tip: if Android hides the software keyboard when the pad is connected, it is probably being detected as a physical HID keyboard.</span>
+      <span>Events: <span class="count" id="count">0</span></span>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      const heroKey = document.getElementById('heroKey');
+      const heroMeta = document.getElementById('heroMeta');
+      const log = document.getElementById('log');
+      const countEl = document.getElementById('count');
+      const clearBtn = document.getElementById('clearBtn');
+      const focusStatus = document.getElementById('focusStatus');
+      let count = 0;
+
+      function clean(v){ return (v === undefined || v === null || v === '') ? '(blank)' : String(v); }
+      function addEvent(e, phase){
+        count++;
+        const key = clean(e.key);
+        const code = clean(e.code);
+        const keyCode = e.keyCode || e.which || 0;
+        const mods = [e.ctrlKey&&'CTRL',e.altKey&&'ALT',e.shiftKey&&'SHIFT',e.metaKey&&'META'].filter(Boolean).join('+') || '—';
+        heroKey.textContent = key;
+        heroMeta.textContent = `${phase.toUpperCase()}  •  code=${code}  •  keyCode=${keyCode}  •  modifiers=${mods}`;
+
+        const row = document.createElement('div');
+        row.className = `row ${phase}`;
+        const values = [phase.toUpperCase(), `key: ${key}`, `code: ${code}`, `# ${keyCode}`, mods];
+        values.forEach((txt,i) => { const s=document.createElement('span'); s.textContent=txt; if(i===0)s.className='tag'; row.appendChild(s); });
+        log.prepend(row);
+        while(log.children.length > 120) log.removeChild(log.lastChild);
+        countEl.textContent = String(count);
+      }
+
+      window.addEventListener('keydown', e => { addEvent(e,'down'); });
+      window.addEventListener('keyup', e => { addEvent(e,'up'); });
+      window.addEventListener('focus', () => { focusStatus.textContent='LISTENING FOR USB KEYS'; });
+      window.addEventListener('blur', () => { focusStatus.textContent='PAGE NOT FOCUSED — TAP IT'; });
+      document.body.addEventListener('pointerdown', () => { document.body.focus(); focusStatus.textContent='LISTENING FOR USB KEYS'; });
+      clearBtn.addEventListener('click', () => { log.textContent=''; count=0; countEl.textContent='0'; heroKey.textContent='WAITING'; heroMeta.textContent='No keyboard event received yet'; document.body.focus(); });
+      document.body.focus();
+      focusStatus.textContent='LISTENING FOR USB KEYS';
+    })();
+  </script>
+</body>
+</html>
