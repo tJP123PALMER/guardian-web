@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian MTM800E Radio v40</title>
+<link rel="stylesheet" href="/radio/standalone.css?v=40">
+<link rel="stylesheet" href="/vehicle2/car-radio.css?v=1">
+</head>
+<body>
+<div id="guardianFivemTools"><button id="gfrSmaller" title="Smaller">−</button><button id="gfrLarger" title="Larger">+</button><button id="gfrMic" class="mic" title="Microphone setup">MIC</button><button id="gfrClose" class="danger" title="Close">×</button></div><div id="guardianFivemMicHelp">FiveM needs microphone permission for Guardian Radio. Press the green radio key or PTT. If FiveM asks in the F8 console, choose <b>Allow microphone</b>. This v40 page runs as the top-level NUI rather than an iframe so the microphone request reaches FiveM directly.</div>
+<div id="callsignBox" hidden>UNSET</div>
+<section id="tab-radio" class="standaloneRadioPane radioOff">
+  <div class="guardianRadioPage">
+    <section class="guardianMtmBody" aria-label="Guardian MTM800E-style radio terminal">
+      <div class="mtmBrandBadge" aria-hidden="true"><span class="mtmMotorolaMark">M</span><span>MOTOROLA</span></div>
+
+      <div class="mtmLeftRail">
+        <div class="mtmVolumeKnob" aria-hidden="true"></div>
+        <button class="mtmEmergency" type="button" aria-label="Emergency"><span>△</span></button>
+        <button id="radioChannelPtt" class="mtmLowerKnob" type="button" aria-label="Push to talk" title="Hold for PTT"><span class="mtmLowerKnobMark"></span></button>
+        <div class="mtmMicPort" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+
+      <div class="mtmDisplayWrap">
+        <div class="mtmLcd">
+          <div class="mtmLcdTop"><strong id="radioVehicleCallsign">UNSET</strong><span id="radioMicState">RADIO OFF</span></div>
+          <div class="mtmMenuTitle" id="radioMenuTitle"></div>
+          <div class="mtmMenuList" id="radioMenuList"></div>
+          <div class="mtmLcdState" id="radioCallState">PRESS GREEN TO START RADIO</div>
+          <div class="mtmLcdTalkgroup"><span>TALKGROUP</span><b id="radioSelectedChannel">NULL</b></div>
+          <div class="mtmSignalBars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="mtmScreenSoftRail"><button type="button" id="radioScreenBack">Contacts</button><button type="button" id="radioScreenSelect">Opts</button></div>
+        </div>
+        <div class="mtmCallHint"><span id="radioSelectedService">CONTACTS</span><b id="radioUrgencyState">HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH</b></div>
+        <div id="radioLinkState" class="mtmLinkState">OFF</div>
+        <audio id="radioVehicleRemote" autoplay playsinline></audio>
+        <button id="radioBackSoft" hidden type="button">BACK</button>
+        <button id="radioSelectSoft" hidden type="button">SELECT</button>
+      </div>
+
+      <div class="mtmNavCluster">
+        <button id="radioHardwareBack" class="mtmUpperAux" type="button" aria-label="Back" title="Back"><span class="auxDot"></span></button>
+        <button id="radioPowerOff" class="mtmRedPhone" type="button" aria-label="End call / radio off" title="End / Off"><span class="phoneGlyph">☎</span><span class="powerGlyph">⏻</span></button>
+        <button id="radioMenuHome" class="mtmMenuKey" type="button" aria-label="Home / Main Menu" title="Home / Main Menu"><span class="menuBars">≡</span><span>MENU</span></button>
+        <div class="mtmDpad" aria-label="Radio navigation">
+          <button id="radioNavUp" type="button" aria-label="Up">▲</button>
+          <button id="radioNavLeft" type="button" aria-label="Left">◀</button>
+          <button id="radioNavSelect" type="button" aria-label="Select">●</button>
+          <button id="radioNavRight" type="button" aria-label="Right">▶</button>
+          <button id="radioNavDown" type="button" aria-label="Down">▼</button>
+        </div>
+        <button id="radioHardwareEnter" class="mtmLowerAux" type="button" aria-label="Enter / select" title="Enter / Select"><span class="auxDot"></span></button>
+        <button id="radioPowerOn" class="mtmGreenPhone" type="button" aria-label="Answer / radio on" title="Answer / On"><span class="phoneGlyph">☎</span></button>
+      </div>
+
+      <aside class="guardianRadioKeypad" aria-label="Radio keypad">
+        <div class="radioKeyGrid">
+          <button type="button" data-radio-key="1">1<small></small></button><button type="button" data-radio-key="2">2<small>ABC</small></button><button type="button" data-radio-key="3">3<small>DEF</small></button>
+          <button type="button" data-radio-key="4">4<small>GHI</small></button><button type="button" data-radio-key="5">5<small>JKL</small></button><button type="button" data-radio-key="6">6<small>MNO</small></button>
+          <button type="button" data-radio-key="7">7<small>PQRS</small></button><button type="button" data-radio-key="8">8<small>TUV</small></button><button type="button" data-radio-key="9">9<small>WXYZ</small></button>
+          <button type="button" data-radio-key="*">*<small>↵</small></button><button type="button" data-radio-key="0">0<small>+</small></button><button type="button" data-radio-key="#">#<small>↗</small></button>
+        </div>
+        <div class="mtmFunctionRow" aria-hidden="true">
+          <button type="button" tabindex="-1"><span class="lamps"><i></i></span><b>△</b></button>
+          <button type="button" tabindex="-1"><span class="lamps"><i></i><i></i></span><b>♟♟</b></button>
+          <button type="button" tabindex="-1"><span class="lamps"><i></i><i></i><i></i></span><b>🔊</b></button>
+        </div>
+      </aside>
+    </section>
+  </div>
+</section>
+<script>
+(() => {
+  const p = new URLSearchParams(location.search);
+  const cs = String(p.get('callsign') || localStorage.getItem('guardianExactMdtCallsign') || '').trim().toUpperCase();
+  document.getElementById('callsignBox').textContent = cs || 'UNSET';
+  if (cs) localStorage.setItem('guardianExactMdtCallsign', cs);
+})();
+</script>
+<div id="guardianCarBar"><span class="dot"></span><strong>VEHICLE RADIO</strong><span id="guardianAndroidMicState" class="micstate">Android mic route: checking…</span><button id="guardianRequestMic" class="primary" type="button">ENABLE MIC</button><button id="guardianTestMic" type="button">MIC TEST</button><button id="guardianAppSettings" type="button">APP SETTINGS</button></div>
+<script>
+(()=>{
+  const u=new URL(location.href);
+  if(u.searchParams.get('vehicle')!=='1'){u.searchParams.set('vehicle','1');u.searchParams.set('android','1');history.replaceState(null,'',u.pathname+'?'+u.searchParams.toString());}
+})();
+</script>
+<script src="/mdt/radio.js?v=40"></script>
+<script>
+(() => {
+  const q=new URLSearchParams(location.search);if(q.get('directNui')!=='1')return;
+  document.body.classList.add('guardianDirectNui','guardianRadioHidden');
+  let scale=Number(localStorage.getItem('guardianRadioScaleV40')||'.78');
+  const clamp=n=>Math.max(.28,Math.min(1.15,n));
+  const apply=()=>{scale=clamp(scale);localStorage.setItem('guardianRadioScaleV40',String(scale));document.documentElement.style.setProperty('--guardian-radio-scale',String(scale));};apply();
+  const res=q.get('resource')||'Guardian_radio';
+  const nui=(name,data={})=>fetch(`https://${res}/${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{});
+  document.getElementById('gfrSmaller').onclick=()=>{scale-=.06;apply()};
+  document.getElementById('gfrLarger').onclick=()=>{scale+=.06;apply()};
+  document.getElementById('gfrClose').onclick=()=>nui('close');
+  document.getElementById('gfrMic').onclick=()=>document.getElementById('guardianFivemMicHelp').classList.toggle('show');
+  addEventListener('message',e=>{const d=e.data||{};if(d.type==='radioState'){document.body.classList.toggle('guardianRadioHidden',!d.open);const cs=String(d.callsign||'UNSET').toUpperCase();const box=document.getElementById('callsignBox');if(box&&box.textContent!==cs)box.textContent=cs;}});
+})();
+</script>
+<script>
+(()=>{
+ const state=document.getElementById('guardianAndroidMicState');
+ const set=(txt,ok)=>{if(state)state.textContent=txt;document.body.classList.toggle('androidMicOk',ok===true);document.body.classList.toggle('androidMicBad',ok===false)};
+ function bridge(){return window.GuardianNativeAudio||window.GuardianNativeMicProbe||null}
+ function safe(name){try{const b=bridge();if(b&&typeof b[name]==='function')return b[name]()}catch(e){set('Native mic bridge error: '+e.message,false)}}
+ document.getElementById('guardianRequestMic')?.addEventListener('click',()=>{safe('requestMicrophonePermission');set('Microphone permission requested…')});
+ document.getElementById('guardianTestMic')?.addEventListener('click',()=>{const r=safe('runNativeRecordPlaybackTest');set('Running 3-second Android mic test…')});
+ document.getElementById('guardianAppSettings')?.addEventListener('click',()=>safe('openAppPermissionSettings'));
+ addEventListener('guardian-native-mic-probe',e=>{const t=String(e.detail||'');set(t,t.startsWith('NATIVE MIC OK'))});
+ addEventListener('guardian-android-mic-permission',e=>set('Android microphone permission: '+String(e.detail||''),String(e.detail||'')==='granted'));
+ setTimeout(()=>{try{const b=bridge();if(!b){set('Web microphone mode — connect a TRRS/USB external mic and tap ENABLE MIC');return}const r=(typeof b.getProbeResult==='function'?b.getProbeResult():'');if(r)set(String(r),String(r).startsWith('NATIVE MIC OK'));else if(typeof b.probeMicrophone==='function'){b.probeMicrophone();set('Testing Android microphone route…')}else set('Native Android microphone bridge ready',true)}catch(e){set('Microphone bridge unavailable: '+e.message,false)}},700);
+})();
+</script>
+</body>
+</html>

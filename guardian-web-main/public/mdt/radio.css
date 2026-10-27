@@ -1,0 +1,182 @@
+/* Guardian Radio v6 — compact MTM800E-inspired layout (Guardian branding only). */
+#tab-radio{overflow:hidden!important;height:100%;background:#071019!important}
+.guardianRadioPage{height:100%;min-height:0;padding:7px;background:#071019;box-sizing:border-box;overflow:hidden}
+.guardianMtmBody{height:100%;min-height:0;display:grid;grid-template-columns:80px minmax(310px,1fr) 92px 205px;gap:8px;padding:9px;border:3px solid #080a0b;border-radius:13px;background:linear-gradient(180deg,#353b40,#1a1f23);box-shadow:inset 0 0 0 2px #596066,0 8px 20px #0009;box-sizing:border-box;color:#edf4f7;overflow:hidden}
+.mtmLeftRail{display:flex;flex-direction:column;align-items:center;gap:16px;padding-top:7px}.mtmVolumeKnob{width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#6c7276 0 7%,#303538 30%,#141719 70%);border:2px solid #08090a;box-shadow:0 2px 5px #000,inset 0 0 0 2px #3e4448}.mtmVolumeKnob:before{content:"";display:block;width:2px;height:20px;background:#aab1b5;margin:4px auto}.mtmSpeaker{width:58px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:8px}.mtmSpeaker i{height:4px;background:#090a0b;border-radius:4px;box-shadow:0 1px #4c5255}
+.mtmDisplayWrap{min-width:0;min-height:0;display:grid;grid-template-rows:22px minmax(175px,1fr) 34px 44px;gap:5px}.mtmBrandRow{display:flex;justify-content:space-between;align-items:center;color:#c7d0d4;font:900 8px Arial;letter-spacing:.08em}.mtmBrandRow span:last-child{color:#48d5a0}
+.mtmLcd{position:relative;min-height:0;padding:8px 10px;border:3px solid #0b0d0e;background:linear-gradient(180deg,#d4e8ef,#a9cbd6);color:#102a34;box-shadow:inset 0 0 18px #557b8966;display:grid;grid-template-rows:27px 23px minmax(80px,1fr) 29px 25px}.mtmLcdTop{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #7d9ca7;font:900 9px Arial}.mtmLcdTop strong{font-size:16px}.mtmLcdTop span{font-size:8px}.mtmMenuTitle{display:flex;align-items:center;font:900 11px Arial;border-bottom:1px solid #7896a0}.mtmMenuList{min-height:0;overflow:hidden;padding:4px 0}.mtmMenuItem{display:flex;align-items:center;gap:7px;height:24px;padding:0 7px;font:800 10px Arial;border:1px solid transparent;border-radius:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtmMenuItem.selected{background:#69a7c3;color:#fff;border-color:#3b7d9a}.mtmMenuItem.disabled{opacity:.5}.mtmMenuIcon{width:16px;text-align:center}.mtmLcdState{font:900 11px Arial;border-top:1px solid #7897a2;padding-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtmLcdState.ringing{color:#8b5a00}.mtmLcdState.connected{color:#08613d}.mtmLcdState.error{color:#a62127}.mtmLcdTalkgroup{display:flex;align-items:end;gap:7px;font:800 7px Arial}.mtmLcdTalkgroup b{font:900 15px Arial;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtmSignalBars{position:absolute;right:8px;top:35px;display:flex;align-items:end;gap:2px}.mtmSignalBars i{display:block;width:3px;background:#16424e}.mtmSignalBars i:nth-child(1){height:5px}.mtmSignalBars i:nth-child(2){height:8px}.mtmSignalBars i:nth-child(3){height:11px}.mtmSignalBars i:nth-child(4){height:14px}
+.mtmSoftKeys{display:grid;grid-template-columns:1fr 1fr;gap:5px}.mtmSoftKeys button{border:1px solid #60686d;background:#202529;color:#eef3f5;font:900 9px Arial;border-radius:2px;min-height:31px}.mtmSoftKeys button:active{background:#c4dce5;color:#102a34}.mtmCallHint{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;border:1px solid #4f595e;background:#171c1f;padding:5px 7px;overflow:hidden}.mtmCallHint span{font:900 8px Arial;color:#9fb2bc}.mtmCallHint b{font:900 8px Arial;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtmCallHint b.ringing{color:#ffd25b}.mtmCallHint b.connected{color:#58dfa6}.mtmCallHint b.error{color:#ff747c}
+.mtmNavCluster{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px}.mtmRedPhone,.mtmGreenPhone{width:46px;height:31px;border-radius:5px;border:2px solid #090a0b;color:#fff;font-size:18px;box-shadow:inset 0 -3px #0005}.mtmRedPhone{background:#8c2830}.mtmGreenPhone{background:#176841}.mtmGreenPhone.on{box-shadow:0 0 0 2px #55d69b,inset 0 -3px #0005}.mtmDpad{width:78px;height:78px;border-radius:50%;background:#14181b;border:2px solid #08090a;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;padding:3px;box-sizing:border-box}.mtmDpad button{border:0;background:transparent;color:#eef2f4;font:900 13px Arial;min-width:0;min-height:0}.mtmDpad button:active{background:#334047;border-radius:50%}.mtmDpad button:nth-child(1){grid-column:2;grid-row:1}.mtmDpad button:nth-child(2){grid-column:1;grid-row:2}.mtmDpad button:nth-child(3){grid-column:2;grid-row:2;border-radius:50%;background:#252b2f}.mtmDpad button:nth-child(4){grid-column:3;grid-row:2}.mtmDpad button:nth-child(5){grid-column:2;grid-row:3}
+.guardianRadioKeypad{align-self:center;background:#171b1e;border:1px solid #596166;border-radius:6px;padding:6px;min-width:0}.radioKeyGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.radioKeyGrid button{height:43px;background:linear-gradient(#373d41,#191d20);border:1px solid #6d757a;color:#fff;border-radius:4px;font:900 16px Arial;box-shadow:inset 0 -3px #070809;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;touch-action:none;user-select:none;-webkit-user-select:none}.radioKeyGrid button small{font-size:6px;color:#bac3c7;margin-top:2px}.radioKeyGrid button:active,.radioKeyGrid button.holding{background:#c3dce5;color:#0c2530}.radioKeyHelp{margin-top:7px;padding:5px;border:1px solid #414a4f;background:#0c1114;color:#9eabb1;text-align:center;font:700 7px Arial;line-height:1.4}.radioKeyHelp strong{color:#f1f5f7}.radioKeyGrid button.sent{background:#247e55}
+#tab-radio.radioOff .mtmLcd{filter:saturate(.35) brightness(.72)}#tab-radio.radioOff .mtmSignalBars{opacity:.15}#tab-radio.radioOff .radioKeyGrid button{opacity:.45}
+@media(max-width:1050px){.guardianMtmBody{grid-template-columns:62px minmax(280px,1fr) 72px 168px;padding:6px;gap:5px}.mtmVolumeKnob{width:44px;height:44px}.mtmSpeaker{width:48px}.mtmDisplayWrap{grid-template-rows:19px minmax(145px,1fr) 29px 36px}.mtmLcd{padding:6px 8px;grid-template-rows:23px 20px minmax(68px,1fr) 25px 22px}.mtmMenuItem{height:20px;font-size:9px}.radioKeyGrid button{height:34px;font-size:13px}.mtmDpad{width:62px;height:62px}.mtmRedPhone,.mtmGreenPhone{width:38px;height:27px}.mtmCallHint b{font-size:7px}}
+@media(max-width:820px){.guardianMtmBody{grid-template-columns:48px minmax(210px,1fr) 60px 135px}.mtmLeftRail{gap:7px}.mtmSpeaker{display:none}.radioKeyGrid button{height:30px}.mtmDpad{width:54px;height:54px}.mtmLcdTop strong{font-size:13px}.mtmLcdTalkgroup b{font-size:12px}.mtmCallHint{grid-template-columns:1fr}.mtmCallHint span{display:none}}
+
+/* Guardian Radio v28 — closer MTM800E-inspired control-head proportions. */
+.guardianMtmBody{grid-template-columns:76px minmax(310px,1fr) 105px 198px;background:linear-gradient(180deg,#24282c 0%,#111416 100%);border-radius:9px;border-color:#090a0b;box-shadow:inset 0 0 0 1px #52575a,0 8px 20px #000a}
+.mtmLeftRail{justify-content:flex-start;gap:10px;padding-top:7px}.mtmVolumeKnob{width:56px;height:56px}.mtmEmergency{width:36px;height:36px;border-radius:50%;border:2px solid #111;background:radial-gradient(circle at 35% 30%,#ff8c31,#d64a11 65%,#7c2109);color:#fff;font:900 22px Arial;line-height:30px;box-shadow:inset 0 -3px #0005,0 2px 4px #0008}.mtmPttButton{width:42px;height:28px;border-radius:4px;border:1px solid #0b0c0d;background:#30363a;color:#e7edf0;font:900 8px Arial;box-shadow:inset 0 -3px #0005}.mtmPttButton.tx{background:#b53131;color:#fff;box-shadow:0 0 0 2px #ff6b6b,inset 0 -3px #0005}.mtmMicPort{width:42px;height:42px;border-radius:50%;background:radial-gradient(circle,#070809 0 34%,#25292c 35% 50%,#090a0b 51% 100%);border:2px solid #090a0b;margin-top:auto;margin-bottom:10px}
+.mtmLcd{padding-right:58px;background:linear-gradient(180deg,#d8eef4,#b9d8e0);border-radius:1px}.mtmScreenSoftRail{position:absolute;top:0;right:0;width:52px;height:100%;display:grid;grid-template-rows:1fr 1fr;background:#83bdd0;border-left:1px solid #6b9ba9}.mtmScreenSoftRail button{border:0;border-bottom:1px solid #6c9ba8;background:transparent;color:#163742;font:800 8px Arial;text-transform:none}.mtmScreenSoftRail button:active{background:#5ca5bf;color:#fff}.mtmSoftKeys{display:none}
+.mtmNavCluster{position:relative;gap:5px}.mtmMenuKey{position:absolute;left:-18px;top:50%;transform:translateY(-50%);width:18px;height:54px;padding:0;border:1px solid #08090a;border-radius:2px;background:#252a2d;color:#dce4e8;font:800 6px Arial;writing-mode:vertical-rl;text-orientation:mixed;box-shadow:inset 0 -2px #0006}.mtmRedPhone,.mtmGreenPhone{width:42px;height:29px}.mtmDpad{width:72px;height:72px}
+.guardianRadioKeypad{border-radius:4px;background:#121517;padding:5px}.radioKeyGrid{gap:4px}.radioKeyGrid button{height:39px;border-radius:3px;font-size:14px}.radioKeyGrid button small{font-size:5px}
+.mtmBrandRow:before{content:"GUARDIAN";font-size:7px;color:#f1f5f7;margin-right:auto}.mtmBrandRow span:first-child{display:none}
+@media(max-width:1050px){.guardianMtmBody{grid-template-columns:60px minmax(280px,1fr) 82px 164px}.mtmEmergency{width:30px;height:30px;font-size:18px}.mtmPttButton{width:34px}.mtmMicPort{width:34px;height:34px}.mtmLcd{padding-right:49px}.mtmScreenSoftRail{width:44px}.mtmMenuKey{left:-14px}}
+
+/* Guardian Radio v29 — production MTM control-head visual rebuild.
+   Keeps the v28 radio engine/IDs intact while matching real mobile-radio proportions. */
+.guardianRadioPage{padding:4px;background:#071019}
+.guardianMtmBody{
+  position:relative;
+  grid-template-columns:86px minmax(330px,1fr) 116px 190px!important;
+  gap:7px!important;
+  padding:28px 10px 10px!important;
+  border:2px solid #050607!important;
+  border-radius:12px!important;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.035),transparent 8%,transparent 92%,rgba(255,255,255,.025)),
+    linear-gradient(180deg,#282c2f 0%,#171a1c 38%,#0d0f10 100%)!important;
+  box-shadow:inset 0 0 0 1px #4a4e51,inset 0 18px 24px #ffffff08,0 12px 26px #000c!important;
+  overflow:visible!important;
+}
+.guardianMtmBody:before,.guardianMtmBody:after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;background:radial-gradient(circle,#777 0 20%,#202325 25% 52%,#050606 58%);box-shadow:0 0 0 1px #000}
+.guardianMtmBody:before{left:7px;top:7px}.guardianMtmBody:after{right:7px;bottom:7px}
+.mtmBrandBadge{position:absolute;left:50%;top:6px;transform:translateX(-50%);height:18px;display:flex;align-items:center;gap:5px;color:#e7e9ea;font:900 10px Arial;letter-spacing:.04em;text-shadow:0 1px #000}
+.mtmBadgeMark{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#e6e8e9;color:#17191b;font:900 10px Arial;letter-spacing:0}
+.mtmLeftRail{position:relative;justify-content:flex-start!important;gap:8px!important;padding-top:3px!important}
+.mtmVolumeKnob{width:60px!important;height:60px!important;border:3px solid #070809!important;background:repeating-conic-gradient(#202326 0 5deg,#45494c 5deg 9deg)!important;box-shadow:0 2px 6px #000,inset 0 0 0 8px #25292b,inset 0 0 0 10px #111!important}
+.mtmVolumeKnob:after{content:"";position:absolute;width:35px;height:35px;border-radius:50%;background:radial-gradient(circle at 36% 30%,#4b4f52,#202325 64%,#0e1011);left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:inset 0 0 0 1px #5d6265}
+.mtmVolumeKnob:before{position:relative;z-index:2;height:17px!important;background:#aeb2b4!important;margin:5px auto!important}
+.mtmEmergency{width:36px!important;height:36px!important;border-radius:50%!important;border:3px solid #121416!important;background:radial-gradient(circle at 38% 30%,#ffb25c,#e75d11 58%,#8d2604)!important;color:#fff!important;font:900 20px Arial!important;line-height:26px!important;box-shadow:0 2px 4px #000b,inset 0 -3px #0005,0 0 0 1px #5b2107!important}
+.mtmPttButton{width:48px!important;height:27px!important;border-radius:4px!important;background:linear-gradient(#33383b,#171a1c)!important;border:1px solid #08090a!important;color:#cfd5d8!important;font:900 8px Arial!important;box-shadow:inset 0 -3px #050606,0 1px #5554!important}
+.mtmPttButton.tx{background:linear-gradient(#8c3333,#481515)!important;color:#fff!important;box-shadow:0 0 0 2px #ff696955,inset 0 -3px #190606!important}
+.mtmMicPort{position:relative;width:48px!important;height:48px!important;margin-top:auto!important;margin-bottom:4px!important;border:3px solid #080909!important;background:radial-gradient(circle,#0b0c0d 0 43%,#262a2c 44% 59%,#090a0a 60%)!important;box-shadow:inset 0 0 0 1px #5b6063,0 2px 3px #000c}
+.mtmMicPort:after{content:"•••\A••••\A•••";white-space:pre;position:absolute;inset:8px;display:grid;place-items:center;color:#020303;font:900 11px/7px monospace;letter-spacing:1px;text-shadow:0 1px #333}
+.mtmDisplayWrap{grid-template-rows:15px minmax(145px,1fr) 0 28px!important;gap:3px!important;min-width:0}
+.mtmBrandRow{height:15px;color:#91999d!important;font:900 7px Arial!important;letter-spacing:.09em!important}
+.mtmBrandRow:before{display:none!important}.mtmBrandRow span:first-child{display:block!important;color:#b8bec1!important}.mtmBrandRow span:last-child{color:#3be298!important}
+.mtmLcd{padding:6px 52px 6px 8px!important;border:4px solid #080a0b!important;border-radius:3px!important;background:linear-gradient(180deg,#d7f2f8 0%,#b9e5ef 48%,#a9d8e4 100%)!important;color:#0c3445!important;box-shadow:inset 0 0 16px #4b8ba455,0 0 0 1px #464b4e!important;grid-template-rows:24px 18px minmax(62px,1fr) 22px 19px!important}
+.mtmLcdTop{font-size:8px!important;border-bottom:1px solid #6ea4b5!important}.mtmLcdTop strong{font-size:15px!important}.mtmLcdTop span{font-size:8px!important;letter-spacing:.03em}.mtmMenuTitle{font-size:9px!important;border-bottom:1px solid #72a7b7!important}.mtmMenuList{padding:2px 0!important}.mtmMenuItem{height:18px!important;font-size:8px!important;padding:0 6px!important;gap:5px!important}.mtmMenuItem.selected{background:#168fc5!important;color:#fff!important;border-color:#0d7cad!important}.mtmMenuIcon{width:12px!important}.mtmLcdState{font-size:8px!important;padding-top:3px!important;border-top:1px solid #72a7b7!important}.mtmLcdState.ringing{color:#c66d00!important}.mtmLcdTalkgroup{font-size:6px!important;gap:6px!important}.mtmLcdTalkgroup b{font-size:12px!important}.mtmSignalBars{top:33px!important;right:58px!important;gap:2px!important}.mtmSignalBars i{width:3px!important;background:#0a4054!important}
+.mtmScreenSoftRail{width:45px!important;background:linear-gradient(180deg,#a8dbe7,#81c5d7)!important;border-left:1px solid #679eac!important}.mtmScreenSoftRail button{font:900 8px Arial!important;color:#123746!important;border-bottom:1px solid #6ba2af!important}.mtmScreenSoftRail button:active{background:#319fc3!important;color:#fff!important}
+.mtmSoftKeys{display:none!important}.mtmCallHint{height:28px!important;padding:3px 7px!important;border:1px solid #363c3f!important;background:#111416!important}.mtmCallHint span{font-size:6px!important}.mtmCallHint b{font-size:6px!important}
+.mtmNavCluster{position:relative!important;display:grid!important;grid-template-columns:26px 78px!important;grid-template-rows:31px 32px 78px 32px 31px!important;gap:3px 5px!important;align-content:center!important;justify-content:center!important}
+.mtmUpperAux,.mtmLowerAux{grid-column:1;width:26px;height:31px;border:1px solid #08090a;border-radius:2px;background:linear-gradient(#2f3437,#171a1c);color:#dce0e2;box-shadow:inset 0 -3px #090a0a;font-size:9px}
+.mtmUpperAux{grid-row:1}.mtmLowerAux{grid-row:5}.mtmMenuKey{position:static!important;transform:none!important;grid-column:1;grid-row:2 / 5;width:26px!important;height:auto!important;writing-mode:vertical-rl!important;border-radius:2px!important;background:linear-gradient(#303538,#171a1c)!important;font:900 7px Arial!important;letter-spacing:.06em!important;display:flex;align-items:center;justify-content:center;gap:4px}.mtmMenuKey span{font-size:13px}
+.mtmRedPhone,.mtmGreenPhone{grid-column:2;width:62px!important;height:31px!important;justify-self:center;border-radius:5px!important;border:2px solid #070808!important;font-size:17px!important;box-shadow:inset 0 -4px #0007,0 1px #5553!important}.mtmRedPhone{grid-row:1;background:linear-gradient(#8f3538,#49161b)!important}.mtmGreenPhone{grid-row:5;background:linear-gradient(#137849,#064526)!important}.mtmGreenPhone.on{box-shadow:0 0 0 2px #50d99566,inset 0 -4px #002817!important}.phoneGlyph{display:block;transform:rotate(-12deg)}
+.mtmDpad{grid-column:2;grid-row:2 / 5;width:78px!important;height:78px!important;align-self:center;border:3px solid #070808!important;background:radial-gradient(circle,#303438 0 31%,#191c1e 32% 68%,#090a0a 69%)!important;box-shadow:inset 0 0 0 1px #565b5e!important}.mtmDpad button{font-size:11px!important;color:#eceff0!important}.mtmDpad button:nth-child(3){background:#23272a!important;border:1px solid #090a0a!important}
+.guardianRadioKeypad{align-self:stretch!important;display:flex!important;flex-direction:column!important;justify-content:center!important;padding:4px!important;border:0!important;background:transparent!important;box-shadow:none!important}
+.radioKeyGrid{gap:4px!important}.radioKeyGrid button{height:33px!important;border-radius:4px!important;border:1px solid #08090a!important;background:linear-gradient(#34383b,#17191b)!important;color:#f7f7f7!important;font-size:12px!important;box-shadow:inset 0 -4px #070808,0 1px #5a5e6033!important;text-shadow:0 1px #000}.radioKeyGrid button small{font-size:5px!important;color:#d0d2d3!important;margin-top:1px!important}.radioKeyGrid button:active,.radioKeyGrid button.holding{background:linear-gradient(#b9d8e0,#6c9eae)!important;color:#082833!important}
+.mtmFunctionRow{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:5px}.mtmFunctionRow button{position:relative;height:29px;border:1px solid #08090a;border-radius:4px;background:linear-gradient(#313538,#16191a);color:#dce1e3;box-shadow:inset 0 -3px #070808;font:900 10px Arial}.mtmFunctionRow button i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#f0df27;margin:0 1px 3px;box-shadow:0 0 3px #f0df27}.mtmFunctionRow button span{display:block;font-size:8px;line-height:6px}.radioKeyHelp{margin-top:4px!important;padding:3px!important;border:1px solid #303638!important;background:#0d1011!important;color:#8f999e!important;font-size:5px!important}.radioKeyHelp strong{color:#e9edee!important}
+#tab-radio.radioOff .guardianMtmBody{filter:saturate(.7)}#tab-radio.radioOff .mtmLcd{filter:saturate(.25) brightness(.72)!important}
+@media(max-width:1050px){.guardianMtmBody{grid-template-columns:72px minmax(285px,1fr) 100px 164px!important;padding:26px 8px 8px!important}.mtmVolumeKnob{width:51px!important;height:51px!important}.mtmNavCluster{grid-template-columns:23px 68px!important;grid-template-rows:28px 28px 68px 28px 28px!important}.mtmDpad{width:68px!important;height:68px!important}.mtmRedPhone,.mtmGreenPhone{width:54px!important;height:28px!important}.radioKeyGrid button{height:29px!important}}
+
+/* Guardian Radio v30 — closer MTM800E control-head proportions and hardware controls. */
+.guardianRadioPage{padding:0!important;background:transparent!important}
+.guardianMtmBody{
+  grid-template-columns:92px minmax(360px,1fr) 124px 210px!important;
+  gap:8px!important;
+  padding:28px 12px 10px!important;
+  border-radius:14px!important;
+  border:2px solid #050606!important;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.045),transparent 11%),
+    linear-gradient(180deg,#2c3033 0%,#151719 44%,#090b0c 100%)!important;
+  box-shadow:inset 0 0 0 1px #4c5154,inset 0 0 0 3px #111416,0 9px 20px #000b!important;
+}
+.mtmBrandBadge{top:4px!important;height:20px!important;font-size:11px!important;font-style:italic;letter-spacing:.08em!important}
+.mtmBadgeMark{width:18px!important;height:18px!important;background:#e8eaeb!important;color:#151719!important}
+.mtmLeftRail{gap:9px!important;padding-top:2px!important}
+.mtmVolumeKnob{width:66px!important;height:66px!important;box-shadow:0 2px 7px #000,inset 0 0 0 9px #282c2f,inset 0 0 0 11px #0e1011!important}
+.mtmEmergency{width:40px!important;height:40px!important;font-size:21px!important}
+.mtmPttButton{width:50px!important;height:30px!important;font-size:8px!important}
+.mtmMicPort{width:52px!important;height:52px!important;margin-bottom:1px!important}
+.mtmDisplayWrap{grid-template-rows:14px minmax(150px,1fr) 0 30px!important;gap:3px!important}
+.mtmLcd{padding:7px 58px 7px 10px!important;border:5px solid #070909!important;border-radius:4px!important;box-shadow:inset 0 0 18px #4e98ad44,0 0 0 1px #4b5053!important;grid-template-rows:25px 19px minmax(65px,1fr) 23px 20px!important}
+.mtmLcdTop strong{font-size:16px!important}.mtmLcdTop span{font-size:8px!important}
+.mtmMenuTitle{font-size:9px!important}.mtmMenuItem{height:19px!important;font-size:9px!important}
+.mtmScreenSoftRail{width:50px!important}.mtmScreenSoftRail button{font-size:8px!important}
+.mtmSignalBars{right:64px!important}
+.mtmNavCluster{grid-template-columns:30px 82px!important;grid-template-rows:34px 34px 82px 34px 34px!important;gap:3px 5px!important}
+.mtmUpperAux,.mtmLowerAux{width:30px!important;height:34px!important;font-size:14px!important;font-weight:900!important;cursor:pointer!important}
+.mtmUpperAux:active,.mtmLowerAux:active{background:linear-gradient(#53616a,#22272a)!important}
+.mtmMenuKey{width:30px!important;font-size:7px!important;cursor:pointer!important}
+.mtmDpad{width:82px!important;height:82px!important}
+.mtmRedPhone,.mtmGreenPhone{width:66px!important;height:34px!important;font-size:19px!important}
+.guardianRadioKeypad{padding:3px!important}
+.radioKeyGrid{gap:5px!important}.radioKeyGrid button{height:36px!important;font-size:13px!important}
+.mtmFunctionRow button{height:31px!important}.radioKeyHelp{font-size:5px!important}
+@media(max-width:1050px){.guardianMtmBody{grid-template-columns:74px minmax(300px,1fr) 104px 176px!important}.mtmVolumeKnob{width:54px!important;height:54px!important}.mtmNavCluster{grid-template-columns:25px 70px!important;grid-template-rows:29px 29px 70px 29px 29px!important}.mtmUpperAux,.mtmLowerAux{width:25px!important;height:29px!important}.mtmMenuKey{width:25px!important}.mtmDpad{width:70px!important;height:70px!important}.mtmRedPhone,.mtmGreenPhone{width:58px!important;height:29px!important}.radioKeyGrid button{height:30px!important}}
+
+/* Guardian Radio v34 — WEB MDT isolation/final layout fix.
+   The standalone /radio stylesheet must never size the MDT radio pane.
+   This block deliberately scopes the web-MDT control head and fixes its aspect ratio. */
+body:not(.guardianStandaloneRadio) #tab-radio{
+  overflow:hidden!important;
+  background:#071019!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .guardianRadioPage{
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  padding:10px 8px!important;
+  background:#071019!important;
+  overflow:auto hidden!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .guardianMtmBody{
+  flex:0 0 auto!important;
+  width:min(100%,1120px)!important;
+  height:350px!important;
+  min-width:760px!important;
+  min-height:350px!important;
+  max-height:350px!important;
+  grid-template-columns:104px minmax(430px,1fr) 145px 245px!important;
+  gap:8px!important;
+  padding:34px 12px 12px!important;
+  overflow:hidden!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmDisplayWrap{
+  min-width:0!important;
+  height:100%!important;
+  grid-template-rows:minmax(0,1fr) 34px!important;
+  gap:5px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLcd{
+  height:auto!important;
+  min-height:0!important;
+  padding:9px 92px 8px 12px!important;
+  grid-template-rows:27px 22px minmax(90px,1fr) 27px 23px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmScreenSoftRail{width:82px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmSignalBars{right:95px!important;top:38px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmVolumeKnob{width:76px!important;height:76px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmEmergency{width:46px!important;height:46px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerKnob{width:68px!important;height:68px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmMicPort{width:58px!important;height:58px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmNavCluster{
+  grid-template-columns:38px 96px!important;
+  grid-template-rows:45px 45px 96px 45px 45px!important;
+  gap:3px 6px!important;
+}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmUpperAux,
+body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerAux{width:38px!important;height:45px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmMenuKey{width:38px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmDpad{width:96px!important;height:96px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmRedPhone,
+body:not(.guardianStandaloneRadio) #tab-radio .mtmGreenPhone{width:78px!important;height:45px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .radioKeyGrid button{height:42px!important;font-size:15px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .mtmFunctionRow button{height:36px!important}
+body:not(.guardianStandaloneRadio) #tab-radio .radioKeyHelp{font-size:6px!important}
+
+@media(max-width:1000px){
+  body:not(.guardianStandaloneRadio) #tab-radio .guardianMtmBody{
+    width:900px!important;height:300px!important;min-height:300px!important;max-height:300px!important;
+    grid-template-columns:82px 390px 120px 205px!important;padding-top:30px!important;
+    transform-origin:top center;
+  }
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmVolumeKnob{width:62px!important;height:62px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmEmergency{width:38px!important;height:38px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmLowerKnob{width:56px!important;height:56px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .mtmMicPort{width:48px!important;height:48px!important}
+  body:not(.guardianStandaloneRadio) #tab-radio .radioKeyGrid button{height:35px!important}
+}
