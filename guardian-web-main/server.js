@@ -973,6 +973,18 @@ async function guardianDiscordSend(channelId,content){
   else payload={content:String(content||"").slice(0,1900)};
   return guardianDiscordRequest("POST",`/channels/${encodeURIComponent(channelId)}/messages`,payload);
 }
+// Send a direct message using the already-configured bot token. Discord DMs are
+// attempted only when a numeric Discord user ID is available; failures are returned
+// to the caller and never silently reported as successful.
+async function guardianDiscordDM(discordUserId, content){
+  const id=String(discordUserId||'').trim();
+  if(!/^\d{17,20}$/.test(id))return {ok:false,skipped:true,error:'Member has no valid linked Discord user ID'};
+  if(!guardianDiscord.enabled)return {ok:false,skipped:true,error:'Discord integration is disabled'};
+  const channel=await guardianDiscordRequest('POST','/users/@me/channels',{recipient_id:id});
+  if(!channel.ok)return {ok:false,status:channel.status,error:channel.error||'Discord could not open a DM channel'};
+  const payload=typeof content==='string'?{content:content.slice(0,1900)}:content;
+  return guardianDiscordRequest('POST',`/channels/${encodeURIComponent(channel.data.id)}/messages`,payload);
+}
 function guardianDiscordEmbed(title,description,opts={}){
   const embed={title:String(title||"Guardian Operations").slice(0,256),description:String(description||"").slice(0,4000),color:Number(opts.color||0x1e73ff),timestamp:new Date().toISOString(),footer:{text:"Guardian Operations • Community Operations"}};
   if(Array.isArray(opts.fields)&&opts.fields.length)embed.fields=opts.fields.slice(0,25).map(f=>({name:String(f.name||"").slice(0,256),value:String(f.value||"—").slice(0,1024),inline:!!f.inline}));
@@ -1000,7 +1012,8 @@ function guardianPatrolDiscordPayload(p){
     {name:'Operation',value:svc,inline:true},
     {name:'Attending',value:String(attending.length),inline:true},
     {name:'Not attending',value:String(declined.length),inline:true},
-    {name:'✅ Attending members',value:guardianPatrolNameList(attending),inline:false}
+    {name:'✅ Attending members',value:guardianPatrolNameList(attending),inline:false},
+    {name:'❌ Not attending members',value:guardianPatrolNameList(declined),inline:false}
   ]});
   embed.footer={text:'Guardian Operations • FiveM Patrol Booking'};
   return {embeds:[embed],components:[{type:1,components:[
@@ -1398,11 +1411,19 @@ app.post('/api/admin/patrols/:id/deployment',guardianRequireAdmin('settings.edit
         return res.status(409).json({ok:false,error:'That callsign is already assigned on this patrol'});
     }
   }
-  b.deployment={serviceId,callsign,division,vehicle:String(req.body?.vehicle||''),assignedAt:new Date().toISOString(),assignedBy:req.guardianAdmin.username};
+  const previousDeployment=b.deployment||{};
+  b.deployment={serviceId,callsign,division,vehicle:String(req.body?.vehicle||''),rank:String(req.body?.rank||previousDeployment.rank||u.serviceAssignments?.find(a=>a.serviceId===serviceId)?.rank||''),role:String(req.body?.role||previousDeployment.role||''),talkgroup:String(req.body?.talkgroup||previousDeployment.talkgroup||''),assignedAt:new Date().toISOString(),assignedBy:req.guardianAdmin.username};
   guardianSavePatrols();
   guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DUTY_ASSIGNED',{patrolId:p.id,username,deployment:b.deployment,bookingsClosed:guardianPatrolBookingsClosed(p)});
   await guardianPatrolSyncDiscord(p,{createIfMissing:false});
-  res.json({ok:true,booking:b,bookingsClosed:guardianPatrolBookingsClosed(p)});
+  const discordUserId=String(u.discordUserId||b.discordUserId||'');
+  const svcName=service.name||serviceId;
+  const dmText=`🚨 GUARDIAN — DUTY ASSIGNMENT\n\nHello ${u.displayName||u.username}, your patrol assignment has ${previousDeployment.assignedAt?'been updated':'been created'}.\n\nPatrol: ${p.title||'Patrol'}\nDepartment: ${svcName}\nDivision: ${division||'Unassigned'}\nRank: ${b.deployment.rank||'Not specified'}\nRole: ${b.deployment.role||'Not specified'}\nCallsign: ${callsign||'Unassigned'}\nVehicle: ${b.deployment.vehicle||'No vehicle'}\nRadio talkgroup: ${b.deployment.talkgroup||'Not specified'}\n\nPlease contact a supervisor if any details are incorrect.`;
+  const dm=await guardianDiscordDM(discordUserId,dmText);
+  b.deployment.dmStatus=dm.ok?'sent':dm.skipped?'skipped':'failed';b.deployment.dmAttemptedAt=new Date().toISOString();if(!dm.ok)b.deployment.dmError=String(dm.error||'Discord DM failed').slice(0,300);else delete b.deployment.dmError;
+  guardianSavePatrols();
+  guardianAdminAuditLog(req.guardianAdmin.username,'PATROL_DUTY_DM_RESULT',{patrolId:p.id,username,status:b.deployment.dmStatus,error:b.deployment.dmError||''});
+  res.json({ok:true,booking:b,bookingsClosed:guardianPatrolBookingsClosed(p),discordDM:{ok:!!dm.ok,status:b.deployment.dmStatus,error:dm.error||null}});
 });
 
 // Portal public configuration and application workflow
@@ -1421,6 +1442,7 @@ app.post("/api/applications",(req,res)=>{
   const displayName=String(req.body?.displayName||username).trim();
   const password=String(req.body?.password||"");
   const discord=String(req.body?.discord||"").trim();
+  const discordUserId=(discord.match(/\b\d{17,20}\b/)||[])[0]||'';
   const age=Number(req.body?.age||0);
   const answers=Array.isArray(req.body?.answers)?req.body.answers.map(x=>String(x||"").trim()):[];
   if(!/^[a-zA-Z0-9_.-]{3,32}$/.test(username))return res.status(400).json({ok:false,error:"Username must be 3–32 characters using letters, numbers, dot, dash or underscore"});
@@ -1430,9 +1452,9 @@ app.post("/api/applications",(req,res)=>{
   if(req.body?.rulesAccepted!==true)return res.status(400).json({ok:false,error:"You must confirm the community rules"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"That Guardian username already exists"});
   const pw=guardianAdminHashPassword(password),nowIso=new Date().toISOString();
-  guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso,membershipType:"non-member",serviceAssignments:[],qualifications:[]});
+  guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso,membershipType:"non-member",discordUserId,serviceAssignments:[],qualifications:[]});
   guardianSaveUsers();
-  const application={id:crypto.randomUUID(),username,displayName,discord,age,answers,rulesAccepted:true,status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
+  const application={id:crypto.randomUUID(),username,displayName,discord,discordUserId,age,answers,rulesAccepted:true,status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
   guardianApplications.unshift(application);guardianSaveApplications();guardianAdminAuditLog(username,"WHITELIST_APPLICATION_SUBMITTED",{applicationId:application.id});
   guardianUserSetCookie(res,guardianAdminUsers.get(username),12*60*60);
   res.json({ok:true,status:"pending",redirect:"/portal/?status=pending"});
@@ -1448,7 +1470,10 @@ app.post("/api/admin/applications/:id/review",guardianRequireAdmin("settings.edi
   const user=guardianAdminUsers.get(application.username);
   if(!user)return res.status(404).json({ok:false,error:"Applicant account not found"});
   application.status=decision;application.reviewedAt=new Date().toISOString();application.reviewedBy=req.guardianAdmin.username;application.reviewNote=String(req.body?.note||"").trim();
-  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;if(decision==="approved"&&!user.membershipType)user.membershipType="member";if(decision==="approved")guardianEnsureDefaultPolice(user);
+  user.whitelistStatus=decision;user.whitelistUpdatedAt=application.reviewedAt;
+  const applicationDiscordId=String(application.discordUserId||((String(application.discord||'').match(/\b\d{17,20}\b/)||[])[0])||'');
+  if(applicationDiscordId && !user.discordUserId)user.discordUserId=applicationDiscordId;
+  if(decision==="approved"&&!user.membershipType)user.membershipType="member";if(decision==="approved")guardianEnsureDefaultPolice(user);
   guardianSaveUsers();guardianSaveApplications();guardianAdminAuditLog(req.guardianAdmin.username,"WHITELIST_APPLICATION_REVIEWED",{applicationId:application.id,username:application.username,decision});
   res.json({ok:true,application});
 });

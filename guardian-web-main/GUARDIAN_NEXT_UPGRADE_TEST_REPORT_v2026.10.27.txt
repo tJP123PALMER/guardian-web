@@ -1,0 +1,15 @@
+Guardian Next Upgrade test report
+Date: 2026-10-27
+
+PASS: node --check server.js
+PASS: node --check public/settings.js
+PASS: New admin navigation keys are registered in settings.html and settings.js.
+PASS: New FiveM diagnostics UI uses existing /healthz, /api/state, and /api/admin/game-server/status endpoints.
+PASS: New Operations Centre uses existing /api/admin/patrols and operational summary data.
+PASS: No bot token or game-server token is rendered in the new UI.
+
+NOT RUN: Browser/UI test against a live Render deployment.
+NOT RUN: Live Discord DM or Discord patrol button test.
+NOT RUN: End-to-end in-game FiveM announcement test on Shockbyte.
+
+This report distinguishes syntax validation from live integration verification.
