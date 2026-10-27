@@ -1270,6 +1270,19 @@ app.post('/api/community/training/:id/book',(req,res)=>{const {session,user}=gua
 app.post('/api/community/training/:id/cancel',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});const t=guardianTraining.find(x=>x.id===req.params.id);if(!t)return res.status(404).json({ok:false,error:'Training not found'});t.bookings=(t.bookings||[]).filter(x=>x!==user.username);guardianWriteJson(guardianTrainingFile,guardianTraining);res.json({ok:true})});
 app.get('/api/community/permissions/me',(req,res)=>{const {session}=guardianV46User(req);const role=session?.role||'player';res.json({ok:true,role,permissions:guardianRolePermissions[role]||guardianRolePermissions.player||{}})});
 app.get('/api/community/operations/me',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});let totalMinutes=0;for(const p of guardianPatrols)for(const b of p.bookings||[])if(b.username===user.username&&b.checkInAt&&b.checkOutAt)totalMinutes+=Math.max(0,(new Date(b.checkOutAt)-new Date(b.checkInAt))/60000);res.json({ok:true,profile:guardianUserPublicProfile(user),attendance:{minutes:Math.round(totalMinutes),hours:Number((totalMinutes/60).toFixed(1))},upcoming:guardianPatrols.filter(p=>(p.bookings||[]).some(b=>b.username===user.username&&b.status==='booked')).slice(0,5)})});
+// Authenticated receiver for Guardian announcements. FiveM polls the existing command queue,
+// so this does not require exposing a web server port from the game host.
+app.post('/api/fivem/announcements/receive',(req,res)=>{
+ const expected=String(process.env.GUARDIAN_GAME_SERVER_TOKEN||'');
+ const authHeader=String(req.get('authorization')||'');
+ const supplied=authHeader.startsWith('Bearer ')?authHeader.slice(7):'';
+ if(!expected || !supplied || supplied.length!==expected.length || !require('crypto').timingSafeEqual(Buffer.from(supplied),Buffer.from(expected))) return res.status(401).json({ok:false,error:'Invalid game-server token'});
+ const b=req.body||{};
+ if(b.event!=='guardian.announcement' || !String(b.title||'').trim() || !String(b.body||'').trim()) return res.status(400).json({ok:false,error:'A valid Guardian announcement is required'});
+ const command=queueCommand('gameAnnouncement',{id:String(b.id||''),title:String(b.title).slice(0,160),body:String(b.body).slice(0,2000),audience:String(b.audience||'all').slice(0,60),priority:String(b.priority||'info').slice(0,20),requiresAck:!!b.requiresAck,createdAt:String(b.createdAt||new Date().toISOString())});
+ res.status(202).json({ok:true,queued:true,commandId:command.id,serverName:process.env.GUARDIAN_GAME_SERVER_NAME||'Game server'});
+});
+
 app.get('/api/admin/game-server/status',guardianRequireAdmin('settings.view'),(_req,res)=>{
  const endpoint=String(process.env.GUARDIAN_GAME_SERVER_URL||'').trim();
  res.json({ok:true,configured:!!endpoint&&!!process.env.GUARDIAN_GAME_SERVER_TOKEN,endpointConfigured:!!endpoint,tokenConfigured:!!process.env.GUARDIAN_GAME_SERVER_TOKEN,provider:process.env.GUARDIAN_GAME_SERVER_NAME||'Game server bridge'});
