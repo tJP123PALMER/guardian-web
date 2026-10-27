@@ -193,6 +193,9 @@ function guardianUserWhitelisted(username){
   return !!u&&String(u.whitelistStatus||"").toLowerCase()==="approved";
 }
 function guardianSessionWhitelisted(session){return !!session&&guardianUserWhitelisted(session.username)}
+const guardianApplicationTemplates = {"whitelist":{"label":"Community / Whitelist","questions":["Why do you want to join Guardian?","Describe your roleplay experience and character.","What does good roleplay mean to you?","How will you help keep the community respectful and enjoyable?"]},"fire":{"label":"Fire & Rescue","questions":["Why do you want to join Fire & Rescue?","How would you approach a fire or rescue incident safely in roleplay?","Why are clear radio communications and scene leadership important?","Which role or station interests you, and why?","Describe your availability for training and events."]},"police":{"label":"Police","questions":["Why do you want to join Police?","How would you handle a tense stop while remaining professional and fair?","Why are evidence, proportionality and accurate reports important in roleplay?","Which division interests you (Response, Roads Policing, CID or Support), and why?","Describe your availability for training and patrols."]},"sas":{"label":"SAS / Specialist Operations","questions":["Why are you applying for Specialist Operations?","How do you follow a chain of command and maintain operational discipline?","How would you prioritise safety, communication and teamwork during a high-risk scenario?","What specialist role interests you, and what experience would you bring?","Confirm you understand specialist deployments require staff approval and training."]},"staff":{"label":"Staff Team","questions":["Why do you want to join the Guardian staff team?","How would you handle a report involving a friend or someone in your department?","How would you de-escalate a disagreement between members?","How would you document decisions and protect confidential information?","What hours can you realistically contribute, and what staff experience do you have?"]},"developer":{"label":"Developer / Technical Team","questions":["Which role are you applying for (web, Lua/FiveM, bot, design or infrastructure)?","Describe relevant projects, experience or a portfolio/repository link.","How would you test a change and avoid breaking existing features?","How would you handle secrets, user data and access credentials securely?","What availability can you offer, and how would you document your work?"]},"management":{"label":"Department / Management Role","questions":["Which department or management role are you applying for?","What improvements would you prioritise in the first month?","How would you handle a complaint about a senior member?","How will you support training, fair decisions and clear communication?","Describe your relevant experience and availability."]}};
+const guardianDefaultDisclaimer = "Guardian Operations is a community roleplay service, not a real emergency service. Incidents, ranks, applications and deployments are fictional and for entertainment only. Be respectful, follow community/server/platform rules, do not submit passwords or sensitive personal information, and understand applications are reviewed by staff. Access may be changed or withdrawn for rule breaches.";
+
 function guardianPortalConfig(){
   const p=guardianConfig.portal||{};
   return {
@@ -200,6 +203,7 @@ function guardianPortalConfig(){
     welcomeTitle:String(p.welcomeTitle||"Welcome to Guardian Operations"),welcomeSubtitle:String(p.welcomeSubtitle||"British emergency services roleplay platform"),
     communityName:String(p.communityName||"Guardian Operations"),discordUrl:String(p.discordUrl||""),formsUrl:String(p.formsUrl||""),supportUrl:String(p.supportUrl||""),
     applyEnabled:p.applyEnabled!==false,whitelistRequired:p.whitelistRequired!==false,minimumAge:Number(p.minimumAge||16),
+    applicationTemplates:guardianApplicationTemplates,disclaimerText:String(p.disclaimerText||guardianDefaultDisclaimer),
     showMdt:p.showMdt!==false,showControl:p.showControl!==false,showRadio:p.showRadio!==false,showFire:p.showFire!==false,
     showAmbulance:p.showAmbulance!==false,showPolice:p.showPolice!==false,ambulanceLabel:String(p.ambulanceLabel||"Coming Soon"),policeLabel:String(p.policeLabel||"Coming Soon"),
     applicationQuestions:Array.isArray(p.applicationQuestions)?p.applicationQuestions:[],
@@ -1389,16 +1393,21 @@ app.post("/api/applications",(req,res)=>{
   const discord=String(req.body?.discord||"").trim();
   const age=Number(req.body?.age||0);
   const answers=Array.isArray(req.body?.answers)?req.body.answers.map(x=>String(x||"").trim()):[];
+  const applicationType=String(req.body?.applicationType||"whitelist").toLowerCase();
+  const applicationTemplate=guardianApplicationTemplates[applicationType];
+  if(!applicationTemplate)return res.status(400).json({ok:false,error:"Choose a valid application type"});
+  if(answers.length!==applicationTemplate.questions.length||answers.some(x=>!x))return res.status(400).json({ok:false,error:"Please answer every question in the selected application"});
   if(!/^[a-zA-Z0-9_.-]{3,32}$/.test(username))return res.status(400).json({ok:false,error:"Username must be 3–32 characters using letters, numbers, dot, dash or underscore"});
   if(password.length<8)return res.status(400).json({ok:false,error:"Password must be at least 8 characters"});
   if(!discord)return res.status(400).json({ok:false,error:"Discord username / ID is required"});
   if(age<portal.minimumAge)return res.status(400).json({ok:false,error:`Applicants must be at least ${portal.minimumAge}`});
   if(req.body?.rulesAccepted!==true)return res.status(400).json({ok:false,error:"You must confirm the community rules"});
+  if(req.body?.disclaimerAccepted!==true)return res.status(400).json({ok:false,error:"You must accept the roleplay disclaimer"});
   if(guardianAdminUsers.has(username))return res.status(409).json({ok:false,error:"That Guardian username already exists"});
   const pw=guardianAdminHashPassword(password),nowIso=new Date().toISOString();
   guardianAdminUsers.set(username,{username,displayName,role:"player",protected:false,salt:pw.salt,passwordHash:pw.hash,createdAt:nowIso,whitelistStatus:"pending",whitelistUpdatedAt:nowIso,membershipType:"non-member",serviceAssignments:[],qualifications:[]});
   guardianSaveUsers();
-  const application={id:crypto.randomUUID(),username,displayName,discord,age,answers,rulesAccepted:true,status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
+  const application={id:crypto.randomUUID(),username,displayName,discord,age,applicationType,applicationLabel:applicationTemplate.label,answers:answers.map((answer,index)=>({question:applicationTemplate.questions[index],answer})),rulesAccepted:true,disclaimerAccepted:true,disclaimerVersion:"2026-10",status:"pending",submittedAt:nowIso,reviewedAt:null,reviewedBy:null,reviewNote:""};
   guardianApplications.unshift(application);guardianSaveApplications();guardianAdminAuditLog(username,"WHITELIST_APPLICATION_SUBMITTED",{applicationId:application.id});
   guardianUserSetCookie(res,guardianAdminUsers.get(username),12*60*60);
   res.json({ok:true,status:"pending",redirect:"/portal/?status=pending"});
