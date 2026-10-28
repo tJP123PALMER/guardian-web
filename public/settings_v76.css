@@ -1,0 +1,9 @@
+/* Guardian v76 granular permission designer polish */
+.permStudio{border:1px solid #21475b;border-radius:14px;box-shadow:0 14px 36px rgba(0,0,0,.18)}
+.permTop{background:linear-gradient(125deg,#0c3044,#071923)}
+.permRoleCard:focus-visible,.permTile:focus-within,.permGroupToggle:focus-visible{outline:2px solid #52c9ff;outline-offset:2px}
+.permTile{min-height:74px}
+.permTile input:focus-visible+.permTileMark{outline:2px solid #fff;outline-offset:2px}
+.permTile.enabled .permState{font-weight:900}
+.permRoleCard.selected .permRoleMeta b{color:#fff}
+@media(max-width:600px){.permMain{padding:16px 12px}.permTop{padding:20px 16px}.permSectionHead{align-items:flex-start;flex-wrap:wrap}.permGroupToggle{margin-left:44px}}

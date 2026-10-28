@@ -1,0 +1,21 @@
+GUARDIAN OPERATIONS v2.8.7 - TARGETED PERMISSIONS UI UPDATE
+
+This package contains the application source and required public assets only.
+It intentionally does NOT include .git, node_modules, or your data directory.
+Your live data and vehicle records must not be replaced by this package.
+
+WHAT CHANGED
+- settings.html loads settings_v76.js and settings_v76.css LAST, so the granular section-level Roles & Permissions designer takes precedence over older UI overrides.
+- Cache-busting updated so browsers fetch the new settings assets.
+- Existing server.js and existing app assets are retained from the uploaded guardian-web source.
+
+INSTALL SAFELY
+1. Keep a fresh export/backup of the live Guardian site.
+2. Extract this ZIP.
+3. In your existing local guardian-web repository, copy/merge the files from this package over the matching files. Do NOT delete your existing data folder or .git folder.
+4. Check GitHub Desktop's Changes list. Confirm public/settings.html, public/settings_v76.js, public/settings_v76.css and INSTALL_GUARDIAN_V76.txt are present as changes.
+5. Commit the changes and push origin.
+6. Wait for Render to deploy the new commit, then hard-refresh the Settings page (Ctrl+F5).
+
+IMPORTANT LIMITATION
+This update makes the granular section-level permissions designer load after the legacy scripts, addressing the observed old-matrix UI override. It does not claim every API endpoint has been independently security-tested, and it does not restore missing vehicle records by itself. Keep your current live data; vehicle restoration needs a separate safe data restore after the app is running.
