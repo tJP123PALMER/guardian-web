@@ -17,23 +17,6 @@ async function api(url,opt={}){
 }
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function setContent(html){$("content").innerHTML=html}
-
-function guardianChooseQualification(options, title='Award qualification'){
- return new Promise(resolve=>{
-  document.getElementById('guardianChoiceModal')?.remove();
-  const modal=document.createElement('div');modal.id='guardianChoiceModal';modal.className='guardian-modal-backdrop';
-  modal.innerHTML=`<section class="guardian-choice-modal" role="dialog" aria-modal="true" aria-labelledby="guardianChoiceTitle"><div class="eyebrow">MEMBER QUALIFICATIONS</div><h2 id="guardianChoiceTitle">${esc(title)}</h2><p>Choose a qualification from the active library.</p><label class="guardian-choice-label">Qualification<select id="guardianChoiceSelect"><option value="">Select a qualification…</option>${options.map(q=>`<option value="${esc(q.id)}">${esc(q.name)}${q.category?` — ${esc(q.category)}`:''}</option>`).join('')}</select></label><div class="guardian-choice-actions"><button type="button" class="secondary" id="guardianChoiceCancel">Cancel</button><button type="button" id="guardianChoiceConfirm" disabled>Award qualification</button></div></section>`;
-  document.body.appendChild(modal);const select=modal.querySelector('#guardianChoiceSelect'),confirm=modal.querySelector('#guardianChoiceConfirm');
-  select.onchange=()=>confirm.disabled=!select.value;
-  const finish=value=>{modal.remove();resolve(value)};
-  modal.querySelector('#guardianChoiceCancel').onclick=()=>finish(null);
-  confirm.onclick=()=>finish(options.find(q=>q.id===select.value)||null);
-  modal.addEventListener('click',e=>{if(e.target===modal)finish(null)});
-  modal.addEventListener('keydown',e=>{if(e.key==='Escape')finish(null)});
-  select.focus();
- });
-}
-
 function errorView(title,e){setContent(`<div class="card errorCard"><h3>${esc(title)}</h3><p>${esc(e?.message||e||"Unknown error")}</p><button id="retryBtn">RETRY</button></div>`);$("retryBtn").onclick=refreshAll}
 function notify(msg){const n=document.createElement("div");n.className="toast";n.textContent=msg;document.body.appendChild(n);setTimeout(()=>n.remove(),2400)}
 
@@ -144,37 +127,56 @@ function renderAppliances(){
 
 async function renderMap(){
   const locked=!!operational.stationMapLocked;
-  setContent(`<div class="card"><div class="sectionHead"><div><h3>Station Map</h3><p>This is the same map and coordinate system used by Control Centre. Dragging is only available here.</p></div><div><button id="lockMap">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button></div></div><div class="mapHint">${locked?"Station positions are locked. Unlock before moving them.":"Drag a station marker, then save it. Unsaved markers use their postal position."}</div><div class="stationMapViewport"><div id="stationMap" class="stationMapEditor"></div></div><div class="mapActions"><button id="saveMap">SAVE MOVED STATIONS</button><button id="resetMap">RESET TO POSTAL</button><select id="resetStation"><option value="">Select station…</option>${(config.stations||[]).map(s=>`<option>${esc(s.name)}</option>`).join("")}</select></div></div>`);
-  const map=$("stationMap"),pending=new Map(),saved=operational.stationMapPositions||{};
-  let postals=new Map();
-  try{postals=await loadSettingsPostals()}catch(err){console.error(err);notify("Postal map data could not be loaded")}
-
-  (config.stations||[]).forEach(st=>{
-    const key=String(st.name).trim().toLowerCase(),pos=saved[key]||saved[st.name]||{};
-    let x=Number(pos.mapXPercent),y=Number(pos.mapYPercent);
-    if(!Number.isFinite(x)||!Number.isFinite(y)){
-      const p=postals.get(String(st.postal||"").trim());
-      if(p){const pt=settingsMapPoint(p.x,p.y);x=pt.x;y=pt.y}
-      else {x=50;y=50}
+  setContent(`<div class="card"><div class="sectionHead"><div><h3>GTA V / FiveM Station Map</h3><p>Los Santos and Blaine County. Drag station markers when unlocked, then save. The map tiles require an internet connection.</p></div><div><button id="lockMap">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button></div></div><div class="mapHint">${locked?"Station positions are locked. Unlock before moving them.":"Drag a station marker to its in-game position, then save it."}</div><div class="mapActions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0"><label>Map style <select id="gtavMapStyle"><option value="atlas">Road map</option><option value="satelite">Satellite</option><option value="grid">Coordinate grid</option></select></label><button id="saveMap">SAVE STATION POSITIONS</button><button id="resetMap">RESET SELECTED STATION</button><select id="resetStation"><option value="">Select station…</option>${(config.stations||[]).map(st=>`<option value="${esc(st.name)}">${esc(st.name)}</option>`).join("")}</select><span id="gtavMapStatus" class="muted">Loading GTA V map…</span></div><div id="gtavRealMap" style="height:min(72vh,760px);min-height:460px;border:1px solid var(--line,#235064);border-radius:12px;overflow:hidden;background:#102431"></div></div>`);
+  const mapEl=$("gtavRealMap"), pending=new Map(), saved=operational.stationMapPositions||{};
+  const status=$("gtavMapStatus");
+  function loadCss(href){return new Promise((resolve,reject)=>{if(document.querySelector('link[data-gtav-leaflet]'))return resolve();const l=document.createElement('link');l.rel='stylesheet';l.href=href;l.dataset.gtavLeaflet='1';l.onload=resolve;l.onerror=reject;document.head.appendChild(l)})}
+  function loadJs(src){return new Promise((resolve,reject)=>{if(window.L)return resolve();const sc=document.createElement('script');sc.src=src;sc.onload=resolve;sc.onerror=reject;document.head.appendChild(sc)})}
+  try {
+    await loadCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+    await loadJs('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+    const CRS=L.extend({},L.CRS.Simple,{transformation:new L.Transformation(1/32,0,1/32,0)});
+    const map=L.map(mapEl,{crs:CRS,minZoom:0,maxZoom:5,zoomControl:true,attributionControl:true});
+    const bounds=[[0,0],[8192,8192]];
+    let layer;
+    function setStyle(style){
+      if(layer)map.removeLayer(layer);
+      layer=L.tileLayer(`https://viruxe.github.io/gtav-map-tiles/${style}/{z}/{x}-{y}.webp`,{minZoom:0,maxZoom:5,noWrap:true,bounds, tileSize:256,attribution:'GTA V map tiles · unofficial fan project'});
+      layer.on('tileerror',()=>{status.textContent='Map tiles are not loading. Check internet access or the tile host.'});
+      layer.on('load',()=>{status.textContent='GTA V map loaded · '+(config.stations||[]).length+' station markers'});
+      layer.addTo(map);
     }
-    const b=document.createElement("button");b.className="stationPin";b.type="button";b.style.left=x+"%";b.style.top=y+"%";b.innerHTML=`<span>FS</span><b>${esc(st.name)}</b>`;
-    let drag=false;
-    b.onpointerdown=e=>{if(locked)return;e.preventDefault();drag=true;b.setPointerCapture?.(e.pointerId);b.classList.add("dragging")};
-    b.onpointermove=e=>{if(!drag)return;const r=map.getBoundingClientRect();x=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100));y=Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100));b.style.left=x+"%";b.style.top=y+"%";pending.set(st.name,{x,y})};
-    b.onpointerup=()=>{drag=false;b.classList.remove("dragging")};b.onpointercancel=b.onpointerup;map.appendChild(b)
-  });
-  $("lockMap").onclick=async()=>{await api("/api/admin/station-map/lock",{method:"POST",body:JSON.stringify({locked:!locked})});await refreshAll()};
-  $("saveMap").onclick=async()=>{
-    if(!pending.size){notify("No station positions changed");return}
-    for(const [stationName,p] of pending){
-      const result=await api("/api/admin/station-map/position",{method:"POST",body:JSON.stringify({stationName,mapXPercent:p.x,mapYPercent:p.y})});
-      operational.stationMapPositions=result.stationMapPositions||operational.stationMapPositions||{};
-    }
-    pending.clear();
-    notify("Station positions saved to Control");
-    await refreshAll();
-  };
-  $("resetMap").onclick=async()=>{const name=$("resetStation").value;if(!name)return;await api("/api/admin/station-map/position/"+encodeURIComponent(name),{method:"DELETE"});notify("Station reset to its postal position");await refreshAll()};
+    setStyle('atlas'); map.fitBounds(bounds);
+    $('gtavMapStyle').onchange=e=>setStyle(e.target.value);
+    const markers=[];
+    const stations=config.stations||[];
+    stations.forEach((st,i)=>{
+      const key=String(st.name).trim().toLowerCase(),pos=saved[key]||saved[st.name]||{};
+      let xp=Number(pos.mapXPercent),yp=Number(pos.mapYPercent);
+      if(!Number.isFinite(xp)||!Number.isFinite(yp)){
+        // Keep existing saved schematic positions if available; otherwise spread pins for manual placement.
+        xp=20+(i%4)*20; yp=22+Math.floor(i/4)*18;
+      }
+      const latlng=[Math.max(0,Math.min(8192,yp*81.92)),Math.max(0,Math.min(8192,xp*81.92))];
+      const icon=L.divIcon({className:'guardian-gtav-pin',html:`<span style="display:block;background:#087eae;color:#fff;border:2px solid #8ee4ff;border-radius:8px;padding:5px 7px;font-weight:800;font-size:11px;white-space:nowrap;box-shadow:0 2px 10px #0009">🚒 ${esc(st.name)}</span>`,iconSize:null,iconAnchor:[0,12]});
+      const marker=L.marker(latlng,{icon,draggable:!locked,title:st.name}).addTo(map);
+      marker.bindPopup(`<b>${esc(st.name)}</b><br>${esc(st.postal||'No postal code set')}<br><small>Drag to correct in-game location, then save.</small>`);
+      marker.on('dragend',()=>{const ll=marker.getLatLng();const x=Math.max(0,Math.min(100,ll.lng/81.92)),y=Math.max(0,Math.min(100,ll.lat/81.92));pending.set(st.name,{x,y});status.textContent=`Unsaved position: ${st.name}`});
+      markers.push(marker);
+    });
+    $('lockMap').onclick=async()=>{await api('/api/admin/station-map/lock',{method:'POST',body:JSON.stringify({locked:!locked})});await refreshAll()};
+    $('saveMap').onclick=async()=>{if(!pending.size){notify('No station positions changed');return}for(const [stationName,p] of pending){const result=await api('/api/admin/station-map/position',{method:'POST',body:JSON.stringify({stationName,mapXPercent:p.x,mapYPercent:p.y})});operational.stationMapPositions=result.stationMapPositions||operational.stationMapPositions||{}}pending.clear();notify('Station positions saved');await refreshAll()};
+    $('resetMap').onclick=async()=>{const name=$('resetStation').value;if(!name){notify('Select a station to reset');return}await api('/api/admin/station-map/position/'+encodeURIComponent(name),{method:'DELETE'});notify('Station position reset');await refreshAll()};
+    if(locked)status.textContent='Station positions are locked. Unlock to move markers.';
+    setTimeout(()=>map.invalidateSize(),150);
+  } catch(err) {
+    console.error('GTA V map failed to load',err);
+    status.textContent='Could not load map library or map tiles. Check internet access and refresh.';
+    mapEl.innerHTML='<div style="padding:24px;color:#d7eaf5">The GTA V map could not load. This usually means the map tile host or map library is blocked. Refresh the page or check network access. Station positions have not been changed.</div>';
+    $('lockMap').onclick=async()=>{await api('/api/admin/station-map/lock',{method:'POST',body:JSON.stringify({locked:!locked})});await refreshAll()};
+    $('saveMap').onclick=()=>notify('Map is not loaded; no positions were saved');
+    $('resetMap').onclick=async()=>{const name=$('resetStation').value;if(!name)return notify('Select a station to reset');await api('/api/admin/station-map/position/'+encodeURIComponent(name),{method:'DELETE'});notify('Station position reset');await refreshAll()};
+  }
 }
 function renderConfig(){
  config.general||={};config.alerts||={};const g=config.general,a=config.alerts;let tab='core';const tabs=[{id:'core',label:'Core & Integration'},{id:'incidents',label:'Incident Defaults'},{id:'alerts',label:'Alerts & Notifications'},{id:'dictionaries',label:'Operational Dictionaries'}];
@@ -374,13 +376,31 @@ renderPermissions=async function(){
  }catch(e){errorView('Roles & Permissions',e)}
 }
 
+
+function guardianChooseOptionDialog(title, options, message='Select an option'){
+ return new Promise(resolve=>{
+  const old=document.getElementById('guardianChoiceModal');if(old)old.remove();
+  const active=(options||[]).filter(Boolean);
+  if(!active.length){notify('No active options available');resolve(null);return}
+  const overlay=document.createElement('div');overlay.id='guardianChoiceModal';overlay.className='guardianModalOverlay';
+  overlay.innerHTML=`<div class="guardianModal" role="dialog" aria-modal="true" aria-labelledby="guardianChoiceTitle"><div class="sectionHead"><div><div class="eyebrow">GUARDIAN</div><h3 id="guardianChoiceTitle">${esc(title)}</h3><p>${esc(message)}</p></div><button type="button" data-choice-close aria-label="Close dialog">×</button></div><label class="guardianChoiceLabel">Choose an option<select data-choice-select><option value="">Select…</option>${active.map((o,i)=>`<option value="${i}">${esc(typeof o==='string'?o:o.label)}</option>`).join('')}</select></label><div class="saveBar"><button type="button" data-choice-cancel>Cancel</button><button type="button" data-choice-confirm>Confirm selection</button></div></div>`;
+  const finish=value=>{overlay.remove();document.removeEventListener('keydown',onKey);resolve(value)};
+  const onKey=e=>{if(e.key==='Escape')finish(null);if(e.key==='Enter'&&overlay.contains(document.activeElement)){e.preventDefault();overlay.querySelector('[data-choice-confirm]').click()}};
+  overlay.addEventListener('click',e=>{if(e.target===overlay)finish(null)});
+  overlay.querySelector('[data-choice-close]').onclick=()=>finish(null);
+  overlay.querySelector('[data-choice-cancel]').onclick=()=>finish(null);
+  overlay.querySelector('[data-choice-confirm]').onclick=()=>{const i=overlay.querySelector('[data-choice-select]').value;if(i===''){notify('Choose an option first');return}finish(active[Number(i)])};
+  document.addEventListener('keydown',onKey);document.body.appendChild(overlay);overlay.querySelector('select').focus();
+ });
+}
+
 renderUsers=async function(){
  try{const [d,pd,sd,qd]=await Promise.all([api('/api/admin/users'),api('/api/admin/role-permissions'),api('/api/admin/services'),api('/api/admin/qualifications')]);let users=d.users||[],roles=Object.keys(pd.permissions||{}),services=sd.services||[],quals=qd.qualifications||[];let selected=users[0]?.username||'';
  const draw=()=>{const u=users.find(x=>x.username===selected)||users[0];if(!u){setContent('<div class="card"><h3>No users found.</h3></div>');return}const assignments=Array.isArray(u.serviceAssignments)?u.serviceAssignments:[];const userQuals=Array.isArray(u.qualifications)?u.qualifications:[];setContent(`<div class="card v49Shell"><div class="sectionHead"><div><div class="eyebrow">PEOPLE & ACCESS</div><h3>Member Directory</h3><p>Membership, whitelist, role, service identity and qualifications in one place.</p></div><button id="v49CreateUser">CREATE ACCOUNT</button></div><div class="memberLayout"><aside class="memberList"><input id="v49UserSearch" placeholder="Search members…">${users.map(x=>`<button data-v49-user="${esc(x.username)}" class="memberRow ${x.username===u.username?'active':''}"><span class="avatarMini">${esc((x.displayName||x.username).slice(0,1).toUpperCase())}</span><span><b>${esc(x.displayName||x.username)}</b><small>${esc(x.username)} · ${esc(x.role)}</small></span><span class="statusDot ${x.whitelistStatus==='approved'?'ok':x.whitelistStatus==='rejected'?'off':'warn'}"></span></button>`).join('')}</aside><section class="memberEditor"><div class="memberHero"><div class="avatarLarge">${esc((u.displayName||u.username).slice(0,1).toUpperCase())}</div><div><h2>${esc(u.displayName||u.username)}</h2><p>${esc(u.username)} ${u.protected?'· PROTECTED OWNER':''}</p></div></div><div class="formGrid"><label>Display name<input id="v49DisplayName" value="${esc(u.displayName||'')}"></label><label>Guardian role<select id="v49UserRole" ${u.protected?'disabled':''}>${roles.map(r=>`<option ${r===u.role?'selected':''}>${esc(r)}</option>`).join('')}</select></label><label>Membership<select id="v49Membership"><option value="non-member" ${u.membershipType==='non-member'?'selected':''}>Non-member</option><option value="member" ${u.membershipType==='member'?'selected':''}>Member</option></select></label><label>Whitelist<select id="v49Whitelist"><option value="pending" ${u.whitelistStatus==='pending'?'selected':''}>Pending</option><option value="approved" ${u.whitelistStatus==='approved'?'selected':''}>Approved</option><option value="rejected" ${u.whitelistStatus==='rejected'?'selected':''}>Rejected</option></select></label><label class="wide">Discord User ID<input id="v49DiscordUser" value="${esc(u.discordUserId||'')}" placeholder="Optional Discord user ID"></label></div><div class="memberSection"><div class="sectionHead"><div><h3>Service assignments</h3><p>Assign service, rank, division and callsign. Multiple services are supported.</p></div><button id="v49AddAssignment">ADD SERVICE ASSIGNMENT</button></div><div id="v49Assignments">${assignments.map((a,i)=>{const svc=services.find(s=>s.id===a.serviceId)||services[0]||{};return `<div class="assignmentCard"><div class="four"><label>Service<select data-as-service="${i}">${services.map(s=>`<option value="${esc(s.id)}" ${s.id===a.serviceId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label><label>Rank<select data-as-rank="${i}">${(svc.ranks||[]).map(x=>`<option ${x===a.rank?'selected':''}>${esc(x)}</option>`).join('')}</select></label><label>Division<select data-as-div="${i}">${(svc.divisions||[]).map(x=>`<option ${x===a.division?'selected':''}>${esc(x)}</option>`).join('')}</select></label><label>Callsign<input data-as-call="${i}" value="${esc(a.callsign||'')}"></label></div><button class="danger" data-as-del="${i}">REMOVE ASSIGNMENT</button></div>`}).join('')||'<div class="emptyState">No service assignments yet.</div>'}</div></div><div class="memberSection"><div class="sectionHead"><div><h3>Qualifications & Skills</h3><p>Qualifications can be awarded manually here or automatically from completed training.</p></div><button id="v49AwardQual">AWARD QUALIFICATION</button></div><div class="qualificationPills">${userQuals.map(q=>{const name=typeof q==='string'?q:q.name||q.id;const exp=typeof q==='object'&&q.expiresAt?new Date(q.expiresAt).toLocaleDateString():'';return `<span class="qualificationPill"><b>${esc(name)}</b>${exp?`<small>Expires ${esc(exp)}</small>`:''}<button data-q-revoke="${esc(typeof q==='string'?q:q.id||q.name)}">×</button></span>`}).join('')||'<div class="emptyState">No qualifications awarded.</div>'}</div></div><div class="saveBar"><div><button id="v49ResetPass">RESET PASSWORD</button>${!u.protected?` <button class="danger" id="v49DeleteUser">DELETE ACCOUNT</button>`:''}</div><button id="v49SaveUser">SAVE MEMBER PROFILE</button></div></section></div></div>`);
  document.querySelectorAll('[data-v49-user]').forEach(b=>b.onclick=()=>{selected=b.dataset.v49User;draw()});$('v49UserSearch').oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('[data-v49-user]').forEach(b=>b.style.display=b.textContent.toLowerCase().includes(q)?'':'none')};
  $('v49AddAssignment').onclick=()=>{const svc=services[0]||{};assignments.push({serviceId:svc.id||'',rank:svc.ranks?.[0]||'',division:svc.divisions?.[0]||'',callsign:''});u.serviceAssignments=assignments;draw()};document.querySelectorAll('[data-as-del]').forEach(b=>b.onclick=()=>{assignments.splice(+b.dataset.asDel,1);u.serviceAssignments=assignments;draw()});document.querySelectorAll('[data-as-service]').forEach(el=>el.onchange=()=>{const i=+el.dataset.asService,s=services.find(x=>x.id===el.value)||{};assignments[i]={...assignments[i],serviceId:el.value,rank:s.ranks?.[0]||'',division:s.divisions?.[0]||''};u.serviceAssignments=assignments;draw()});
  $('v49SaveUser').onclick=async()=>{assignments.forEach((a,i)=>{a.serviceId=document.querySelector(`[data-as-service="${i}"]`)?.value||a.serviceId;a.rank=document.querySelector(`[data-as-rank="${i}"]`)?.value||'';a.division=document.querySelector(`[data-as-div="${i}"]`)?.value||'';a.callsign=document.querySelector(`[data-as-call="${i}"]`)?.value.trim().toUpperCase()||''});const result=await api('/api/admin/users/'+encodeURIComponent(u.username)+'/access-profile',{method:'POST',body:JSON.stringify({displayName:$('v49DisplayName').value,role:$('v49UserRole')?.value||u.role,membershipType:$('v49Membership').value,whitelistStatus:$('v49Whitelist').value,discordUserId:$('v49DiscordUser').value,serviceAssignments:assignments})});notify('Member profile saved');renderUsers()};
- $('v49AwardQual').onclick=async()=>{const options=quals.filter(q=>q.active!==false);if(!options.length)return notify('No active qualifications. Add one in Training → Qualification Library first.');const q=await guardianChooseQualification(options);if(!q)return;await api('/api/admin/users/'+encodeURIComponent(u.username)+'/qualification-award',{method:'POST',body:JSON.stringify({qualificationId:q.id})});notify('Qualification awarded');renderUsers()};document.querySelectorAll('[data-q-revoke]').forEach(b=>b.onclick=async()=>{if(!confirm('Revoke this qualification?'))return;await api('/api/admin/users/'+encodeURIComponent(u.username)+'/qualification-revoke',{method:'POST',body:JSON.stringify({qualificationId:b.dataset.qRevoke})});notify('Qualification revoked');renderUsers()});
+ $('v49AwardQual').onclick=async()=>{const options=quals.filter(q=>q.active!==false);const q=await guardianChooseOptionDialog('Award qualification',options.map(x=>({id:x.id,label:x.name})),'Choose the qualification to award to this member.');if(!q)return;await api('/api/admin/users/'+encodeURIComponent(u.username)+'/qualification-award',{method:'POST',body:JSON.stringify({qualificationId:q.id})});notify('Qualification awarded');renderUsers()};document.querySelectorAll('[data-q-revoke]').forEach(b=>b.onclick=async()=>{if(!confirm('Revoke this qualification?'))return;await api('/api/admin/users/'+encodeURIComponent(u.username)+'/qualification-revoke',{method:'POST',body:JSON.stringify({qualificationId:b.dataset.qRevoke})});notify('Qualification revoked');renderUsers()});
  $('v49ResetPass').onclick=async()=>{const pw=prompt('New password (minimum 8 characters)');if(!pw)return;await api('/api/admin/users/'+encodeURIComponent(u.username)+'/password',{method:'POST',body:JSON.stringify({password:pw})});notify('Password updated')};if($('v49DeleteUser'))$('v49DeleteUser').onclick=async()=>{if(!confirm(`Delete ${u.username}?`))return;await api('/api/admin/users/'+encodeURIComponent(u.username),{method:'DELETE'});notify('Account deleted');renderUsers()};$('v49CreateUser').onclick=()=>{const username=prompt('Username');if(!username)return;const displayName=prompt('Display name',username)||username;const password=prompt('Temporary password (8+ characters)');if(!password)return;const role=prompt('Guardian role',roles.includes('player')?'player':roles[0])||'player';api('/api/admin/users',{method:'POST',body:JSON.stringify({username,displayName,password,role})}).then(()=>{notify('Account created');renderUsers()}).catch(e=>alert(e.message))};
  };draw()
  }catch(e){errorView('Users & Access',e)}
@@ -401,7 +421,7 @@ renderTraining=async function(){
  setContent(`<div class="card v49Shell"><div class="sectionHead"><div><div class="eyebrow">LEARNING & COMPETENCE</div><h3>Training, Qualifications & Skills</h3><p>Manage the full lifecycle from defining a skill, to running training, to recording a member's competence.</p></div></div>${v49Tabs(tabs,tab)}${body}</div>`);document.querySelectorAll('[data-v49-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.v49Tab;draw()});
  if(tab==='sessions'){const edit=async(t={})=>{const modal=document.createElement('div');modal.className='modalOverlay';modal.innerHTML=`<div class="modalCard"><div class="sectionHead"><div><div class="eyebrow">TRAINING SESSION</div><h3>${t.id?'Edit':'Create'} training</h3></div><button id="tmClose">×</button></div><div class="formGrid"><label>Title<input id="tmTitle" value="${esc(t.title||'')}"></label><label>Service<select id="tmService">${services.map(s=>`<option value="${esc(s.id)}" ${s.id===t.serviceId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label><label>Starts<input type="datetime-local" id="tmStart" value="${esc(t.startsAt||'')}"></label><label>Ends<input type="datetime-local" id="tmEnd" value="${esc(t.endsAt||'')}"></label><label>Location<input id="tmLocation" value="${esc(t.location||'')}"></label><label>Instructor<input id="tmInstructor" value="${esc(t.instructor||'')}"></label><label>Capacity<input type="number" id="tmSlots" min="0" value="${Number(t.maxSlots||0)}"></label><label>Booking closes<input type="datetime-local" id="tmCloseAt" value="${esc(t.bookingClosesAt||'')}"></label><label>Qualification awarded<select id="tmQual"><option value="">None</option>${quals.map(q=>`<option value="${esc(q.id)}" ${q.id===t.qualificationId||q.name===t.qualificationAwarded?'selected':''}>${esc(q.name)}</option>`).join('')}</select></label><label>Discord channel<select id="tmDiscord"><option value="">Default briefing channel</option>${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===t.discordChannelId?'selected':''}># ${esc(c.name)}</option>`).join('')}</select></label><label class="wide">Description<textarea id="tmDesc" rows="5">${esc(t.description||'')}</textarea></label><label class="wide">Prerequisite qualifications<select id="tmPrereq" multiple size="5">${quals.map(q=>`<option value="${esc(q.id)}" ${(t.prerequisites||[]).includes(q.id)?'selected':''}>${esc(q.name)}</option>`).join('')}</select></label></div><div class="toggleList"><label><input type="checkbox" id="tmPublished" ${t.published!==false?'checked':''}> Open / published</label><label><input type="checkbox" id="tmAnnounce"> Send Discord announcement when saved</label></div><div class="modalActions"><button id="tmCancel">CANCEL</button><button id="tmSave">SAVE TRAINING</button></div></div>`;document.body.appendChild(modal);const close=()=>modal.remove();$('tmClose').onclick=$('tmCancel').onclick=close;$('tmSave').onclick=async()=>{const q=quals.find(x=>x.id===$('tmQual').value);const session={...t,title:$('tmTitle').value.trim(),serviceId:$('tmService').value,startsAt:$('tmStart').value,endsAt:$('tmEnd').value,location:$('tmLocation').value.trim(),instructor:$('tmInstructor').value.trim(),maxSlots:Number($('tmSlots').value||0),bookingClosesAt:$('tmCloseAt').value,qualificationId:q?.id||'',qualificationAwarded:q?.name||'',discordChannelId:$('tmDiscord').value,description:$('tmDesc').value.trim(),prerequisites:[...$('tmPrereq').selectedOptions].map(o=>o.value),published:$('tmPublished').checked,announce:$('tmAnnounce').checked};await api('/api/admin/training',{method:'POST',body:JSON.stringify({session})});close();notify('Training saved');renderTraining()}};$('v49NewTraining').onclick=()=>edit();document.querySelectorAll('[data-t-edit]').forEach(b=>b.onclick=()=>edit(sessions.find(x=>x.id===b.dataset.tEdit)||{}));document.querySelectorAll('[data-t-complete]').forEach(b=>b.onclick=async()=>{if(!confirm('Complete this training and award its configured qualification to booked attendees?'))return;await api('/api/admin/training/'+b.dataset.tComplete+'/complete',{method:'POST',body:'{}'});notify('Training completed');renderTraining()})}
  if(tab==='library'){$('v49AddQual').onclick=()=>{quals.push({id:'qual-'+Date.now(),name:'New Qualification',serviceId:'all',category:'Operational',description:'',validityMonths:0,requires:[],active:true});draw()};document.querySelectorAll('[data-ql-del]').forEach(b=>b.onclick=()=>{quals.splice(+b.dataset.qlDel,1);draw()});$('v49SaveQuals').onclick=async()=>{quals.forEach((q,i)=>{q.name=document.querySelector(`[data-ql-name="${i}"]`).value.trim();q.serviceId=document.querySelector(`[data-ql-service="${i}"]`).value;q.category=document.querySelector(`[data-ql-cat="${i}"]`).value.trim();q.validityMonths=Number(document.querySelector(`[data-ql-valid="${i}"]`).value||0);q.description=document.querySelector(`[data-ql-desc="${i}"]`).value.trim();q.active=document.querySelector(`[data-ql-active="${i}"]`).checked});await api('/api/admin/qualifications',{method:'POST',body:JSON.stringify({qualifications:quals})});notify('Qualification library saved');renderTraining()}}
- if(tab==='members')document.querySelectorAll('[data-mq-award]').forEach(b=>b.onclick=async()=>{const options=quals.filter(q=>q.active!==false);if(!options.length)return notify('No active qualifications in the library.');const q=await guardianChooseQualification(options);if(!q)return;await api('/api/admin/users/'+encodeURIComponent(b.dataset.mqAward)+'/qualification-award',{method:'POST',body:JSON.stringify({qualificationId:q.id})});notify('Qualification awarded');renderTraining()});
+ if(tab==='members')document.querySelectorAll('[data-mq-award]').forEach(b=>b.onclick=async()=>{const q=await guardianChooseOptionDialog('Award qualification',quals.filter(q=>q.active!==false).map(x=>({id:x.id,label:x.name})),'Choose the qualification to award.');if(!q)return;await api('/api/admin/users/'+encodeURIComponent(b.dataset.mqAward)+'/qualification-award',{method:'POST',body:JSON.stringify({qualificationId:q.id})});notify('Qualification awarded');renderTraining()});
  };draw()
  }catch(e){errorView('Training & Qualifications',e)}
 }

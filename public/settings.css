@@ -116,14 +116,8 @@ body{background:radial-gradient(circle at 85% -10%,rgba(32,105,143,.12),transpar
 select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,#75c5ec 50%),linear-gradient(135deg,#75c5ec 50%,transparent 50%);background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:34px}
 @media(max-width:900px){.g57FormGrid.two,.g57FormGrid.three,.g57Checklist>div,.g57CardGrid{grid-template-columns:1fr}.g57FleetFilters{grid-template-columns:1fr}.g57StatRow{grid-template-columns:1fr 1fr}.g57Subnav,.g57Subnav.three{grid-template-columns:1fr 1fr}}
 
-/* Guardian polished qualification picker */
-.guardian-modal-backdrop{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;padding:20px;background:rgba(2,12,20,.78);backdrop-filter:blur(7px)}
-.guardian-choice-modal{width:min(520px,100%);padding:26px;border:1px solid var(--line,#24516a);border-radius:18px;background:linear-gradient(145deg,#102a39,#071722);box-shadow:0 24px 80px #0009;color:var(--text,#eaf5ff)}
-.guardian-choice-modal h2{margin:8px 0;font-size:1.45rem}.guardian-choice-modal p{color:var(--muted,#9db5c5);margin:0 0 22px}
-.guardian-choice-label{display:grid;gap:8px;font-size:.88rem;font-weight:700}
-.guardian-choice-label select{width:100%;min-height:48px;padding:12px;border-radius:10px;border:1px solid #2c6078;background:#071923;color:#eaf5ff;font:inherit}
-.guardian-choice-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
-.guardian-choice-actions button{border:1px solid #238ac2;border-radius:10px;padding:11px 16px;background:#168bd0;color:white;font-weight:800;cursor:pointer}
-.guardian-choice-actions button.secondary{background:transparent;border-color:#345263;color:#c9dce8}
-.guardian-choice-actions button:disabled{opacity:.45;cursor:not-allowed}
-.guardian-choice-modal button:focus-visible,.guardian-choice-label select:focus-visible{outline:3px solid #56c8ff;outline-offset:3px}
+/* Guardian v2.8.6 qualification chooser */
+.guardianModalOverlay{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(2,10,18,.78);backdrop-filter:blur(6px)}
+.guardianModal{width:min(540px,100%);padding:22px;border:1px solid #31596b;border-radius:18px;background:linear-gradient(145deg,#102634,#0a1722);box-shadow:0 24px 90px #0009;color:#e8f5fb}
+.guardianModal h3{margin:4px 0 8px}.guardianModal p{color:#9bb7c7;margin:0}.guardianModal .sectionHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.guardianModal [data-choice-close]{font-size:22px;min-width:38px}.guardianChoiceLabel{display:grid;gap:8px;margin:24px 0}.guardianChoiceLabel select{width:100%;min-height:46px;padding:10px;border-radius:9px;background:#081923;color:#e8f5fb;border:1px solid #31596b}.guardianModal .saveBar{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.guardian-gtav-pin{background:transparent;border:0}
