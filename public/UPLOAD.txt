@@ -1,0 +1,11 @@
+GUARDIAN FIVEM FLEET & DUTY PAGE UPGRADE
+
+Upload/replace these two files in the same folder as the existing settings.html:
+- settings.js
+- settings.css
+
+No server.js change is required. The existing /api/admin/appliances endpoint saves the additional vehicle fields.
+
+Changes include fleet summary cards, search, service/status filters, editable FiveM spawn codes, vehicle status, active toggle, capabilities, and improved responsive layout.
+
+Before replacing files, keep a backup of your current settings.js and settings.css. Test in a staging deploy if possible.
