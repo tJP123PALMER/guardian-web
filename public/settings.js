@@ -385,9 +385,38 @@ renderPermissions=async function(){
   ];
   const labels={portal:'Portal & Access',formsbuilder:'Forms Builder',governance:'People & Governance'};
   const all=groups.flatMap(g=>g.items);let selected=Object.keys(perms)[0]||'player';
-  // One-time in-memory migration: legacy roles with the old Settings switch keep their current
-  // broad access until an owner/admin deliberately saves a granular layout.
-  for(const [role,rp0] of Object.entries(perms)){const rp=perms[role]=rp0&&typeof rp0==='object'?rp0:{};const hasGranular=all.some(([k])=>typeof rp['setting_'+k]==='boolean');if(!hasGranular){const legacyAllowed=rp.settings===true||['owner','admin','dev'].includes(String(role).toLowerCase());for(const [k] of all)rp['setting_'+k]=legacyAllowed;}else{for(const [k] of all)if(typeof rp['setting_'+k]!=='boolean')rp['setting_'+k]=false;}}
+  // Repair legacy/partially migrated role records. Earlier builds wrote setting_* = false
+  // for every non-admin role, which made Player, Supervisor and Control appear to have no access.
+  // Preserve any intentional granular choices, but seed a useful role profile when every
+  // granular flag is false and the old role flags show that the role was meant to have access.
+  const roleSectionDefaults={
+   owner:all.map(([k])=>k),
+   admin:all.map(([k])=>k),
+   dev:all.map(([k])=>k),
+   control:['overview','operations','dispatch','stations','appliances','map','fleet','patrols','radio','announcements','guides'],
+   supervisor:['overview','operations','dispatch','stations','appliances','map','portal','applications','governance','users','patrols','training','announcements','guides','templates','services','radio'],
+   player:['overview','portal','applications','formsbuilder','patrols','training','announcements','guides','radio']
+  };
+  for(const [role,rp0] of Object.entries(perms)){
+   const roleKey=String(role).toLowerCase();
+   const rp=perms[role]=rp0&&typeof rp0==='object'?rp0:{};
+   const granularKeys=all.map(([k])=>'setting_'+k);
+   const hasGranular=granularKeys.some(k=>typeof rp[k]==='boolean');
+   const anyEnabled=granularKeys.some(k=>rp[k]===true);
+   if(!hasGranular){
+    const legacyAllowed=rp.settings===true||['owner','admin','dev'].includes(roleKey);
+    for(const [k] of all)rp['setting_'+k]=legacyAllowed;
+   }else{
+    for(const [k] of all)if(typeof rp['setting_'+k]!=='boolean')rp['setting_'+k]=false;
+    // Only repair the known broken state (all granular flags false) when legacy flags or
+    // the built-in role definition indicate this role should have section access.
+    const legacyIntent=rp.settings===true||rp.staff===true||rp.portal===true||rp.mdt===true||rp.control===true||rp.radio===true||rp.forms===true||rp.patrols===true||rp.training===true;
+    if(!anyEnabled&&roleSectionDefaults[roleKey]&&(legacyIntent||['owner','admin','dev','control','supervisor','player'].includes(roleKey))){
+     const allowed=new Set(roleSectionDefaults[roleKey]);
+     for(const [k] of all)rp['setting_'+k]=allowed.has(k);
+    }
+   }
+  }
   const defaults={portal:true,forms:true,patrols:true,training:true,guides:true,mdt:false,control:false,radio:true,staff:false,applications:false,announcements:false,fleet:false,qualifications:false,services:false,users:false,audit:false,discord:false,settings:false};
   const draw=()=>{
    const roles=Object.keys(perms);if(!perms[selected])selected=roles[0]||'player';for(const [k] of all)if(typeof (perms[selected]||{})['setting_'+k]!=='boolean')(perms[selected]||{})['setting_'+k]=false;const p=perms[selected]||{};if(String(selected).toLowerCase()==='owner')for(const [k] of all)p['setting_'+k]=true;
@@ -405,7 +434,7 @@ renderPermissions=async function(){
    $('permSelectAll').onclick=()=>{all.forEach(([k])=>p['setting_'+k]=true);draw()};$('permClear').onclick=()=>{all.forEach(([k])=>p['setting_'+k]=false);draw()};
    document.querySelectorAll('[data-perm-group]').forEach(b=>b.onclick=()=>{const g=groups[+b.dataset.permGroup];const on=!g.items.every(([k])=>p['setting_'+k]);g.items.forEach(([k])=>p['setting_'+k]=on);draw()});
    $('permAddRole').onclick=()=>{const r=(prompt('New role ID (e.g. trainer, fire-command, police-supervisor)')||'').trim().toLowerCase().replace(/[^a-z0-9_-]+/g,'-');if(!r||perms[r])return;perms[r]={...defaults};all.forEach(([k])=>perms[r]['setting_'+k]=false);selected=r;draw()};
-   const save=async()=>{await api('/api/admin/role-permissions',{method:'POST',body:JSON.stringify({permissions:perms})});notify('Role access saved');renderPermissions()};$('permSave').onclick=save;$('permSaveBottom').onclick=save;
+   const save=async()=>{const buttons=[$('permSave'),$('permSaveBottom')].filter(Boolean);buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Saving…'});try{const result=await api('/api/admin/role-permissions',{method:'POST',body:JSON.stringify({permissions:perms})});if(result&&result.ok===false)throw new Error(result.error||'The server rejected the permissions');notify('Role access saved');await renderPermissions()}catch(e){notify('Could not save role access: '+(e.message||e),'error');buttons.forEach(b=>{b.disabled=false;b.textContent=b.dataset.oldText||'Save changes'})}};$('permSave').onclick=save;$('permSaveBottom').onclick=save;
   };draw()
  }catch(e){errorView('Roles & Permissions',e)}
 }
