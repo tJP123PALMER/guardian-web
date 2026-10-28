@@ -130,7 +130,15 @@ async function renderMap(){
   setContent(`<div class="card"><div class="sectionHead"><div><h3>Station Map</h3><p>This is the same map and coordinate system used by Control Centre. Dragging is only available here.</p></div><div><button id="lockMap">${locked?"UNLOCK STATIONS":"LOCK STATIONS"}</button></div></div><div class="mapHint">${locked?"Station positions are locked. Unlock before moving them.":"Drag a station marker, then save it. Unsaved markers use their postal position."}</div><div class="stationMapViewport"><div id="stationMap" class="stationMapEditor"></div></div><div class="mapActions"><button id="saveMap">SAVE MOVED STATIONS</button><button id="resetMap">RESET TO POSTAL</button><select id="resetStation"><option value="">Select station…</option>${(config.stations||[]).map(s=>`<option>${esc(s.name)}</option>`).join("")}</select></div></div>`);
   const map=$("stationMap"),pending=new Map(),saved=operational.stationMapPositions||{};
   let postals=new Map();
-  try{postals=await loadSettingsPostals()}catch(err){console.error(err);notify("Postal map data could not be loaded")}
+  try{if(typeof loadSettingsPostals==='function')postals=await loadSettingsPostals();else throw new Error('Postal map loader unavailable')}catch(err){console.warn('Postal map data unavailable; using editable fallback layout',err)}
+  // A deterministic fallback keeps the map useful even when the postal-code provider is offline.
+  const activeStations=(config.stations||[]).filter(s=>s.active!==false);
+  const fallbackPositions=new Map();
+  activeStations.forEach((st,i)=>{const angle=(Math.PI*2*i/Math.max(activeStations.length,1))-Math.PI/2;fallbackPositions.set(String(st.name).trim().toLowerCase(),{x:50+Math.cos(angle)*34,y:50+Math.sin(angle)*34})});
+  map.style.backgroundImage='linear-gradient(rgba(62,160,198,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(62,160,198,.10) 1px,transparent 1px),radial-gradient(ellipse at center,#123044 0%,#081722 75%)';
+  map.style.backgroundSize='40px 40px,40px 40px,100% 100%';
+  map.style.position='relative';
+  if(!postals.size){const note=document.createElement('div');note.className='map-fallback-note';note.textContent='OFFLINE MAP LAYOUT · Drag stations to their correct positions, then save';note.style.cssText='position:absolute;left:12px;top:12px;z-index:1;padding:8px 11px;border:1px solid #28718c;border-radius:8px;background:#071722;color:#9ddcf1;font-size:11px;letter-spacing:.08em;pointer-events:none';map.appendChild(note)}
 
   (config.stations||[]).forEach(st=>{
     const key=String(st.name).trim().toLowerCase(),pos=saved[key]||saved[st.name]||{};
@@ -138,7 +146,7 @@ async function renderMap(){
     if(!Number.isFinite(x)||!Number.isFinite(y)){
       const p=postals.get(String(st.postal||"").trim());
       if(p){const pt=settingsMapPoint(p.x,p.y);x=pt.x;y=pt.y}
-      else {x=50;y=50}
+      else {const fallback=fallbackPositions.get(key)||{x:50,y:50};x=fallback.x;y=fallback.y}
     }
     const b=document.createElement("button");b.className="stationPin";b.type="button";b.style.left=x+"%";b.style.top=y+"%";b.innerHTML=`<span>FS</span><b>${esc(st.name)}</b>`;
     let drag=false;
