@@ -1,40 +1,15 @@
-GUARDIAN INCIDENT / STANDBY DUTIES DROPDOWN
+GUARDIAN OPERATIONS — CLEAN WEBSITE PACKAGE
 
-This update RETAINS the latest Game -> Web status sync fix.
+This package contains the website source, required public assets and FiveM resource folders, plus your original backup in RECOVERY_BACKUP. Historical update notes and Git metadata are omitted. node_modules is not included.
 
-NEW IN CONTROL > CREATE INCIDENT
-A Job category dropdown now offers:
-  - Incident
-  - Standby Duties
+IMPORTANT: The recovery JSON is kept separate and is NOT automatically copied over live data. Back up the current live site before restoring.
 
-The existing type field remains underneath:
-  Incident       -> "Incident type"
-  Standby Duties -> "Standby duty type"
+Deploy (GitHub + Render):
+1. Download/extract this ZIP.
+2. Replace the files in your Guardian GitHub repository with the contents of this folder (keep the folder contents, not an extra nested folder).
+3. Commit and push to the branch Render deploys.
+4. Wait for Render deployment to finish.
+5. In Guardian Settings > Backup, export a fresh backup of the current site before importing any older backup.
+6. If restoring, use RECOVERY_BACKUP/guardian-full-backup.json via Settings > Backup. Confirm the restore reports success, then refresh Settings > Duty & Fleet and choose All Services.
 
-Examples of standby duty type:
-  Standby Cover
-  Strategic Standby
-  Relief Standby
-
-Standby Duties created here are REAL incidents:
-- they get the same 5-digit incident number system
-- they appear in Control > Incidents
-- they can have appliances assigned normally
-- they use the same MDT/turnout path
-- they are tagged isStandby=true / category=standby
-
-This does NOT remove the dedicated Standby & Station Cover page. That remains
-available for automatic/recommended station-cover moves.
-
-INSTALL:
-WEB:
-  Copy the web root over GuardianWebClean as normal, excluding FIVEM folders.
-
-FIVEM:
-  Replace:
-    fivem_current_patched/Guardian_control
-    fivem_current_patched/Guardian_mdt
-    fivem_current_patched/guardian_web
-  Keep your existing guardian_web/shared/config.lua.
-
-No old duplicate ACK patch folders should be used.
+Included changes from the cumulative source: GTA V tile-map implementation, existing role/permission designer retained, training/qualification UI cleanup, and backup recovery files. The map depends on an external tile host. The code has not been deployed to your Render instance or verified against your live database from this package build. Role authorization and live FiveM tracking still require testing in your environment.
