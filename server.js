@@ -235,21 +235,13 @@ function guardianAdminReadSession(req){
   }catch{return null}
 }
 const guardianSettingsRouteKeys=[
-  // Keep specific routes ahead of broad routes so every section toggle maps consistently.
-  [/^\/api\/admin\/role-permissions(?:\/|$)/,'permissions'],
-  [/^\/api\/admin\/(?:stations|station-dashboard)(?:\/|$)/,'stations'],[/^\/api\/admin\/station-map(?:\/|$)/,'map'],
-  [/^\/api\/admin\/appliances(?:\/|$)/,'appliances'],
-  [/^\/api\/admin\/(?:config|baseline|operational)(?:\/|$)/,'config'],
-  [/^\/api\/admin\/export(?:\/|$)/,'backup'],[/^\/api\/admin\/import(?:\/|$)/,'backup'],[/^\/api\/admin\/snapshots(?:\/|$)/,'backup'],
-  [/^\/api\/admin\/users(?:\/|$)/,'users'],[/^\/api\/admin\/personnel(?:\/|$)/,'governance'],[/^\/api\/admin\/promotion-pathways(?:\/|$)/,'governance'],
-  [/^\/api\/admin\/applications(?:\/|$)/,'applications'],
-  [/^\/api\/admin\/forms(?:\/|$)/,'formsbuilder'],[/^\/api\/admin\/form-submissions(?:\/|$)/,'formsbuilder'],
-  [/^\/api\/admin\/services(?:\/|$)/,'services'],[/^\/api\/admin\/discord(?:\/|$)/,'discord'],[/^\/api\/admin\/fivem(?:\/|$)/,'fivem'],
-  [/^\/api\/admin\/qualifications(?:\/|$)/,'training'],[/^\/api\/admin\/training(?:\/|$)/,'training'],
-  [/^\/api\/admin\/fleet(?:\/|$)/,'fleet'],[/^\/api\/admin\/patrol-templates(?:\/|$)/,'templates'],[/^\/api\/admin\/templates(?:\/|$)/,'templates'],[/^\/api\/admin\/patrols(?:\/|$)/,'patrols'],
-  [/^\/api\/admin\/announcements(?:\/|$)/,'announcements'],[/^\/api\/admin\/guides(?:\/|$)/,'guides'],
-  [/^\/api\/admin\/audit(?:\/|$)/,'audit'],[/^\/api\/admin\/radio-config(?:\/|$)/,'radio'],[/^\/api\/admin\/radio(?:\/|$)/,'radio'],
-  [/^\/api\/admin\/platform(?:\/|$)/,'platform'],[/^\/api\/admin\/game-server(?:\/|$)/,'platform']
+  [/^\/api\/admin\/(?:stations|station-map)/,'stations'],[/^\/api\/admin\/appliances/,'appliances'],
+  [/^\/api\/admin\/(?:config|baseline|operational|export)/,'config'],[/^\/api\/admin\/users/,'users'],
+  [/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
+  [/^\/api\/admin\/services/,'services'],[/^\/api\/admin\/discord/,'discord'],[/^\/api\/admin\/qualifications/,'training'],[/^\/api\/admin\/training/,'training'],
+  [/^\/api\/admin\/fleet/,'fleet'],[/^\/api\/admin\/patrols/,'patrols'],[/^\/api\/admin\/patrol-templates/,'templates'],
+  [/^\/api\/admin\/announcements/,'announcements'],[/^\/api\/admin\/guides/,'guides'],[/^\/api\/admin\/role-permissions/,'permissions'],
+  [/^\/api\/admin\/audit/,'audit'],[/^\/api\/admin\/radio-config/,'radio'],[/^\/api\/admin\/radio/,'radio']
 ];
 function guardianSettingsKeyForRequest(req){
   const url=String(req.path||req.originalUrl||'').split('?')[0];
@@ -900,7 +892,7 @@ app.post("/api/admin/config",guardianRequireAdmin("settings.edit"),(req,res)=>{
 app.get("/api/admin/users",guardianRequireAdmin("settings.view"),(req,res)=>{
   const users=[...guardianAdminUsers.values()].map(u=>({
     username:u.username,displayName:u.displayName,role:u.role,protected:!!u.protected,createdAt:u.createdAt,whitelistStatus:u.whitelistStatus||"pending",whitelistUpdatedAt:u.whitelistUpdatedAt||null,
-    membershipType:guardianMemberType(u),discordUserId:u.discordUserId||"",discordProfile:u.discordProfile||null,serviceAssignments:Array.isArray(u.serviceAssignments)?u.serviceAssignments:[],qualifications:Array.isArray(u.qualifications)?u.qualifications:[]
+    membershipType:guardianMemberType(u),discordUserId:u.discordUserId||"",serviceAssignments:Array.isArray(u.serviceAssignments)?u.serviceAssignments:[],qualifications:Array.isArray(u.qualifications)?u.qualifications:[]
   }));
   res.json({ok:true,users});
 });
@@ -1197,7 +1189,7 @@ async function guardianProvisionDiscordServer(guildId){
   guardianDiscord.guildId=guildId;guardianDiscord.enabled=true;guardianSaveDiscord();
   return {ok:true,created,discord:guardianDiscord,template:guardianDiscordTemplate};
 }
-function guardianUserPublicProfile(u){return {username:u.username,displayName:u.displayName||u.username,role:u.role,membershipType:guardianMemberType(u),whitelistStatus:u.whitelistStatus||"pending",discordUserId:u.discordUserId||"",discordProfile:u.discordProfile||null,serviceAssignments:Array.isArray(u.serviceAssignments)?u.serviceAssignments:[],qualifications:Array.isArray(u.qualifications)?u.qualifications:[]}}
+function guardianUserPublicProfile(u){return {username:u.username,displayName:u.displayName||u.username,role:u.role,membershipType:guardianMemberType(u),whitelistStatus:u.whitelistStatus||"pending",discordUserId:u.discordUserId||"",serviceAssignments:Array.isArray(u.serviceAssignments)?u.serviceAssignments:[],qualifications:Array.isArray(u.qualifications)?u.qualifications:[]}}
 
 app.get("/api/community/services",(_req,res)=>res.json({ok:true,services:guardianServices.filter(x=>x.enabled!==false)}));
 app.get("/api/community/forms",(req,res)=>{const session=guardianUserReadSession(req)||guardianAdminReadSession(req);const u=session?guardianAdminUsers.get(session.username):null;res.json({ok:true,forms:guardianForms.filter(f=>f.published!==false&&guardianAudienceAllowed(f,u)).map(guardianSafeForm)})});
@@ -1298,29 +1290,21 @@ app.post('/api/admin/users/:username/qualification-revoke',guardianRequireAdmin(
 app.post('/api/admin/users/:username/access-profile',guardianRequireAdmin('settings.edit'),(req,res)=>{const u=guardianAdminUsers.get(String(req.params.username||''));if(!u)return res.status(404).json({ok:false,error:'User not found'});if(u.protected && req.guardianAdmin.role!=='owner')return res.status(403).json({ok:false,error:'Only Owner can edit the protected Owner profile'});const b=req.body||{};if(b.displayName!==undefined)u.displayName=String(b.displayName||u.username).trim();if(b.role!==undefined&&!u.protected){const r=String(b.role||'player').trim().toLowerCase();if(!guardianRolePermissions[r])return res.status(400).json({ok:false,error:'Unknown Guardian role'});u.role=r}if(['member','non-member'].includes(b.membershipType))u.membershipType=b.membershipType;if(['approved','pending','rejected'].includes(b.whitelistStatus)){u.whitelistStatus=b.whitelistStatus;u.whitelistUpdatedAt=new Date().toISOString()}if(b.discordUserId!==undefined)u.discordUserId=String(b.discordUserId||'').trim();if(Array.isArray(b.serviceAssignments))u.serviceAssignments=b.serviceAssignments;guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,'USER_ACCESS_PROFILE_UPDATED',{username:u.username,role:u.role,membershipType:u.membershipType,whitelistStatus:u.whitelistStatus});res.json({ok:true,user:guardianUserPublicProfile(u)})});
 app.get('/api/admin/discord/channels',guardianRequireAdmin('settings.view'),async(_req,res)=>{const guildId=String(guardianDiscord.guildId||'').trim();if(!guildId)return res.json({ok:true,channels:[]});const r=await guardianDiscordRequest('GET',`/guilds/${guildId}/channels`);if(!r.ok)return res.status(400).json({ok:false,error:r.error||'Unable to load Discord channels'});res.json({ok:true,channels:(r.data||[]).filter(c=>c.type===0||c.type===5).map(c=>({id:c.id,name:c.name,parentId:c.parent_id||'',type:c.type})).sort((a,b)=>a.name.localeCompare(b.name))})});
 app.get('/api/admin/discord/roles',guardianRequireAdmin('settings.view'),async(_req,res)=>{const guildId=String(guardianDiscord.guildId||'').trim();if(!guildId)return res.json({ok:true,roles:[]});const r=await guardianDiscordRequest('GET',`/guilds/${guildId}/roles`);if(!r.ok)return res.status(400).json({ok:false,error:r.error||'Unable to load Discord roles'});res.json({ok:true,roles:(r.data||[]).filter(x=>x.name!=='@everyone'&&x.managed!==true).map(x=>({id:x.id,name:x.name,color:x.color,position:x.position})).sort((a,b)=>b.position-a.position)})});
-// Fetch a linked member's current Discord identity and server roles for the Guardian profile.
-app.post('/api/admin/users/:username/discord-profile-sync',guardianRequireAdmin('settings.edit'),async(req,res)=>{
-  const u=guardianAdminUsers.get(String(req.params.username||''));
-  if(!u)return res.status(404).json({ok:false,error:'User not found'});
-  const discordUserId=String(req.body?.discordUserId??u.discordUserId??'').trim();
-  if(!/^\d{15,22}$/.test(discordUserId))return res.status(400).json({ok:false,error:'Enter a valid numeric Discord User ID first'});
-  const guildId=String(guardianDiscord.guildId||'').trim();
-  if(!guildId)return res.status(400).json({ok:false,error:'Configure the Discord Guild / Server ID in Discord Integration first'});
-  const [memberResult,rolesResult]=await Promise.all([
-    guardianDiscordRequest('GET',`/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`),
-    guardianDiscordRequest('GET',`/guilds/${encodeURIComponent(guildId)}/roles`)
-  ]);
-  if(!memberResult.ok){const status=memberResult.status===404?404:400;return res.status(status).json({ok:false,error:memberResult.status===404?'That Discord user is not a member of the configured server.':memberResult.error||'Unable to fetch Discord member'})}
-  if(!rolesResult.ok)return res.status(400).json({ok:false,error:rolesResult.error||'Unable to fetch Discord server roles'});
-  const member=memberResult.data||{},du=member.user||{};
-  const roleLookup=new Map((rolesResult.data||[]).map(r=>[String(r.id),r]));
-  const discordRoles=(member.roles||[]).map(id=>roleLookup.get(String(id))).filter(Boolean).map(r=>({id:String(r.id),name:String(r.name),color:Number(r.color||0),position:Number(r.position||0)})).sort((a,b)=>b.position-a.position);
-  u.discordUserId=discordUserId;
-  u.discordProfile={userId:discordUserId,username:String(du.username||''),globalName:String(du.global_name||''),nickname:String(member.nick||''),avatar:du.avatar?String(du.avatar):'',joinedAt:member.joined_at||null,roles:discordRoles,syncedAt:new Date().toISOString()};
-  guardianSaveUsers();
-  guardianAdminAuditLog(req.guardianAdmin.username,'DISCORD_MEMBER_PROFILE_SYNCED',{username:u.username,discordUserId,roleCount:discordRoles.length});
-  res.json({ok:true,discordProfile:u.discordProfile,user:guardianUserPublicProfile(u)});
+app.get('/api/admin/discord/member/:username',guardianRequireAdmin('settings.view'),async(req,res)=>{
+ const u=guardianAdminUsers.get(String(req.params.username||''));
+ if(!u)return res.status(404).json({ok:false,error:'Member not found'});
+ const guildId=String(guardianDiscord.guildId||'').trim(),discordUserId=String(u.discordUserId||'').trim();
+ if(!guildId||!discordUserId)return res.json({ok:true,linked:!!discordUserId,roles:[],message:!discordUserId?'No Discord account linked':'Discord server is not configured'});
+ const [memberResult,rolesResult]=await Promise.all([
+  guardianDiscordRequest('GET',`/guilds/${guildId}/members/${discordUserId}`),
+  guardianDiscordRequest('GET',`/guilds/${guildId}/roles`)
+ ]);
+ if(!memberResult.ok)return res.json({ok:true,linked:true,found:false,roles:[],message:memberResult.status===404?'Member is not in the configured Discord server':(memberResult.error||'Unable to load Discord member')});
+ const roleMap=new Map((rolesResult.data||[]).map(r=>[String(r.id),r]));
+ const roles=(memberResult.data?.roles||[]).map(id=>roleMap.get(String(id))).filter(Boolean).map(r=>({id:r.id,name:r.name,color:r.color,position:r.position})).sort((a,b)=>b.position-a.position);
+ res.json({ok:true,linked:true,found:true,username:memberResult.data?.user?.username||'',nickname:memberResult.data?.nick||'',roles});
 });
+
 app.post('/api/admin/announcements/:id/discord',guardianRequireAdmin('settings.edit'),async(req,res)=>{const a=guardianAnnouncements.find(x=>x.id===req.params.id);if(!a)return res.status(404).json({ok:false,error:'Announcement not found'});const channelId=String(req.body?.channelId||a.discordChannelId||guardianDiscord.staffChannelId||guardianDiscord.patrolChannelId||'');if(!channelId)return res.status(400).json({ok:false,error:'Choose a Discord channel first'});const colors={info:0x1e73ff,important:0xf39c12,urgent:0xe74c3c};const result=await guardianDiscordSend(channelId,{embeds:[guardianDiscordEmbed(a.title,a.body,{color:colors[a.priority]||colors.info,fields:[{name:'Audience',value:String(a.audience||'all').toUpperCase(),inline:true},{name:'Priority',value:String(a.priority||'info').toUpperCase(),inline:true}]})]});if(!result.ok)return res.status(400).json({ok:false,error:result.error||'Discord send failed'});a.discordChannelId=channelId;a.discordSentAt=new Date().toISOString();guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);guardianAdminAuditLog(req.guardianAdmin.username,'ANNOUNCEMENT_SENT_DISCORD',{announcementId:a.id,channelId});res.json({ok:true})});
 app.get('/api/community/training',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user||String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.json({ok:true,sessions:[]});res.json({ok:true,sessions:guardianTraining.filter(x=>x.published!==false).map(t=>({...t,booked:(t.bookings||[]).includes(user.username)}))})});
 app.post('/api/community/training/:id/book',(req,res)=>{const {session,user}=guardianV46User(req);if(!session||!user)return res.status(401).json({ok:false,error:'Sign in required'});if(String(user.whitelistStatus||'').toLowerCase()!=='approved')return res.status(403).json({ok:false,error:'Whitelist approval required'});const t=guardianTraining.find(x=>x.id===req.params.id);if(!t)return res.status(404).json({ok:false,error:'Training not found'});const held=(user.qualifications||[]).map(q=>typeof q==='string'?q:q.id||q.name);const missing=(t.prerequisites||[]).filter(id=>!held.includes(id)&&!held.some(h=>String(h).toLowerCase()===String((guardianQualifications.find(q=>q.id===id)||{}).name||id).toLowerCase()));if(missing.length)return res.status(403).json({ok:false,error:'Missing prerequisite qualifications: '+missing.map(id=>(guardianQualifications.find(q=>q.id===id)||{}).name||id).join(', ')});if(t.bookingManuallyClosed===true||(t.bookingClosesAt&&Date.now()>new Date(t.bookingClosesAt).getTime()))return res.status(409).json({ok:false,error:'Booking has closed'});t.bookings=Array.isArray(t.bookings)?t.bookings:[];if(t.maxSlots&&t.bookings.length>=Number(t.maxSlots)&&!t.bookings.includes(user.username))return res.status(409).json({ok:false,error:'Training is full'});if(!t.bookings.includes(user.username))t.bookings.push(user.username);guardianWriteJson(guardianTrainingFile,guardianTraining);guardianAdminAuditLog(user.username,'TRAINING_BOOKED',{trainingId:t.id});res.json({ok:true})});
