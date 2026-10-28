@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardian Operations</title>
+<link rel="stylesheet" href="/control.css">
+<style id="guardianCoreBadgeStyle">
+#guardianCoreBadge{position:fixed;left:12px;bottom:10px;z-index:99999;padding:6px 9px;border:1px solid #496879;border-radius:4px;background:#061923ef;color:#c7dce7;font:800 9px Arial,sans-serif;letter-spacing:.05em;box-shadow:0 3px 15px #0008}
+#guardianCoreBadge[data-mode="fivem"]{border-color:#2d7a59;color:#7be0ad}
+#guardianCoreBadge[data-mode="standalone"]{border-color:#947326;color:#f1d075}
+#guardianCoreBadge[data-mode="offline"]{border-color:#8b3943;color:#ff9ba6}
+</style></head>
+<body>
+<header class="masthead">
+  <div class="identity">
+    <div class="crest">G</div>
+    <div><strong>GUARDIAN OPERATIONS</strong><span>FIRE & RESCUE COMMAND PLATFORM</span></div>
+  </div>
+  <nav class="modeNav">
+    <a href="/control/" id="controlMode">CONTROL CENTRE</a>
+    <a href="/mdt/" id="mdtMode">PLAYER MDT</a>
+  </nav>
+  <div class="linkState"><i id="liveDot"></i><span id="liveText">SERVER LINK</span></div>
+</header>
+
+<div id="controlApp" class="app hidden">
+  <aside class="rail">
+    <div class="sectionLabel">OPERATIONS</div>
+    <button data-view="overview" class="railBtn active">Overview</button>
+    <button data-view="map" class="railBtn">Map</button>
+    <button data-view="incidents" class="railBtn">Incidents <b id="incidentBadge">0</b></button>
+    <button data-view="units" class="railBtn">Appliances</button>
+    <button data-view="calls" class="railBtn">999 Queue <b id="callBadge">0</b></button>
+    <button data-view="messages" class="railBtn">Messages</button>
+    <button data-view="radio" class="railBtn">Radio <b id="radioCallBadge">0</b></button>
+    <button data-view="vehicles" class="railBtn">Vehicle MDTs</button>
+    <div class="sectionLabel">RESOURCES</div>
+    <button data-view="stations" class="railBtn">Stations</button>
+    <button data-view="cover" class="railBtn">Standby Cover</button>
+    <div class="railBottom">
+      <div class="shiftLabel">CONTROL POSITION</div>
+      <strong>Web Control</strong>
+      <span id="lastSync">Awaiting sync</span>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <section id="view-overview" class="view active">
+      <div class="pageHeader">
+        <div><span class="eyebrow">LIVE COMMAND OVERVIEW</span><h1>Control Centre</h1><p>Operational picture across incidents, appliances and emergency calls.</p></div>
+        <button class="primary" id="openCreate">NEW INCIDENT</button>
+      </div>
+      <div class="metrics">
+        <article><span>OPEN INCIDENTS</span><strong id="mIncidents">0</strong><small>Currently active</small></article>
+        <article><span>AVAILABLE APPLIANCES</span><strong id="mAvailable">0</strong><small>Ready for mobilisation</small></article>
+        <article><span>MOBILE</span><strong id="mMobile">0</strong><small>Travelling / committed</small></article>
+        <article><span>999 QUEUE</span><strong id="mCalls">0</strong><small>Awaiting control action</small></article>
+      </div>
+      <div class="cols">
+        <section class="panel">
+          <header><div><span class="panelKicker">INCIDENT MANAGEMENT</span><h2>Active Incidents</h2></div><button class="textBtn" data-jump="incidents">OPEN LIST</button></header>
+          <div id="overviewIncidents" class="rows"></div>
+        </section>
+        <section class="panel">
+          <header><div><span class="panelKicker">FLEET STATUS</span><h2>Live Appliances</h2></div><button class="textBtn" data-jump="units">FULL BOARD</button></header>
+          <div id="overviewUnits" class="rows"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-map" class="view">
+      <div class="pageHeader">
+        <div>
+          <span class="eyebrow">OPERATIONAL MAPPING</span>
+          <h1>Control Map</h1>
+          <p>Fire stations and 999 calls plotted using Guardian postal coordinates.</p>
+        </div>
+        <div class="mapLegend">
+          <span><i class="legendStation"></i> Fire Station</span>
+          <span><i class="legendCall"></i> 999 Call</span><span><i class="legendIncident"></i> Incident</span>
+        </div>
+      </div>
+
+      <div class="controlMapLayout">
+        <section class="panel controlMapPanel">
+          <div class="controlMapToolbar" aria-label="Map controls">
+            <button type="button" id="mapZoomOut" class="mapToolBtn" title="Zoom out">−</button>
+            <span id="mapZoomLabel" class="mapZoomLabel">100%</span>
+            <button type="button" id="mapZoomIn" class="mapToolBtn" title="Zoom in">+</button>
+            <button type="button" id="mapZoomReset" class="mapToolBtn mapResetBtn" title="Fit full map">FIT MAP</button>
+            
+          </div>
+          <div id="controlMapViewport" class="controlMapViewport">
+            <div id="controlMapCanvas" class="controlMapCanvas">
+              <img src="/control/assets/postal_map.png" class="controlMapImage" alt="Postal map">
+              <div id="controlMapOverlay" class="controlMapOverlay"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="controlMapSidebar">
+          <section class="panel mapSidePanel">
+            <header><div><span class="panelKicker">LIVE INCIDENT INTAKE</span><h2>999 Calls</h2></div></header>
+            <div id="mapCallList" class="mapCallList"></div>
+          </section>
+
+          <section class="panel mapSidePanel">
+            <header><div><span class="panelKicker">MAP DETAILS</span><h2>Selection</h2></div></header>
+            <div id="mapSelection" class="mapSelection">
+              <div class="emptyState"><strong>Select a marker</strong><span>Choose a station or 999 call from the map.</span></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="view-incidents" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">INCIDENT MANAGEMENT</span><h1>Incidents & Logs</h1><p>Manage live incidents and retain a searchable closed incident archive.</p></div><button class="primary" id="openCreate2">NEW INCIDENT</button></div>
+      <div class="incidentCommandSummary" id="incidentCommandSummary">
+        <div><b id="icsActive">0</b><span>Active incidents</span></div><div><b id="icsImmediate">0</b><span>Immediate</span></div><div><b id="icsUnits">0</b><span>Units committed</span></div><div><b id="icsClosed">0</b><span>Closed logs</span></div>
+      </div>
+      <div class="incidentArchiveToolbar">
+        <div class="segmented"><button id="incidentModeActive" class="active">ACTIVE</button><button id="incidentModeClosed">CLOSED LOGS</button></div>
+        <input id="incidentSearch" placeholder="Search number, type, location, callsign or closure outcome">
+        <select id="incidentPriorityFilter"><option value="">All priorities</option><option>Immediate</option><option>Prompt</option><option>Non Emergency</option></select>
+      </div>
+      <div class="incidentWorkspace">
+        <div class="panel incidentListPanel"><header><div><span class="panelKicker" id="incidentListKicker">LIVE</span><h2 id="incidentListTitle">Active Incidents</h2></div><span id="incidentListCount" class="boardSummary"></span></header><div id="incidentList" class="incidentList"></div></div>
+        <div class="panel incidentDetailPanel" id="incidentDetail"><div class="emptyState"><strong>No incident selected</strong><span>Select an incident from the list to view operational details.</span></div></div>
+      </div>
+    </section>
+
+    <section id="view-units" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">RESOURCE MANAGEMENT</span><h1>Appliance Board</h1><p>Live signed-on units and configured fleet.</p></div></div>
+      <section class="panel"><div class="boardToolbar"><input id="unitSearch" placeholder="Search callsign, station or type"><select id="unitLiveFilter"><option value="all">All appliances</option><option value="live">Signed on only</option><option value="off">Off duty only</option></select><select id="unitStatusFilter"><option value="">All statuses</option></select><span id="unitBoardSummary" class="boardSummary"></span></div><div class="table" id="unitTable"></div></section>
+    </section>
+
+    <section id="view-calls" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">EMERGENCY CALL HANDLING</span><h1>999 Queue</h1><p>Incoming calls waiting for control action.</p></div></div>
+      <section class="panel"><div id="callsList" class="rows"></div></section>
+    </section>
+
+    <section id="view-messages" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">OPERATIONAL MESSAGING</span><h1>Messages</h1><p>Control-to-MDT and MDT-to-Control traffic.</p></div></div>
+      <section class="panel messagePanel"><div id="messageList"></div><div class="compose"><select id="messageTarget"><option value="ALL">All units</option></select><input id="messageText" placeholder="Type operational message"><button class="primary" id="sendMessage">SEND</button></div></section>
+    </section>
+
+    <section id="view-radio" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">GUARDIAN RADIO CONTROL</span><h1>Radio Channels &amp; Calls</h1><p>Open Guardian IP channels, manage the directory and answer vehicle radio calls.</p></div><div class="radioControlState"><span id="radioControlDot"></span><strong id="radioControlState">CONNECTING</strong></div></div>
+      <div class="radioControlLayout">
+        <section class="panel radioCallsPanel"><header><div><span class="panelKicker">INCOMING RADIO</span><h2>Call Queue</h2></div></header><div id="radioIncomingCalls" class="radioIncomingCalls"></div><div id="radioActiveCall" class="radioActiveCall"></div><audio id="radioControlRemote" autoplay></audio></section>
+        <section class="panel radioDirectoryPanel"><header><div><span class="panelKicker">LIVE RADIO NETWORK</span><h2>Channels</h2></div><button id="radioAddChannel" class="secondary">ADD CHANNEL</button></header><div id="radioDirectoryAdmin" class="radioDirectoryAdmin"></div></section>
+      </div>
+    </section>
+
+    <section id="view-stations" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">RESOURCE DIRECTORY</span><h1>Stations</h1><p>Configured appliance locations.</p></div></div>
+      <section class="panel"><div id="stationGrid" class="stationGrid"></div></section>
+    </section>
+
+    <section id="view-cover" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">DYNAMIC COVER MANAGEMENT</span><h1>Standby & Station Cover</h1><p>Identify stations without immediately available appliances and coordinate standby moves.</p></div></div>
+      <div class="coverLegend"><span><i class="coverDot green"></i> Good cover</span><span><i class="coverDot amber"></i> Limited cover</span><span><i class="coverDot red"></i> No immediately available appliance</span></div>
+      <section class="panel"><div id="coverSummary" class="coverSummary"></div></section>
+      <section class="panel coverMovesPanel"><header><div><span class="panelKicker">CONTROL RECOMMENDATIONS</span><h2>Standby Suggestions</h2></div></header><div id="coverSuggestions" class="rows"></div></section>
+    </section>
+
+    <section id="view-vehicles" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">IRL VEHICLE OPERATIONS</span><h1>Vehicle MDT Assignments</h1><p>Assign a callsign to a Guardian username. The vehicle cannot choose or override it.</p></div></div>
+      <section class="panel"><header><div><span class="panelKicker">CALLSIGN AUTHORITY</span><h2>Assign vehicle</h2></div></header><div class="compose"><input id="vehicleUsername" placeholder="Guardian username"><input id="vehicleCallsign" placeholder="Callsign e.g. K02P1"><button class="primary" id="vehicleAssign">ASSIGN</button><button class="secondary" id="vehicleClear">CLEAR</button></div><div id="vehicleAssignments" class="rows"></div></section>
+    </section>
+  </main>
+</div>
+
+<div id="mdtApp" class="mdtApp hidden">
+  <aside class="mdtSide">
+    <div class="terminalTitle"><span>PLAYER TERMINAL</span><strong>Mobile Data Terminal</strong></div>
+    <label class="fieldLabel">ACTIVE CALLSIGN<select id="mdtCallsign"><option value="">Select callsign</option></select></label>
+    <div class="mdtNav">
+      <button class="active" data-mdtview="status">Status</button>
+      <button data-mdtview="incidents">Incidents <b id="mdtIncidentBadge">0</b></button>
+      <button data-mdtview="messages">Messages</button>
+    </div>
+    <div class="terminalFooter"><span>LINK</span><strong id="mdtLink">CONNECTED</strong></div>
+  </aside>
+  <main class="mdtWork">
+    <section id="mdt-status" class="mdtView active">
+      <div class="pageHeader compact"><div><span class="eyebrow">APPLIANCE STATUS</span><h1 id="mdtTitle">Select your callsign</h1><p>Update appliance availability and movement status.</p></div><div class="statusPill" id="mdtCurrentStatus">UNSET</div></div>
+      <div class="statusGrid" id="statusGrid"></div>
+      <button class="primary wide" id="sendStatus">SEND STATUS TO CONTROL</button>
+    </section>
+    <section id="mdt-incidents" class="mdtView">
+      <div class="pageHeader compact"><div><span class="eyebrow">INCIDENT INFORMATION</span><h1>Assigned Incidents</h1><p>Incidents assigned to the selected callsign. Nothing opens automatically.</p></div></div>
+      <div class="mdtIncidentLayout"><div class="panel"><div id="mdtIncidentList" class="incidentList"></div></div><div class="panel" id="mdtIncidentDetail"><div class="emptyState"><strong>No incident selected</strong><span>Click an assigned incident to view it.</span></div></div></div>
+    </section>
+    <section id="mdt-messages" class="mdtView">
+      <div class="pageHeader compact"><div><span class="eyebrow">CONTROL MESSAGES</span><h1>Messages</h1><p>Operational traffic with Control.</p></div></div>
+      <section class="panel messagePanel"><div id="mdtMessageList"></div><div class="compose"><input id="mdtMessageText" placeholder="Message Control"><button class="primary" id="mdtSendMessage">SEND</button></div></section>
+    </section>
+
+    <section id="view-cover" class="view">
+      <div class="pageHeader"><div><span class="eyebrow">DYNAMIC COVER MANAGEMENT</span><h1>Standby & Station Cover</h1><p>Identify stations without immediately available appliances and coordinate standby moves.</p></div></div>
+      <div class="coverLegend"><span><i class="coverDot green"></i> Good cover</span><span><i class="coverDot amber"></i> Limited cover</span><span><i class="coverDot red"></i> No immediately available appliance</span></div>
+      <section class="panel"><div id="coverSummary" class="coverSummary"></div></section>
+      <section class="panel coverMovesPanel"><header><div><span class="panelKicker">CONTROL RECOMMENDATIONS</span><h2>Standby Suggestions</h2></div></header><div id="coverSuggestions" class="rows"></div></section>
+    </section>
+  </main>
+</div>
+
+<div id="incidentModal" class="modal hidden">
+  <div class="modalCard">
+    <header><div><span class="eyebrow">CREATE INCIDENT</span><h2>New Incident</h2></div><button id="closeModal">×</button></header>
+    <div class="formGrid">
+      <label>Incident type<input id="fType" placeholder="e.g. Dwelling fire"></label>
+      <label>Priority<select id="fPriority"><option>Immediate</option><option>Urgent</option><option>Routine</option></select></label>
+      <label>Address<input id="fAddress"></label>
+      <label>Postal<input id="fPostal"></label>
+      <label>Caller<input id="fCaller"></label>
+      <label class="span2">Notes<textarea id="fNotes"></textarea></label>
+    </div>
+    <div class="dispatchOptions">
+      <label><input type="checkbox" id="fMDT" checked> MDT</label>
+      <label><input type="checkbox" id="fTurnout"> Turnout</label>
+      <label><input type="checkbox" id="fPager"> Pager</label>
+    </div>
+    <footer><button class="secondary" id="cancelCreate">CANCEL</button><button class="primary" id="createIncident">CREATE INCIDENT</button></footer>
+  </div>
+</div>
+<script src="/control_auth.js?v=41"></script>
+<script src="/control.js"></script>
+<script src="/control_radio.js?v=73"></script>
+<script src="/core_status.js" defer></script><a href="/settings.html" style="position:fixed;right:12px;top:12px;z-index:9999;background:#0d2a3a;color:#eaf7ff;border:1px solid #3b667d;border-radius:5px;padding:8px 11px;text-decoration:none;font:800 10px Arial">SETTINGS</a></body></html>
