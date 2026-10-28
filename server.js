@@ -235,13 +235,21 @@ function guardianAdminReadSession(req){
   }catch{return null}
 }
 const guardianSettingsRouteKeys=[
-  [/^\/api\/admin\/(?:stations|station-map)/,'stations'],[/^\/api\/admin\/appliances/,'appliances'],
-  [/^\/api\/admin\/(?:config|baseline|operational|export)/,'config'],[/^\/api\/admin\/users/,'users'],
-  [/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
-  [/^\/api\/admin\/services/,'services'],[/^\/api\/admin\/discord/,'discord'],[/^\/api\/admin\/qualifications/,'training'],[/^\/api\/admin\/training/,'training'],
-  [/^\/api\/admin\/fleet/,'fleet'],[/^\/api\/admin\/patrols/,'patrols'],[/^\/api\/admin\/patrol-templates/,'templates'],
-  [/^\/api\/admin\/announcements/,'announcements'],[/^\/api\/admin\/guides/,'guides'],[/^\/api\/admin\/role-permissions/,'permissions'],
-  [/^\/api\/admin\/audit/,'audit'],[/^\/api\/admin\/radio-config/,'radio'],[/^\/api\/admin\/radio/,'radio']
+  // Keep specific routes ahead of broad routes so every section toggle maps consistently.
+  [/^\/api\/admin\/role-permissions(?:\/|$)/,'permissions'],
+  [/^\/api\/admin\/(?:stations|station-dashboard)(?:\/|$)/,'stations'],[/^\/api\/admin\/station-map(?:\/|$)/,'map'],
+  [/^\/api\/admin\/appliances(?:\/|$)/,'appliances'],
+  [/^\/api\/admin\/(?:config|baseline|operational)(?:\/|$)/,'config'],
+  [/^\/api\/admin\/export(?:\/|$)/,'backup'],[/^\/api\/admin\/import(?:\/|$)/,'backup'],[/^\/api\/admin\/snapshots(?:\/|$)/,'backup'],
+  [/^\/api\/admin\/users(?:\/|$)/,'users'],[/^\/api\/admin\/personnel(?:\/|$)/,'governance'],[/^\/api\/admin\/promotion-pathways(?:\/|$)/,'governance'],
+  [/^\/api\/admin\/applications(?:\/|$)/,'applications'],
+  [/^\/api\/admin\/forms(?:\/|$)/,'formsbuilder'],[/^\/api\/admin\/form-submissions(?:\/|$)/,'formsbuilder'],
+  [/^\/api\/admin\/services(?:\/|$)/,'services'],[/^\/api\/admin\/discord(?:\/|$)/,'discord'],[/^\/api\/admin\/fivem(?:\/|$)/,'fivem'],
+  [/^\/api\/admin\/qualifications(?:\/|$)/,'training'],[/^\/api\/admin\/training(?:\/|$)/,'training'],
+  [/^\/api\/admin\/fleet(?:\/|$)/,'fleet'],[/^\/api\/admin\/patrol-templates(?:\/|$)/,'templates'],[/^\/api\/admin\/templates(?:\/|$)/,'templates'],[/^\/api\/admin\/patrols(?:\/|$)/,'patrols'],
+  [/^\/api\/admin\/announcements(?:\/|$)/,'announcements'],[/^\/api\/admin\/guides(?:\/|$)/,'guides'],
+  [/^\/api\/admin\/audit(?:\/|$)/,'audit'],[/^\/api\/admin\/radio-config(?:\/|$)/,'radio'],[/^\/api\/admin\/radio(?:\/|$)/,'radio'],
+  [/^\/api\/admin\/platform(?:\/|$)/,'platform'],[/^\/api\/admin\/game-server(?:\/|$)/,'platform']
 ];
 function guardianSettingsKeyForRequest(req){
   const url=String(req.path||req.originalUrl||'').split('?')[0];
