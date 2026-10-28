@@ -123,3 +123,6 @@ select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(
 .guardian-gtav-pin{background:transparent;border:0}
 /* Granular role access: hidden Settings sections must remain hidden even when nav styles apply. */
 .nav[hidden]{display:none!important}
+
+/* FiveM Fleet & Duty upgrade */
+.guardianFleetUpgrade .sectionHead{align-items:center}.guardianFleetUpgrade .guardianFleetMetrics{margin:14px 0}.guardianFleetUpgrade .guardianFleetTools{grid-template-columns:minmax(260px,1fr) 220px}.guardianFleetUpgrade table{min-width:1120px}.guardianFleetUpgrade td input,.guardianFleetUpgrade td select{min-width:105px;width:100%;box-sizing:border-box}.guardianFleetUpgrade td input[type=checkbox]{width:18px;min-width:18px;height:18px;accent-color:#1599df}.guardianFleetUpgrade .saveBar .muted{display:block;font-size:11px;margin-top:4px}.guardianFleetUpgrade .emptyState{padding:22px;text-align:center;color:#8eb8ce}@media(max-width:760px){.guardianFleetUpgrade .guardianFleetTools{grid-template-columns:1fr}.guardianFleetUpgrade .saveBar.compact{align-items:flex-start;flex-direction:column}}
