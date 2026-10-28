@@ -234,11 +234,37 @@ function guardianAdminReadSession(req){
     return session;
   }catch{return null}
 }
-function guardianAdminCan(role,permission){
+const guardianSettingsRouteKeys=[
+  [/^\/api\/admin\/(?:stations|station-map)/,'stations'],[/^\/api\/admin\/appliances/,'appliances'],
+  [/^\/api\/admin\/(?:config|baseline|operational|export)/,'config'],[/^\/api\/admin\/users/,'users'],
+  [/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
+  [/^\/api\/admin\/services/,'services'],[/^\/api\/admin\/discord/,'discord'],[/^\/api\/admin\/qualifications/,'training'],[/^\/api\/admin\/training/,'training'],
+  [/^\/api\/admin\/fleet/,'fleet'],[/^\/api\/admin\/patrols/,'patrols'],[/^\/api\/admin\/patrol-templates/,'templates'],
+  [/^\/api\/admin\/announcements/,'announcements'],[/^\/api\/admin\/guides/,'guides'],[/^\/api\/admin\/role-permissions/,'permissions'],
+  [/^\/api\/admin\/audit/,'audit'],[/^\/api\/admin\/radio-config/,'radio'],[/^\/api\/admin\/radio/,'radio']
+];
+function guardianSettingsKeyForRequest(req){
+  const url=String(req.path||req.originalUrl||'').split('?')[0];
+  for(const [re,key] of guardianSettingsRouteKeys)if(re.test(url))return 'setting_'+key;
+  return null;
+}
+function guardianHasGranularSettings(p){return !!p&&Object.keys(p).some(k=>k.startsWith('setting_'));}
+function guardianAdminCan(role,permission,req=null){
   if(role==="owner")return true;
+  const p=(typeof guardianRolePermissions!=="undefined"&&guardianRolePermissions&&guardianRolePermissions[role])||null;
+  // When a role has granular settings permissions, these take precedence over the old
+  // all-or-nothing Settings switch, including for admin/dev roles.
+  if((permission==='settings.view'||permission==='settings.edit')&&p&&guardianHasGranularSettings(p)){
+    const url=String(req?.path||req?.originalUrl||'').split('?')[0];
+    // Shared read-only bootstrap data is needed to initialise the shell; section-specific
+    // reads and every write remain checked against their own section key below.
+    if(permission==='settings.view'&&req?.method==='GET'&&/^\/api\/admin\/(?:config|operational|baseline)$/.test(url))return Object.keys(p).some(k=>k.startsWith('setting_')&&p[k]===true);
+    const key=guardianSettingsKeyForRequest(req);
+    if(key)return !!p[key] && (permission!=='settings.edit'||p[key+'_edit']!==false);
+    return !!p.settings;
+  }
   if(role==="admin")return permission!=="owner.manage";
   if(role==="dev")return !["owner.manage","users.delete","security.manage"].includes(permission);
-  const p=(typeof guardianRolePermissions!=="undefined"&&guardianRolePermissions&&guardianRolePermissions[role])||null;
   if(p){
     if(permission==="settings.view")return !!p.settings||!!p.staff;
     if(permission==="settings.edit")return !!p.settings;
@@ -259,7 +285,7 @@ function guardianRequireAdmin(permission="settings.view"){
   return (req,res,next)=>{
     const s=guardianAdminReadSession(req);
     if(!s)return res.status(401).json({ok:false,error:"Admin login required"});
-    if(!guardianAdminCan(s.role,permission))return res.status(403).json({ok:false,error:"Permission denied"});
+    if(!guardianAdminCan(s.role,permission,req))return res.status(403).json({ok:false,error:"Permission denied for this Guardian section"});
     req.guardianAdmin=s;
     next();
   };

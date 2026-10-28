@@ -1,0 +1,15 @@
+GUARDIAN ROLE & PERMISSIONS UPDATE
+
+What changed
+- Reworked the Roles & Permissions page into a role rail and grouped section cards.
+- Roles can be given access to individual Settings sections instead of only the previous all-or-nothing Settings switch.
+- The sidebar hides sections that are not enabled for a role after granular permissions are saved.
+- The server applies section-level checks to mapped admin API route groups, including writes.
+- Legacy roles are shown with their existing broad Settings access when the old Settings permission was enabled; saving the new layout records granular section flags.
+- Owner role remains unrestricted to prevent accidental lockout.
+
+Important limits
+- This update does not change your live Render site automatically. It must be committed/pushed and deployed.
+- The section permission map is applied to the route groups explicitly listed in server.js. A production test of every screen/action is still required before relying on this for security-sensitive access.
+- Shared GET bootstrap endpoints (/api/admin/config, /api/admin/operational, /api/admin/baseline) remain available to roles with at least one granular section enabled because the current Settings shell loads these when starting. Editing endpoints and mapped section endpoints remain separately guarded. This is a known limitation: these shared endpoints should be split into per-section data endpoints in a future hardening pass.
+- Back up the live data directory before deploying. Do not replace live data files with the sample data in this ZIP.

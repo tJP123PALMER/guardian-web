@@ -121,3 +121,5 @@ select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(
 .guardianModal{width:min(540px,100%);padding:22px;border:1px solid #31596b;border-radius:18px;background:linear-gradient(145deg,#102634,#0a1722);box-shadow:0 24px 90px #0009;color:#e8f5fb}
 .guardianModal h3{margin:4px 0 8px}.guardianModal p{color:#9bb7c7;margin:0}.guardianModal .sectionHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.guardianModal [data-choice-close]{font-size:22px;min-width:38px}.guardianChoiceLabel{display:grid;gap:8px;margin:24px 0}.guardianChoiceLabel select{width:100%;min-height:46px;padding:10px;border-radius:9px;background:#081923;color:#e8f5fb;border:1px solid #31596b}.guardianModal .saveBar{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .guardian-gtav-pin{background:transparent;border:0}
+/* Granular role access: hidden Settings sections must remain hidden even when nav styles apply. */
+.nav[hidden]{display:none!important}

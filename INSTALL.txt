@@ -1,15 +1,11 @@
-GUARDIAN OPERATIONS — CLEAN WEBSITE PACKAGE
+GUARDIAN OPERATIONS — CLEAN WEBSITE SOURCE
 
-This package contains the website source, required public assets and FiveM resource folders, plus your original backup in RECOVERY_BACKUP. Historical update notes and Git metadata are omitted. node_modules is not included.
+1. Make a fresh backup of the current live Guardian website and its data/configuration before changing anything.
+2. Keep RECOVERY_BACKUP separate; do not copy its JSON over the live data folder automatically.
+3. Copy the source files into your existing guardian-web Git repository. Do not replace the existing data folder unless you have compared and merged it deliberately.
+4. In GitHub Desktop, inspect every changed file. Commit with a clear message such as: Granular Settings permissions redesign.
+5. Push origin and wait for Render to deploy the connected main branch.
+6. Test login, vehicle list, settings navigation, roles, training, map, dispatch, FiveM status, and backup/export before giving any staff new access.
 
-IMPORTANT: The recovery JSON is kept separate and is NOT automatically copied over live data. Back up the current live site before restoring.
-
-Deploy (GitHub + Render):
-1. Download/extract this ZIP.
-2. Replace the files in your Guardian GitHub repository with the contents of this folder (keep the folder contents, not an extra nested folder).
-3. Commit and push to the branch Render deploys.
-4. Wait for Render deployment to finish.
-5. In Guardian Settings > Backup, export a fresh backup of the current site before importing any older backup.
-6. If restoring, use RECOVERY_BACKUP/guardian-full-backup.json via Settings > Backup. Confirm the restore reports success, then refresh Settings > Duty & Fleet and choose All Services.
-
-Included changes from the cumulative source: GTA V tile-map implementation, existing role/permission designer retained, training/qualification UI cleanup, and backup recovery files. The map depends on an external tile host. The code has not been deployed to your Render instance or verified against your live database from this package build. Role authorization and live FiveM tracking still require testing in your environment.
+Roles & Permissions update details are in ROLE_PERMISSIONS_UPDATE.txt.
+This source ZIP has not been deployed to Render and has not been tested against your live production data.
