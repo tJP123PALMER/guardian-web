@@ -983,7 +983,7 @@ function guardianAudienceAllowed(form,user){
 }
 function guardianSafeForm(form){return {id:form.id,title:form.title,description:form.description||"",category:form.category||"Forms",icon:form.icon||"▤",instructions:form.instructions||"",confirmationText:form.confirmationText||"Your form has been submitted.",audience:form.audience||"member",published:form.published!==false,requiresApproval:form.requiresApproval!==false,allowRepeat:form.allowRepeat!==false,fields:Array.isArray(form.fields)?form.fields:[]}}
 async function guardianDiscordRequest(method,url,body){
-  const token=String(process.env.DISCORD_BOT_TOKEN||"").trim();
+  const token=String(process.env.DISCORD_BOT_TOKEN||process.env.DISCORD_TOKEN||"").trim();
   if(!token)return {ok:false,skipped:true,error:"DISCORD_BOT_TOKEN is not configured"};
   try{
     const r=await fetch(`https://discord.com/api/v10${url}`,{method,headers:{"Authorization":`Bot ${token}`,"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
@@ -1219,7 +1219,7 @@ app.post("/api/admin/form-submissions/:id/review",guardianRequireAdmin("settings
 app.get("/api/admin/services",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,services:guardianServices}));
 app.post("/api/admin/services",guardianRequireAdmin("settings.edit"),(req,res)=>{if(!Array.isArray(req.body?.services))return res.status(400).json({ok:false,error:"Services required"});guardianServices=req.body.services;guardianSaveServices();guardianAdminAuditLog(req.guardianAdmin.username,"SERVICE_DIRECTORY_SAVED",{count:guardianServices.length});res.json({ok:true,services:guardianServices})});
 app.post("/api/admin/users/:username/community-profile",guardianRequireAdmin("settings.edit"),(req,res)=>{const u=guardianAdminUsers.get(String(req.params.username||""));if(!u)return res.status(404).json({ok:false,error:"User not found"});u.membershipType=["member","non-member"].includes(req.body?.membershipType)?req.body.membershipType:u.membershipType||"non-member";u.discordUserId=String(req.body?.discordUserId||u.discordUserId||"");u.serviceAssignments=Array.isArray(req.body?.serviceAssignments)?req.body.serviceAssignments:u.serviceAssignments||[];u.qualifications=Array.isArray(req.body?.qualifications)?req.body.qualifications:u.qualifications||[];guardianSaveUsers();guardianAdminAuditLog(req.guardianAdmin.username,"COMMUNITY_PROFILE_UPDATED",{username:u.username,membershipType:u.membershipType});res.json({ok:true,user:guardianUserPublicProfile(u)})});
-app.get("/api/admin/discord",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,discord:guardianDiscord,status:{tokenConfigured:!!String(process.env.DISCORD_BOT_TOKEN||"").trim(),clientIdConfigured:!!String(process.env.DISCORD_CLIENT_ID||"").trim(),clientSecretConfigured:!!String(process.env.DISCORD_CLIENT_SECRET||"").trim()}}));
+app.get("/api/admin/discord",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,discord:guardianDiscord,status:{tokenConfigured:!!String(process.env.DISCORD_BOT_TOKEN||process.env.DISCORD_TOKEN||"").trim(),clientIdConfigured:!!String(process.env.DISCORD_CLIENT_ID||"").trim(),clientSecretConfigured:!!String(process.env.DISCORD_CLIENT_SECRET||"").trim()}}));
 app.post("/api/admin/discord",guardianRequireAdmin("settings.edit"),(req,res)=>{guardianDiscord={...guardianDiscord,...req.body};guardianSaveDiscord();guardianAdminAuditLog(req.guardianAdmin.username,"DISCORD_SETTINGS_SAVED");res.json({ok:true,discord:guardianDiscord})});
 app.get("/api/admin/discord/template",guardianRequireAdmin("settings.view"),(req,res)=>res.json({ok:true,template:guardianDiscordTemplate}));
 app.post("/api/admin/discord/provision",guardianRequireAdmin("settings.edit"),async(req,res)=>{const guildId=String(req.body?.guildId||guardianDiscord.guildId||"");const result=await guardianProvisionDiscordServer(guildId);if(!result.ok)return res.status(400).json(result);guardianAdminAuditLog(req.guardianAdmin.username,"DISCORD_SERVER_PROVISIONED",result.created);res.json(result)});
@@ -1367,7 +1367,7 @@ app.post('/api/admin/training/:id/bookings',guardianRequireAdmin('settings.edit'
  const member=guardianAdminUsers.get(username);if(!member)return res.status(404).json({ok:false,error:'User not found'});
  t.bookings=Array.isArray(t.bookings)?t.bookings:[];
  if(action==='remove')t.bookings=t.bookings.filter(x=>x!==username);else if(!t.bookings.includes(username))t.bookings.push(username);
- guardianWriteJson(guardianTrainingFile,guardianTraining);guardianAdminAuditLog(req.guardianAdmin.username,action==='remove'?'TRAINING_BOOKING_REMOVED':'TRAINING_BOOKING_ADDED',{trainingId:t.id,username});
+ guardianWriteJson(guardianTrainingFile,guardianTraining);guardianAdminAuditLog(req.guardianAdmin.username,action==='remove'?'TRAINING_BOOKING_REMOVED':(action==='resend'?'TRAINING_DM_RESEND_REQUESTED':'TRAINING_BOOKING_ADDED'),{trainingId:t.id,username});
  let notification={ok:true,skipped:true,message:'No DM sent for this action'};
  if(action!=='remove'&&req.body?.notify!==false){
   const discordUserId=String(member.discordUserId||'').trim();
@@ -1375,14 +1375,14 @@ app.post('/api/admin/training/:id/bookings',guardianRequireAdmin('settings.edit'
   else if(!String(process.env.DISCORD_BOT_TOKEN||'').trim())notification={ok:false,error:'DISCORD_BOT_TOKEN is missing from the server environment.'};
   else {
    const dm=await guardianDiscordRequest('POST','/users/@me/channels',{recipient_id:discordUserId});
-   if(!dm.ok||!dm.data?.id)notification={ok:false,error:`Could not open Discord DM: ${dm.error||'Discord returned no DM channel'}`};
+   if(!dm.ok||!dm.data?.id)notification={ok:false,error:`Could not open Discord DM${dm.status?` (HTTP ${dm.status})`:''}: ${dm.error||'Discord returned no DM channel'}. Confirm the bot is in the same server and the member allows direct messages.`};
    else {
     const baseUrl=String((guardianConfig.portal||{}).publicBaseUrl||'https://guardian-web-qmnz.onrender.com').replace(/\/$/,'');
     const when=t.startsAt?new Date(t.startsAt).toLocaleString('en-GB',{timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'}):'To be confirmed';
     const materials=(t.documents||[]).filter(d=>d.url).map(d=>`• [${String(d.title||'Course material').slice(0,150)}](${String(d.url).slice(0,800)})`).join('\n');
     const embed={embeds:[guardianDiscordEmbed(`🎓 Training assignment: ${t.title}`,`You have been booked or assigned to a Guardian training session. Please check the details below and review any course materials before attending.`,{color:0x168bd2,fields:[{name:'Service',value:(guardianServices.find(s=>s.id===t.serviceId)||{}).name||t.serviceId||'TBC',inline:true},{name:'Date & time',value:when,inline:true},{name:'Location',value:t.location||'To be confirmed',inline:true},{name:'Instructor',value:t.instructor||'To be confirmed',inline:true},{name:'Qualification',value:t.qualificationAwarded||(guardianQualifications.find(q=>q.id===t.qualificationId)||{}).name||'No qualification specified',inline:false},{name:'Course materials',value:materials?materials.slice(0,1024):'Sign in to Guardian to check available materials.',inline:false}]})],content:`Guardian training portal: ${baseUrl}/portal/#training`,allowed_mentions:{parse:[]}};
     const sent=await guardianDiscordRequest('POST',`/channels/${encodeURIComponent(dm.data.id)}/messages`,embed);
-    notification=sent.ok?{ok:true,message:'Training assignment DM sent',discordUserId}:{ok:false,error:`DM channel opened but message failed: ${sent.error||'Unknown Discord error'}`,status:sent.status};
+    notification=sent.ok?{ok:true,message:'Training assignment DM sent',discordUserId}:{ok:false,error:`DM channel opened but message failed${sent.status?` (HTTP ${sent.status})`:''}: ${sent.error||'Unknown Discord error'}. The member may have DMs disabled or blocked the bot.`,status:sent.status};
    }
   }
  }
