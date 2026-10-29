@@ -1,0 +1,38 @@
+GUARDIAN TICKET CLOSE / TRANSCRIPT / CATEGORY / WELCOME UPDATE
+
+WHAT THIS PATCH CHANGES
+- Ticket opening embed names the responding team based on the configured category access roles and global ticket staff roles.
+- The opening embed asks for detailed information and displays category-specific prompts for reports, appeals, applications, and development bugs.
+- Closing from Discord or the Guardian website captures the channel history into the website ticket record first, then deletes the Discord ticket channel.
+- The website retains the ticket, category, creator/player identity, source, status, priority, assigned staff, messages, attachments, closure details, and transcript metadata.
+- If Guardian cannot fetch the full Discord history, it refuses to delete the channel, to avoid losing the transcript. Fix bot View Channel / Read Message History / Manage Channels permissions and retry from the website.
+- The website ticket list includes category, creator, source, status and assigned staff, plus category/source/status filters and search by ticket number or player.
+- Closed tickets cannot be reopened after the channel has been deleted. The website keeps the archived transcript view.
+
+FILES TO REPLACE
+- server.js
+- public/settings.html
+- public/settings.js
+- public/guardian_control_centre.js
+- public/guardian_control_centre.css
+
+INSTALL
+1. Back up your current project and its data directory first.
+2. Extract this ZIP and replace the matching files at the same paths in your repository.
+3. Commit and push to the GitHub repository connected to Render.
+4. Wait for the deployment to finish.
+5. Hard-refresh the website with Ctrl+F5.
+6. Open a test ticket, send a few messages as the player and staff, then close it.
+7. Check Guardian Settings > Discord Tickets. The ticket should be Closed / Archived, with its conversation retained and the Discord channel deleted.
+
+DISCORD PERMISSIONS
+The bot needs access to the private ticket channel, View Channel, Read Message History, Send Messages, and Manage Channels. Transcript capture must complete before channel deletion; if reading history fails, Guardian deliberately keeps the channel rather than deleting without a transcript.
+
+PERSISTENCE NOTE
+Ticket history is saved by the existing app into data/guardian-tickets.json. Ensure the Render service's /data directory is backed by a persistent disk, or migrate the ticket store to a durable database, if these transcripts must survive redeploys and instance replacement. Keep regular backups.
+
+SAFETY NOTE
+Test with a disposable ticket first. Closing now deletes the Discord channel after archiving the history; the channel itself cannot be recovered from Discord. Never include bot tokens, API keys, passwords or cookies in ticket content.
+
+CHECKS
+Node syntax checks were run on server.js and public/guardian_control_centre.js. The changes still need an end-to-end test against your deployed Discord bot and Render service.
