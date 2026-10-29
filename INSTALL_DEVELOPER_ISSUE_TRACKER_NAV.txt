@@ -1,0 +1,20 @@
+GUARDIAN — DEVELOPER ISSUE TRACKER NAVIGATION FIX
+
+Why this patch is needed
+The Developer Issue Tracker API and renderer were added by the previous Backup & Recovery / Developer Issue Tracker patch, but the existing static Settings sidebar and the latest Roles & Permissions editor did not include the new 'issues' tab. As a result, the feature can exist in code but be difficult to open or grant to roles.
+
+FILES IN THIS PATCH
+- public/settings.html — adds Developer Issue Tracker to the Platform sidebar and updates cache-busting versions for the scripts already used by the earlier patch.
+- public/settings_v76.js — adds Developer Issue Tracker as a configurable Settings section in the Roles & Permissions editor.
+
+INSTALL
+1. Back up the current public/settings.html and public/settings_v76.js.
+2. Copy both files from this patch into your existing repository, preserving the public/ folder.
+3. Confirm that the already-installed previous patch's public/settings.js includes `issues:window.renderGuardianIssues` and public/guardian_control_centre.js defines `window.renderGuardianIssues`. Do not remove those earlier patch files.
+4. Commit and push to the GitHub repository connected to Render.
+5. Wait for a successful Render deployment.
+6. Open Guardian Settings and press Ctrl+F5.
+7. Under Platform, select Developer Issue Tracker.
+8. Open Roles & Permissions and grant `Developer Issue Tracker` access to the roles that need it. Owner retains access by default.
+
+If the link appears but the page says the renderer did not load, check Network for `/guardian_control_centre.js?v=5` and verify it returns HTTP 200. The page requires the previous issue-tracker implementation to already be deployed.

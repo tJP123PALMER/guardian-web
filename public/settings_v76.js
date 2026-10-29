@@ -7,7 +7,7 @@ renderPermissions=async function(){
    {name:'Stations & fleet',items:[['stations','Stations / Locations'],['appliances','Appliances / Vehicles'],['map','Station Map'],['config','Configuration'],['fleet','Fleet management']]},
    {name:'People & community',items:[['portal','Portal & Access'],['applications','Applications'],['governance','People & Governance'],['formsbuilder','Forms Builder'],['users','Users & Access']]},
    {name:'Operations & learning',items:[['patrols','Operations & Deployment'],['training','Training & Qualifications'],['announcements','Announcements'],['guides','Rules & Guides'],['templates','Template Library']]},
-   {name:'Platform & administration',items:[['permissions','Roles & Permissions'],['services','Services / Ranks / Callsigns'],['discord','Discord Integration'],['fivem','FiveM Integration'],['radio','Radio'],['backup','Backups / Restore Points'],['platform','Status & Platform'],['audit','Audit Log']]}
+   {name:'Platform & administration',items:[['permissions','Roles & Permissions'],['services','Services / Ranks / Callsigns'],['discord','Discord Integration'],['fivem','FiveM Integration'],['radio','Radio'],['backup','Backups / Restore Points'],['issues','Developer Issue Tracker'],['platform','Status & Platform'],['audit','Audit Log']]}
   ];
   const labels={portal:'Portal & Access',formsbuilder:'Forms Builder',governance:'People & Governance'};
   const all=groups.flatMap(g=>g.items);let selected=Object.keys(perms)[0]||'player';
