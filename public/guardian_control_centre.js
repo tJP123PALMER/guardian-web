@@ -40,30 +40,72 @@
    document.getElementById("gctlNotifyRestart").onclick=async()=>{try{await req("/api/admin/fivem/restart-schedule/announce",{method:"POST",body:JSON.stringify({channelId:document.getElementById("gctlRestartChannel").value.trim(),message:"Guardian test: server restart announcement integration check."})});note("Test announcement sent.");}catch(e){note(e.message,true)}};
   }catch(e){c.innerHTML=`<div class="card"><h3>FiveM Control Centre unavailable</h3><p>${E(e.message)}</p><button onclick="renderGuardianFiveM()">Retry</button></div>`}
  };
- const ticketCategoryRow=cat=>`<div class="gctlCategoryEditorRow">
-   <label>Category name<input data-cat-label value="${E(cat?.label||"")}" maxlength="80" placeholder="e.g. Whitelist Application"></label>
-   <label>Button ID<input data-cat-key value="${E(cat?.key||"")}" maxlength="40" placeholder="auto-generated-from-name"></label>
-   <label>Button colour<select data-cat-style><option value="Primary" ${cat?.style==="Primary"?"selected":""}>Blue</option><option value="Secondary" ${!cat?.style||cat?.style==="Secondary"?"selected":""}>Grey</option><option value="Success" ${cat?.style==="Success"?"selected":""}>Green</option><option value="Danger" ${cat?.style==="Danger"?"selected":""}>Red</option></select></label>
-   <label>Default priority<select data-cat-priority><option value="normal" ${cat?.priority!=="high"?"selected":""}>Normal</option><option value="high" ${cat?.priority==="high"?"selected":""}>High</option></select></label>
-   <button type="button" class="danger gctlRemoveCategory">Remove</button>
+ let guardianTicketAvailableRoles=[];
+ let guardianTicketRolesLoaded=false;
+ const ticketCategoryRow=cat=>{
+  const savedRoleIds=Array.isArray(cat?.accessRoleIds)?cat.accessRoleIds.map(String):[];
+  const selected=new Set(savedRoleIds);
+  const roleOptions=guardianTicketRolesLoaded
+   ?(guardianTicketAvailableRoles.map(role=>`<label class="gctlTicketRoleOption"><input type="checkbox" data-cat-role value="${E(role.id)}" ${selected.has(String(role.id))?"checked":""}><span class="gctlTicketRoleDot" style="--ticket-role-colour:${E(role.color||"#687078")}"></span><span>${E(role.name)}</span></label>`).join("")||'<small class="muted">No selectable roles found in this Discord server.</small>')
+   :`<small class="muted">${savedRoleIds.length?`Saved role IDs: ${E(savedRoleIds.join(", "))}. `:""}Click “Load Discord Roles” to choose one or more roles.</small>`;
+  return `<div class="gctlCategoryEditorRow" data-cat-saved-role-ids="${E(savedRoleIds.join(","))}">
+   <div class="gctlCategoryFields">
+    <label>Category name<input data-cat-label value="${E(cat?.label||"")}" maxlength="80" placeholder="e.g. Whitelist Application"></label>
+    <label>Button ID<input data-cat-key value="${E(cat?.key||"")}" maxlength="40" placeholder="auto-generated-from-name"></label>
+    <label>Button colour<select data-cat-style><option value="Primary" ${cat?.style==="Primary"?"selected":""}>Blue</option><option value="Secondary" ${!cat?.style||cat?.style==="Secondary"?"selected":""}>Grey</option><option value="Success" ${cat?.style==="Success"?"selected":""}>Green</option><option value="Danger" ${cat?.style==="Danger"?"selected":""}>Red</option></select></label>
+    <label>Default priority<select data-cat-priority><option value="normal" ${cat?.priority!=="high"?"selected":""}>Normal</option><option value="high" ${cat?.priority==="high"?"selected":""}>High</option></select></label>
+    <button type="button" class="danger gctlRemoveCategory">Remove</button>
+   </div>
+   <div class="gctlCategoryRoleAccess"><div class="gctlRoleAccessHeading"><strong>Roles allowed to access these tickets</strong><small>Selected roles can view and reply in the private ticket, and use the close button. Global ticket staff roles still have access to every ticket. This does not restrict who can see the public panel.</small></div><div class="gctlTicketRoleOptions" data-cat-roles>${roleOptions}</div></div>
   </div>`;
+ };
  window.renderGuardianTickets=async function(){
   const c=document.getElementById("content");c.innerHTML='<div class="card"><h3>Loading Discord Tickets…</h3></div>';
   try{
    const d=await req("/api/admin/tickets"),tickets=d.tickets||[],categories=Array.isArray(d.categories)?d.categories:[];
    c.innerHTML=`<div class="gctlWrap"><div class="gctlHeader"><div><div class="eyebrow">COMMUNITY SUPPORT</div><h2>Discord Tickets</h2><p>Tickets opened in Discord are shared with this dashboard.</p></div>${statusBadge(d.discordConnected,"Discord "+(d.discordConnected?"connected":"disconnected"))}</div>
-   <div class="gctlTicketSetup card"><div><h3>Publish ticket panel</h3><p>Enter a Discord text-channel ID where members can open private tickets.</p></div><div class="gctlInline"><input id="gctlPanelChannel" value="${E(d.panel?.channelId||"")}" placeholder="Discord channel ID"><button id="gctlPostPanel">Post / Update Panel</button></div><small>Requires the bot to view and send messages, embed links, and manage ticket channels. Reposting updates the existing panel when possible.</small></div>
-   <section class="card gctlCategoryManager"><div class="gctlSection"><div><h3>Ticket Categories</h3><p>Add, rename, recolour, change priority, or remove the options shown on your Discord panel.</p></div><span class="gctlBadge">${categories.length} / 25 categories</span></div>
+   <div class="gctlTicketSetup card"><div><h3>Publish ticket panel</h3><p>Enter the Discord text channel where members will see the ticket buttons.</p></div><div class="gctlInline"><input id="gctlPanelChannel" value="${E(d.panel?.channelId||"")}" placeholder="Discord channel ID"><button type="button" id="gctlLoadRoles">Load Discord Roles</button><button id="gctlPostPanel">Post / Update Panel</button></div><small id="gctlRoleLoadStatus" class="muted">Load roles from the Discord server, choose the roles allowed into each private ticket, then save categories and publish the panel. The panel stays public; these roles control access after a ticket is opened.</small></div>
+   <section class="card gctlCategoryManager"><div class="gctlSection"><div><h3>Ticket Categories</h3><p>Add, rename, recolour, set default priority, and choose which Discord roles can access tickets from each button.</p></div><span class="gctlBadge">${categories.length} / 25 categories</span></div>
     <div id="gctlCategoryList" class="gctlCategoryList">${categories.map(ticketCategoryRow).join("")}</div>
     <div class="gctlCategoryActions"><button type="button" id="gctlAddCategory">+ Add category</button><button type="button" id="gctlSaveCategories">Save categories</button></div>
-    <small class="muted">After saving, Guardian updates the last published Discord panel automatically when it can. Categories use a stable ID; changing the ID creates a new button identifier. Existing tickets keep their saved category.</small>
+    <small class="muted">Save categories before testing. Role access applies to newly created tickets; changing the category does not change permissions on existing ticket channels. Global ticket staff roles remain able to access every ticket. Reposting updates the visible Discord buttons when possible.</small>
    </section>
    <div class="gctlSection"><input id="gctlTicketSearch" placeholder="Search tickets…" /><select id="gctlTicketStatus"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="waiting">Waiting</option><option value="closed">Closed</option></select><button id="gctlTicketRefresh">Refresh</button></div>
    <div class="gctlTicketLayout"><section class="card"><div class="gctlTableWrap"><table class="gctlTable"><thead><tr><th>Ticket</th><th>Category</th><th>Status</th><th>Assigned</th></tr></thead><tbody id="gctlTicketRows">${tickets.map(t=>`<tr class="gctlTicketRow" data-id="${E(t.id)}" data-search="${E(`${t.number} ${t.title} ${t.createdByName} ${t.category}`.toLowerCase())}" data-status="${E(t.status)}"><td><b>${E(t.number)}</b><br><small>${E(t.createdByName||"Unknown")}</small></td><td>${E(t.title)}</td><td>${E(t.status)}</td><td>${E(t.assignedTo||"Unassigned")}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">No tickets yet. Post the Discord panel to get started.</td></tr>'}</tbody></table></div></section><section class="card" id="gctlTicketDetail"><div class="gctlEmpty">Select a ticket to view its conversation.</div></section></div></div>`;
+   const readTicketCategoryRows=()=>[...document.querySelectorAll("#gctlCategoryList .gctlCategoryEditorRow")].map(row=>({
+    label:row.querySelector("[data-cat-label]").value.trim(),
+    key:row.querySelector("[data-cat-key]").value.trim(),
+    style:row.querySelector("[data-cat-style]").value,
+    priority:row.querySelector("[data-cat-priority]").value,
+    accessRoleIds:guardianTicketRolesLoaded?[...row.querySelectorAll("[data-cat-role]:checked")].map(el=>el.value):String(row.dataset.catSavedRoleIds||"").split(",").map(x=>x.trim()).filter(Boolean)
+   }));
+   const loadTicketRoles=async(quiet=false)=>{
+    const status=document.getElementById("gctlRoleLoadStatus");
+    const button=document.getElementById("gctlLoadRoles");
+    const previousRows=readTicketCategoryRows();
+    const channelId=document.getElementById("gctlPanelChannel").value.trim();
+    if(button)button.disabled=true;
+    if(status)status.textContent="Loading roles from Discord…";
+    try{
+     const endpoint="/api/admin/tickets/roles"+(channelId?`?channelId=${encodeURIComponent(channelId)}`:"");
+     const data=await req(endpoint);
+     guardianTicketAvailableRoles=Array.isArray(data.roles)?data.roles:[];
+     guardianTicketRolesLoaded=true;
+     const list=document.getElementById("gctlCategoryList");
+     if(list)list.innerHTML=previousRows.map(ticketCategoryRow).join("");
+     if(status)status.textContent=`Loaded ${guardianTicketAvailableRoles.length} roles from ${data.guild?.name||"your Discord server"}. Select one or more roles under each category, then click Save categories.`;
+     if(!quiet)note(`Loaded ${guardianTicketAvailableRoles.length} Discord roles.`);
+    }catch(e){
+     if(status)status.textContent="Could not load Discord roles: "+e.message;
+     if(!quiet)note(e.message,true);
+    }finally{if(button)button.disabled=false;}
+   };
+   document.getElementById("gctlLoadRoles").onclick=()=>loadTicketRoles(false);
    document.getElementById("gctlPostPanel").onclick=async()=>{const channelId=document.getElementById("gctlPanelChannel").value.trim();if(!channelId)return note("Enter a Discord channel ID.",true);try{const result=await req("/api/admin/tickets/panel",{method:"POST",body:JSON.stringify({channelId})});note(result.updated?"Discord ticket panel updated.":"Discord ticket panel posted.");}catch(e){note(e.message,true)}};
-   document.getElementById("gctlAddCategory").onclick=()=>{const list=document.getElementById("gctlCategoryList");if(list.querySelectorAll(".gctlCategoryEditorRow").length>=25)return note("Discord supports up to 25 categories in this panel.",true);list.insertAdjacentHTML("beforeend",ticketCategoryRow({label:"",key:"",style:"Secondary",priority:"normal"}));};
+   document.getElementById("gctlAddCategory").onclick=()=>{const list=document.getElementById("gctlCategoryList");if(list.querySelectorAll(".gctlCategoryEditorRow").length>=25)return note("Discord supports up to 25 categories in this panel.",true);list.insertAdjacentHTML("beforeend",ticketCategoryRow({label:"",key:"",style:"Secondary",priority:"normal",accessRoleIds:[]}));};
    document.getElementById("gctlCategoryList").onclick=e=>{const b=e.target.closest(".gctlRemoveCategory");if(b)b.closest(".gctlCategoryEditorRow")?.remove()};
-   document.getElementById("gctlSaveCategories").onclick=async()=>{const rows=[...document.querySelectorAll("#gctlCategoryList .gctlCategoryEditorRow")];const categoryRows=rows.map(row=>({label:row.querySelector("[data-cat-label]").value.trim(),key:row.querySelector("[data-cat-key]").value.trim(),style:row.querySelector("[data-cat-style]").value,priority:row.querySelector("[data-cat-priority]").value}));try{const result=await req("/api/admin/tickets/categories",{method:"POST",body:JSON.stringify({categories:categoryRows})});if(result.panelUpdated)note("Categories saved and Discord panel updated.");else if(result.panelWarning)note("Categories saved, but panel update failed: "+result.panelWarning,true);else note("Categories saved. Post / Update Panel to publish them in Discord.");await window.renderGuardianTickets();}catch(e){note(e.message,true)}};
+   document.getElementById("gctlSaveCategories").onclick=async()=>{const categoryRows=readTicketCategoryRows();try{const result=await req("/api/admin/tickets/categories",{method:"POST",body:JSON.stringify({categories:categoryRows})});if(result.panelUpdated)note("Categories and role access saved; Discord panel updated.");else if(result.panelWarning)note("Categories saved, but panel update failed: "+result.panelWarning,true);else note("Categories and role access saved. Post / Update Panel to publish the buttons.");await window.renderGuardianTickets();}catch(e){note(e.message,true)}};
+   if(!guardianTicketRolesLoaded)setTimeout(()=>loadTicketRoles(true),0);
    document.getElementById("gctlTicketRefresh").onclick=()=>window.renderGuardianTickets();
    const filter=()=>{const q=document.getElementById("gctlTicketSearch").value.toLowerCase(),st=document.getElementById("gctlTicketStatus").value;document.querySelectorAll(".gctlTicketRow").forEach(r=>r.hidden=!(r.dataset.search.includes(q)&&(!st||r.dataset.status===st)))};
    document.getElementById("gctlTicketSearch").oninput=filter;document.getElementById("gctlTicketStatus").onchange=filter;

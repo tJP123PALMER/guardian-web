@@ -4,7 +4,7 @@ WHAT THIS UPDATE ADDS
 - Closing a ticket from Discord locks the ticket creator out of sending further messages, renames the channel to closed-ticket-XXXX, removes the Close Ticket button, and preserves the conversation/history.
 - Closing a ticket from Guardian's website applies the same Discord channel lock.
 - Reopening a closed ticket from Guardian restores the creator's ability to send messages and restores the original channel name.
-- Guardian Settings > Discord Tickets now has a Ticket Categories editor. Add, rename, recolour, change default priority, and remove categories yourself.
+- Guardian Settings > Discord Tickets now has a Ticket Categories editor. Add, rename, recolour, change default priority, remove categories, and select one or more Discord roles per category. Selected category roles are granted access to tickets created from that category and may reply/use the close button. Global ticket staff roles configured in DISCORD_TICKET_STAFF_ROLE_IDS keep access to every ticket.
 - Saving category changes automatically edits the last published panel if Guardian has a saved panel message reference. Otherwise use Post / Update Panel.
 - Up to 25 categories are supported by Discord's message component limits.
 
@@ -20,16 +20,21 @@ DEPLOY
 1. Commit and push the three replacement files to the repository connected to Render.
 2. Let Render redeploy the website.
 3. Open Guardian Settings > Discord Tickets.
-4. Add or edit categories and click Save categories.
+4. Enter the panel channel ID and click Load Discord Roles. Choose one or more allowed roles under each category, then click Save categories. Use Post / Update Panel to publish the buttons. The role settings apply to new tickets created after saving; existing ticket channels are not automatically changed.
 5. If Guardian has not previously saved the panel message, enter the panel channel ID and click Post / Update Panel once.
 6. Test by opening a test ticket and clicking Close Ticket. Expected: channel name begins with closed-, ticket creator can read but not send, and history remains in the channel.
 7. Test closing and reopening from the website's ticket status selector too.
 
 DISCORD BOT PERMISSIONS
-The bot needs access to the panel channel, including View Channel, Send Messages and Embed Links. For ticket channels it also needs Manage Channels and Manage Roles/permission-overwrite capability as required by Discord for setting private channel permissions. Give only the necessary permissions; do not grant Administrator solely for this feature.
+The bot needs access to the panel channel, including View Channel, Send Messages and Embed Links. For ticket channels it also needs Manage Channels and permission to manage channel permission overwrites. The bot needs to be in the server whose roles you select. Give only the necessary permissions; do not grant Administrator solely for this feature.
 
 NOTES
 - Closed channels are locked and retained, not deleted, so staff can preserve the conversation and audit history.
 - If closing reports that the channel could not be locked, check Render logs and ensure the bot has Manage Channels plus access to the ticket channel.
 - Category definitions are persisted under the app's data directory in guardian-ticket-categories.json. Panel message reference is stored in guardian-ticket-panel.json.
 - This patch keeps existing tickets and existing Guardian data files intact.
+
+ROLE ACCESS NOTES
+- Click Load Discord Roles after entering the panel channel ID. Guardian loads roles from that channel’s Discord server. The public ticket panel remains visible to users with access to the panel channel; these selections control access to the private ticket channel created after a button is clicked.
+- Select roles under each category. Those roles can view, reply to, and close tickets created from that category. The ticket creator and the globally configured DISCORD_TICKET_STAFF_ROLE_IDS also retain access.
+- The bot and selected roles must belong to the same Discord server as the ticket. If a selected role is deleted later, recreate/select a valid role before new tickets are opened.

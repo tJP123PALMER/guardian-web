@@ -3116,11 +3116,15 @@ function guardianTicketNormaliseCategories(value){
     const key=guardianTicketCategoryKey(item?.key||label);
     const style=["Primary","Secondary","Success","Danger"].includes(String(item?.style))?String(item.style):"Secondary";
     const priority=String(item?.priority)==="high"?"high":"normal";
+    const requestedRoleIds=Array.isArray(item?.accessRoleIds)?item.accessRoleIds:[];
+    if(requestedRoleIds.length>25)throw new Error(`Category ${index+1} can have at most 25 allowed roles.`);
+    const accessRoleIds=[...new Set(requestedRoleIds.map(id=>String(id||"").trim()))];
+    if(accessRoleIds.some(id=>!/^\d{15,22}$/.test(id)))throw new Error(`Category ${index+1} contains an invalid Discord role ID. Load roles from Discord and select them again.`);
     if(!label)throw new Error(`Category ${index+1} needs a name.`);
     if(!key)throw new Error(`Category ${index+1} needs a valid ID/name.`);
     if(seen.has(key))throw new Error(`The category ID “${key}” is used more than once.`);
     seen.add(key);
-    return {key,label,style,priority};
+    return {key,label,style,priority,accessRoleIds};
   });
 }
 const guardianTicketCategoryRaw=guardianReadJson(guardianTicketCategoriesFile,guardianTicketDefaultCategories);
@@ -3130,9 +3134,10 @@ let guardianTicketPanelState=guardianReadJson(guardianTicketPanelStateFile,{chan
 if(!guardianTicketPanelState||typeof guardianTicketPanelState!=="object")guardianTicketPanelState={channelId:"",messageId:""};
 function guardianDiscordCanManageTicket(interaction,ticket){
   if(interaction.user?.id===ticket.createdByDiscordId)return true;
-  const ids=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const globalStaffIds=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const categoryRoleIds=Array.isArray(ticket.accessRoleIds)?ticket.accessRoleIds.map(x=>String(x)):[];
   const roles=interaction.member?.roles?.cache;
-  return ids.some(id=>roles?.has?.(id)) || interaction.memberPermissions?.has?.("ManageChannels")===true;
+  return [...new Set([...globalStaffIds,...categoryRoleIds])].some(id=>roles?.has?.(id)) || interaction.memberPermissions?.has?.("ManageChannels")===true;
 }
 function guardianTicketPanelPayload(djs){
   const embed=new djs.EmbedBuilder().setColor(0x139fe8).setTitle("GUARDIAN SUPPORT").setDescription("Select a category below to open a private support ticket. Please do not open duplicate tickets.").setFooter({text:"Guardian Operations • Ticket System"});
@@ -3175,9 +3180,17 @@ async function guardianTicketApplyChannelStatus(ticket,status,previousStatus){
   const channel=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);
   if(!channel?.isTextBased?.()||!channel.permissionOverwrites)return {ok:false,error:"Ticket Discord channel not found"};
   try{
+    const globalStaffRoleIds=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(x=>/^\d{15,22}$/.test(x));
+    const categoryRoleIds=Array.isArray(ticket.accessRoleIds)?ticket.accessRoleIds.map(x=>String(x)).filter(x=>/^\d{15,22}$/.test(x)):[];
+    const rolesToLock=[...new Set([...globalStaffRoleIds,...categoryRoleIds])];
     if(status==="closed"){
       if(ticket.createdByDiscordId){
         await channel.permissionOverwrites.edit(ticket.createdByDiscordId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:false,AttachFiles:false,AddReactions:false});
+      }
+      // Keep the history visible, but make the whole ticket read-only until it is reopened.
+      for(const roleId of rolesToLock){
+        try{await channel.permissionOverwrites.edit(roleId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:false,AttachFiles:false,AddReactions:false})}
+        catch(e){console.warn(`[Guardian Tickets] unable to lock role ${roleId} in ${ticket.number}:`,e?.message||e)}
       }
       if(!ticket.channelName)ticket.channelName=channel.name;
       if(!String(channel.name||"").startsWith("closed-"))await channel.setName(`closed-${channel.name||ticket.number}`.slice(0,100));
@@ -3186,7 +3199,11 @@ async function guardianTicketApplyChannelStatus(ticket,status,previousStatus){
       if(ticket.createdByDiscordId){
         await channel.permissionOverwrites.edit(ticket.createdByDiscordId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:true,AttachFiles:true,AddReactions:true});
       }
-      if(String(channel.name||"").startsWith("closed-"))await channel.setName(String(ticket.channelName||channel.name.replace(/^closed-/,"")).slice(0,100));
+      for(const roleId of rolesToLock){
+        try{await channel.permissionOverwrites.edit(roleId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:true,AttachFiles:true,AddReactions:true})}
+        catch(e){console.warn(`[Guardian Tickets] unable to unlock role ${roleId} in ${ticket.number}:`,e?.message||e)}
+      }
+      if(String(channel.name||"").startsWith("closed-"))await channel.setName(String(ticket.channelName||channel.name.replace(/^closed-/ ,"")).slice(0,100));
     }
     guardianSaveTickets();
     return {ok:true};
@@ -3198,14 +3215,23 @@ async function guardianCreateDiscordTicket(interaction,categoryKey){
   if(!category)return null;
   const label=category.label;
   const staffRoles=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const accessRoleIds=Array.isArray(category.accessRoleIds)?[...new Set(category.accessRoleIds.map(x=>String(x)))]:[];
   const overwrites=[{id:guild.roles.everyone.id,deny:["ViewChannel"]},{id:interaction.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]}];
   if(interaction.client?.user?.id)overwrites.push({id:interaction.client.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","ManageChannels","EmbedLinks","AttachFiles"]});
-  for(const id of staffRoles)overwrites.push({id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]});
+  for(const id of [...new Set([...staffRoles,...accessRoleIds])]){
+    let role=guild.roles.cache.get(id);
+    if(!role)role=await guild.roles.fetch(id).catch(()=>null);
+    if(!role){
+      if(accessRoleIds.includes(id)){console.error(`[Guardian Tickets] cannot create ${label} ticket: configured access role ${id} no longer exists in guild ${guild.id}`);return null;}
+      console.warn(`[Guardian Tickets] configured global staff role ${id} was not found; skipping it`);continue;
+    }
+    overwrites.push({id:role.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]});
+  }
   const parent=String(process.env.DISCORD_TICKET_CATEGORY_ID||"").trim();
   const num=guardianTicketNumber();
   let channel;
   try{channel=await guild.channels.create({name:`ticket-${String(num.sequence).padStart(4,"0")}`,type:0,parent:parent||undefined,permissionOverwrites:overwrites,topic:`Guardian ${num.number} | ${label} | creator ${interaction.user.id}`})}catch(e){console.error('[Guardian Tickets] channel create failed:',e?.message||e);return null}
-  const ticket={id:crypto.randomUUID(),...num,title:label,category:category.key,description:"",status:"open",priority:category.priority||"normal",createdByDiscordId:interaction.user.id,createdByName:interaction.user.globalName||interaction.user.username,channelId:channel.id,channelName:channel.name,guildId:guild.id,assignedTo:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[]};
+  const ticket={id:crypto.randomUUID(),...num,title:label,category:category.key,accessRoleIds,description:"",status:"open",priority:category.priority||"normal",createdByDiscordId:interaction.user.id,createdByName:interaction.user.globalName||interaction.user.username,channelId:channel.id,channelName:channel.name,guildId:guild.id,assignedTo:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[]};
   guardianTickets.push(ticket);guardianSaveTickets();
   try{const djs=await import('discord.js');const opening=await channel.send({content:`<@${interaction.user.id}>`,embeds:[new djs.EmbedBuilder().setColor(0x139fe8).setTitle(`${num.number} · ${label}`).setDescription("Welcome to Guardian Support. Please explain your issue and a member of staff will assist you.").addFields({name:"Status",value:"Open",inline:true},{name:"Priority",value:ticket.priority,inline:true}).setTimestamp()],components:[new djs.ActionRowBuilder().addComponents(new djs.ButtonBuilder().setCustomId(`guardian_ticket_close:${ticket.id}`).setLabel("Close Ticket").setStyle(djs.ButtonStyle.Danger))]});ticket.openingMessageId=opening.id;guardianSaveTickets()}catch(e){console.warn('[Guardian Tickets] opening message failed:',e?.message||e)}
   return ticket;
@@ -3229,6 +3255,23 @@ app.get("/api/admin/tickets",guardianRequireAdmin("settings.view"),(req,res)=>{
   const tickets=guardianTickets.filter(t=>(!status||t.status===status)&&(!q||`${t.number} ${t.title} ${t.createdByName} ${t.category}`.toLowerCase().includes(q))).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   res.json({ok:true,tickets:tickets.map(guardianTicketSafe),categories:guardianTicketCategories,discordConnected:!!guardianDiscordGatewayClient?.isReady?.(),panel:guardianTicketPanelState});
 });
+app.get("/api/admin/tickets/roles",guardianRequireAdmin("settings.view"),async(req,res)=>{
+  if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected. Configure DISCORD_BOT_TOKEN first."});
+  const channelId=String(req.query?.channelId||guardianTicketPanelState.channelId||"").trim();
+  let guild=null;
+  if(channelId){
+    const channel=await guardianDiscordGatewayClient.channels.fetch(channelId).catch(()=>null);
+    if(!channel)return res.status(400).json({ok:false,error:"Could not find that Discord channel. Check the channel ID and bot access."});
+    guild=channel.guild||null;
+  }
+  if(!guild&&guardianDiscord.guildId)guild=await guardianDiscordGatewayClient.guilds.fetch(String(guardianDiscord.guildId)).catch(()=>null);
+  if(!guild&&guardianDiscordGatewayClient.guilds.cache.size===1)guild=guardianDiscordGatewayClient.guilds.cache.first();
+  if(!guild)return res.status(400).json({ok:false,error:"Guardian could not identify the Discord server. Enter your ticket panel channel ID, or configure the server under Discord Integration."});
+  try{
+    const roles=await guild.roles.fetch();
+    res.json({ok:true,guild:{id:guild.id,name:guild.name},roles:[...roles.values()].filter(role=>role.id!==guild.id&&!role.managed).map(role=>({id:role.id,name:role.name,color:role.hexColor,position:role.position})).sort((a,b)=>b.position-a.position)});
+  }catch(e){res.status(400).json({ok:false,error:e?.message||"Unable to load roles from Discord. Check that the bot can access this server."})}
+});
 app.get("/api/admin/tickets/categories",guardianRequireAdmin("settings.view"),(_req,res)=>res.json({ok:true,categories:guardianTicketCategories}));
 app.post("/api/admin/tickets/categories",guardianRequireAdmin("settings.edit"),async(req,res)=>{
   let categories;
@@ -3239,7 +3282,7 @@ app.post("/api/admin/tickets/categories",guardianRequireAdmin("settings.edit"),a
     try{await guardianPublishTicketPanel(guardianTicketPanelState.channelId);panelUpdated=true}
     catch(e){panelWarning=e?.message||"Categories saved, but the Discord panel could not be updated.";console.warn("[Guardian Tickets] category panel refresh failed:",panelWarning)}
   }
-  guardianAdminAuditLog(req.guardianAdmin.username,"TICKET_CATEGORIES_UPDATED",{categories:categories.map(c=>({key:c.key,label:c.label,style:c.style,priority:c.priority})),panelUpdated});
+  guardianAdminAuditLog(req.guardianAdmin.username,"TICKET_CATEGORIES_UPDATED",{categories:categories.map(c=>({key:c.key,label:c.label,style:c.style,priority:c.priority,accessRoleIds:c.accessRoleIds})),panelUpdated});
   res.json({ok:true,categories:guardianTicketCategories,panelUpdated,panelWarning});
 });
 app.post("/api/admin/tickets/panel",guardianRequireAdmin("settings.edit"),async(req,res)=>{
