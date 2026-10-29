@@ -1,0 +1,22 @@
+GUARDIAN SETTINGS RENDER FIX
+
+Fixes the error "renderGuardianFiveM is not defined" by loading the Guardian Operations/Tickets helper before the settings router executes, and bumping browser cache versions. Includes the latest ticket role-access backend and frontend files.
+
+REPLACE THESE FILES in the ROOT of your website repository, preserving folder structure:
+- server.js
+- public/settings.html
+- public/settings.js
+- public/guardian_control_centre.js
+- public/guardian_control_centre.css
+
+INSTALL
+1. Back up the five existing files.
+2. Extract this ZIP into the project root and replace those files. Do NOT replace the entire project.
+3. Commit and push to the GitHub repository connected to Render.
+4. Wait until Render reports a successful deployment.
+5. Open the settings page and hard-refresh with Ctrl+F5.
+6. Test #fivem and #tickets.
+
+If the error persists, DevTools > Network should show GET /guardian_control_centre.js?v=2 with status 200. If it is 404, confirm the file is in the public folder and deployed.
+
+Never upload .env files or share Discord/API credentials.
