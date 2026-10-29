@@ -2,6 +2,7 @@ import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -236,7 +237,8 @@ function guardianAdminReadSession(req){
 }
 const guardianSettingsRouteKeys=[
   [/^\/api\/admin\/(?:stations|station-map)/,'stations'],[/^\/api\/admin\/appliances/,'appliances'],
-  [/^\/api\/admin\/(?:config|baseline|operational|export)/,'config'],[/^\/api\/admin\/users/,'users'],
+  [/^\/api\/admin\/(?:snapshots|export|import|recovery)/,'backup'],[/^\/api\/admin\/dev-issues/,'issues'],
+  [/^\/api\/admin\/(?:config|baseline|operational)/,'config'],[/^\/api\/admin\/users/,'users'],
   [/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
   [/^\/api\/admin\/services/,'services'],[/^\/api\/admin\/discord/,'discord'],[/^\/api\/admin\/qualifications/,'training'],[/^\/api\/admin\/training/,'training'],
   [/^\/api\/admin\/fleet/,'fleet'],[/^\/api\/admin\/patrols/,'patrols'],[/^\/api\/admin\/patrol-templates/,'templates'],
@@ -3015,6 +3017,244 @@ app.post('/api/admin/services/onboard',guardianRequireAdmin('settings.edit'),(re
 app.get('/api/admin/snapshots',guardianRequireAdmin('settings.view'),(_q,res)=>{const rows=[];for(const f of fs.readdirSync(guardianSnapshotsDir).filter(x=>x.endsWith('.json'))){try{const p=guardianReadJson(path.join(guardianSnapshotsDir,f),null);if(p)rows.push({id:f.replace(/\.json$/,''),name:p.snapshotName||f,createdAt:p.snapshotCreatedAt||p.exportedAt,createdBy:p.snapshotCreatedBy||'SYSTEM'})}catch{}}rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));res.json({ok:true,snapshots:rows})});
 app.post('/api/admin/snapshots',guardianRequireAdmin('settings.edit'),(req,res)=>{const id=Date.now().toString(36)+'-'+crypto.randomBytes(3).toString('hex'),p=guardianSnapshotPayload();p.snapshotName=String(req.body?.name||'Manual restore point');p.snapshotCreatedAt=new Date().toISOString();p.snapshotCreatedBy=req.guardianAdmin.username;guardianWriteJson(path.join(guardianSnapshotsDir,id+'.json'),p);guardianAdminAuditLog(req.guardianAdmin.username,'SNAPSHOT_CREATED',{id,name:p.snapshotName});res.json({ok:true,id})});
 app.post('/api/admin/snapshots/:id/restore',guardianRequireAdmin('settings.edit'),(req,res)=>{const file=path.join(guardianSnapshotsDir,path.basename(req.params.id)+'.json'),p=guardianReadJson(file,null);if(!p)return res.status(404).json({ok:false,error:'Snapshot not found'});try{guardianRestoreSnapshotPayload(p);guardianAdminAuditLog(req.guardianAdmin.username,'SNAPSHOT_RESTORED',{id:req.params.id});touch();res.json({ok:true})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+
+
+
+// ============================================================
+// Guardian Backup & Recovery + Developer Issue Tracker
+// Full data backups use a gzip-compressed manifest, with hash validation
+// and path traversal protection before any restore is written.
+// ============================================================
+const guardianBackupsDir=path.join(guardianAdminDataDir,'backups');
+const guardianBackupSettingsFile=path.join(guardianAdminDataDir,'guardian-backup-settings.json');
+const guardianBackupHistoryFile=path.join(guardianAdminDataDir,'guardian-backup-history.json');
+const guardianDevIssuesFile=path.join(guardianAdminDataDir,'guardian-dev-issues.json');
+try{fs.mkdirSync(guardianBackupsDir,{recursive:true})}catch{}
+function guardianBackupReadSettings(){
+  const saved=guardianReadJson(guardianBackupSettingsFile,{});
+  const intervalHours=[6,12,24,48,168].includes(Number(saved.intervalHours))?Number(saved.intervalHours):24;
+  const retentionCount=Math.max(3,Math.min(60,Number(saved.retentionCount)||14));
+  return {enabled:saved.enabled===true,intervalHours,retentionCount,alertChannelId:String(saved.alertChannelId||process.env.GUARDIAN_BACKUP_ALERT_CHANNEL_ID||'').trim(),nextRunAt:saved.nextRunAt||null,lastRunAt:saved.lastRunAt||null,updatedAt:saved.updatedAt||null,updatedBy:saved.updatedBy||'SYSTEM'};
+}
+function guardianBackupSaveSettings(){
+  guardianBackupSettings.updatedAt=new Date().toISOString();
+  const tmp=guardianBackupSettingsFile+'.tmp';
+  fs.writeFileSync(tmp,JSON.stringify(guardianBackupSettings,null,2),'utf8');
+  fs.renameSync(tmp,guardianBackupSettingsFile);
+}
+let guardianBackupSettings=guardianBackupReadSettings();
+let guardianBackupHistory=guardianReadJson(guardianBackupHistoryFile,[]);
+if(!Array.isArray(guardianBackupHistory))guardianBackupHistory=[];
+function guardianBackupSaveHistory(){
+  const tmp=guardianBackupHistoryFile+'.tmp';
+  fs.writeFileSync(tmp,JSON.stringify(guardianBackupHistory.slice(0,300),null,2),'utf8');
+  fs.renameSync(tmp,guardianBackupHistoryFile);
+}
+function guardianBackupIsExcluded(rel){
+  const norm=String(rel||'').replace(/\\/g,'/');
+  return norm==='backups'||norm.startsWith('backups/')||norm==='guardian-backup-history.json'||norm.endsWith('.restore-tmp')||norm.includes('/.restore-tmp');
+}
+function guardianBackupWalk(dir=guardianAdminDataDir,base=guardianAdminDataDir,out=[]){
+  for(const ent of fs.readdirSync(dir,{withFileTypes:true})){
+    const full=path.join(dir,ent.name),rel=path.relative(base,full).split(path.sep).join('/');
+    if(guardianBackupIsExcluded(rel))continue;
+    if(ent.isSymbolicLink())continue;
+    if(ent.isDirectory())guardianBackupWalk(full,base,out);
+    else if(ent.isFile())out.push({full,rel});
+  }
+  return out;
+}
+function guardianBackupSafePath(relative){
+  if(typeof relative!=='string'||!relative||relative.includes('\\')||relative.startsWith('/')||/^[A-Za-z]:/.test(relative))throw new Error('Backup contains an invalid file path');
+  const norm=path.posix.normalize(relative);
+  if(norm==='..'||norm.startsWith('../')||norm==='.'||guardianBackupIsExcluded(norm))throw new Error('Backup contains a restricted file path');
+  const full=path.resolve(guardianAdminDataDir,...norm.split('/'));
+  if(!full.startsWith(path.resolve(guardianAdminDataDir)+path.sep))throw new Error('Backup path escapes the Guardian data directory');
+  return full;
+}
+let guardianBackupRunning=false;
+async function guardianBackupSendAlert(message){
+  const channelId=String(guardianBackupSettings.alertChannelId||process.env.GUARDIAN_BACKUP_ALERT_CHANNEL_ID||'').trim();
+  if(!channelId){console.warn('[Guardian Backups] Alert not delivered: no backup alert Discord channel is configured.');return false;}
+  if(!guardianDiscordGatewayClient?.isReady?.()){console.warn('[Guardian Backups] Alert not delivered: Discord bot is not connected.');return false;}
+  try{const ch=await guardianDiscordGatewayClient.channels.fetch(channelId);if(!ch?.isTextBased?.())throw new Error('Configured alert channel is not a text channel');await ch.send(String(message||'Guardian backup alert').slice(0,1800));return true;}
+  catch(e){console.error('[Guardian Backups] Discord alert delivery failed:',e?.message||e);return false;}
+}
+function guardianBackupApplyRetention(){
+  const successful=guardianBackupHistory.filter(x=>x.status==='success'&&x.fileName).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+  for(const entry of successful.slice(guardianBackupSettings.retentionCount)){
+    const full=path.join(guardianBackupsDir,path.basename(entry.fileName));
+    try{if(fs.existsSync(full))fs.unlinkSync(full);entry.retained=false;}catch(e){console.warn('[Guardian Backups] Retention cleanup failed:',e?.message||e);}
+  }
+  guardianBackupHistory=guardianBackupHistory.slice(0,300);
+  guardianBackupSaveHistory();
+}
+async function guardianRunFullBackup(createdBy='SYSTEM',kind='manual'){
+  if(guardianBackupRunning)throw new Error('A backup is already running. Try again shortly.');
+  guardianBackupRunning=true;
+  const startedAt=new Date().toISOString();
+  const id=`backup-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  try{
+    fs.mkdirSync(guardianBackupsDir,{recursive:true});
+    const files=guardianBackupWalk();
+    const totalBytes=files.reduce((n,f)=>n+fs.statSync(f.full).size,0);
+    if(totalBytes>200*1024*1024)throw new Error('Guardian data exceeds the 200 MB backup limit. Back up large uploads separately or reduce their size.');
+    const entries=files.map(({full,rel})=>{
+      const data=fs.readFileSync(full);
+      return {path:rel,size:data.length,sha256:crypto.createHash('sha256').update(data).digest('hex'),data:data.toString('base64')};
+    });
+    const payload={format:'guardian-full-data-backup',schemaVersion:1,id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,files:entries};
+    const compressed=gzipSync(Buffer.from(JSON.stringify(payload),'utf8'),{level:6});
+    const fileName=`${id}.json.gz`,full=path.join(guardianBackupsDir,fileName),tmp=full+'.tmp';
+    fs.writeFileSync(tmp,compressed,{flag:'w'});fs.renameSync(tmp,full);
+    const record={id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,status:'success',fileName,sizeBytes:compressed.length,sourceBytes:totalBytes,fileCount:entries.length,sha256:crypto.createHash('sha256').update(compressed).digest('hex'),retained:true};
+    guardianBackupHistory.unshift(record);guardianBackupSettings.lastRunAt=startedAt;guardianBackupSaveSettings();guardianBackupSaveHistory();guardianBackupApplyRetention();
+    guardianAdminAuditLog(String(createdBy||'SYSTEM'),'FULL_BACKUP_CREATED',{id,kind,fileCount:entries.length,sizeBytes:compressed.length});
+    return record;
+  }catch(e){
+    const record={id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,status:'failed',error:String(e?.message||e).slice(0,500),fileCount:0,retained:false};
+    guardianBackupHistory.unshift(record);guardianBackupSettings.lastRunAt=startedAt;
+    try{guardianBackupSaveSettings();guardianBackupSaveHistory()}catch(saveError){console.error('[Guardian Backups] Could not persist failed run:',saveError?.message||saveError)}
+    guardianAdminAuditLog(String(createdBy||'SYSTEM'),'FULL_BACKUP_FAILED',{id,kind,error:record.error});
+    console.error('[Guardian Backups] Backup failed:',record.error);
+    await guardianBackupSendAlert(`⚠️ **Guardian backup failed**\nType: ${kind}\nStarted: ${startedAt}\nReason: ${record.error}`);
+    throw e;
+  }finally{guardianBackupRunning=false;}
+}
+function guardianBackupPublicRecord(x){
+  return {id:x.id,createdAt:x.createdAt,createdBy:x.createdBy,kind:x.kind,status:x.status,error:x.error||'',fileName:x.fileName||'',sizeBytes:Number(x.sizeBytes||0),sourceBytes:Number(x.sourceBytes||0),fileCount:Number(x.fileCount||0),sha256:x.sha256||'',retained:x.status==='success'&&x.retained!==false&&!!x.fileName&&fs.existsSync(path.join(guardianBackupsDir,path.basename(x.fileName)))};
+}
+app.get('/api/admin/recovery',guardianRequireAdmin('settings.view'),(_req,res)=>{
+  const history=guardianBackupHistory.map(guardianBackupPublicRecord).slice(0,100);
+  res.setHeader('Cache-Control','no-store');
+  res.json({ok:true,settings:guardianBackupSettings,backups:history,backupRunning:guardianBackupRunning,storagePath:'data/backups',persistentStorageRequired:true});
+});
+app.post('/api/admin/recovery/settings',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const body=req.body||{},enabled=body.enabled===true,intervalHours=Number(body.intervalHours),retentionCount=Number(body.retentionCount),alertChannelId=String(body.alertChannelId||'').trim();
+  if(![6,12,24,48,168].includes(intervalHours))return res.status(400).json({ok:false,error:'Choose a valid schedule interval (6, 12, 24, 48 or 168 hours).'});
+  if(!Number.isInteger(retentionCount)||retentionCount<3||retentionCount>60)return res.status(400).json({ok:false,error:'Retention must be between 3 and 60 backups.'});
+  if(alertChannelId&&!/^\d{15,22}$/.test(alertChannelId))return res.status(400).json({ok:false,error:'Enter a valid Discord channel ID for backup alerts.'});
+  guardianBackupSettings={...guardianBackupSettings,enabled,intervalHours,retentionCount,alertChannelId,updatedBy:req.guardianAdmin.username,nextRunAt:enabled?new Date(Date.now()+intervalHours*3600000).toISOString():null};
+  try{guardianBackupSaveSettings();guardianBackupApplyRetention();}
+  catch(e){return res.status(500).json({ok:false,error:'Could not save backup settings: '+String(e?.message||e)})}
+  guardianAdminAuditLog(req.guardianAdmin.username,'BACKUP_SCHEDULE_UPDATED',{enabled,intervalHours,retentionCount,alertChannelConfigured:!!alertChannelId});
+  res.json({ok:true,settings:guardianBackupSettings});
+});
+app.post('/api/admin/recovery/backups',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  try{const record=await guardianRunFullBackup(req.guardianAdmin.username,'manual');res.json({ok:true,backup:guardianBackupPublicRecord(record)})}
+  catch(e){res.status(500).json({ok:false,error:'Backup failed: '+String(e?.message||e)})}
+});
+app.get('/api/admin/recovery/backups/:id/download',guardianRequireAdmin('settings.view'),(req,res)=>{
+  const id=String(req.params.id||'');if(!/^backup-[a-z0-9-]+$/.test(id))return res.status(400).json({ok:false,error:'Invalid backup ID'});
+  const record=guardianBackupHistory.find(x=>x.id===id&&x.status==='success'&&x.fileName);if(!record)return res.status(404).json({ok:false,error:'Backup not found or no longer retained'});
+  const full=path.join(guardianBackupsDir,path.basename(record.fileName));if(!fs.existsSync(full))return res.status(404).json({ok:false,error:'Backup file is no longer available'});
+  res.setHeader('Content-Type','application/gzip');res.setHeader('Content-Disposition',`attachment; filename="${path.basename(record.fileName)}"`);res.setHeader('Cache-Control','no-store');res.sendFile(full);
+});
+async function guardianRestoreFullBackupBytes(compressed,actor,backupId='uploaded-archive'){
+  if(!Buffer.isBuffer(compressed)||compressed.length<3||compressed.length>220*1024*1024)throw new Error('Backup archive is empty or exceeds the 220 MB upload limit');
+  if(compressed[0]!==0x1f||compressed[1]!==0x8b)throw new Error('This is not a gzip-compressed Guardian full backup (.json.gz)');
+  const json=gunzipSync(compressed,{maxOutputLength:220*1024*1024}).toString('utf8'),payload=JSON.parse(json);
+  if(payload?.format!=='guardian-full-data-backup'||payload.schemaVersion!==1||!Array.isArray(payload.files)||payload.files.length>10000)throw new Error('Backup format is invalid or unsupported');
+  let total=0;const planned=[];const seen=new Set();
+  for(const entry of payload.files){
+    const full=guardianBackupSafePath(entry.path);if(seen.has(entry.path))throw new Error('Backup contains duplicate file paths');seen.add(entry.path);
+    const data=Buffer.from(String(entry.data||''),'base64');if(data.length!==Number(entry.size)||data.length>200*1024*1024)throw new Error('Backup file size validation failed: '+entry.path);
+    const digest=crypto.createHash('sha256').update(data).digest('hex');if(digest!==String(entry.sha256||''))throw new Error('Backup checksum validation failed: '+entry.path);
+    total+=data.length;if(total>200*1024*1024)throw new Error('Backup exceeds the 200 MB restore limit');planned.push({full,rel:entry.path,data});
+  }
+  if(!planned.length)throw new Error('Backup contains no files');
+  // Preserve a full rollback image before overwriting data.
+  const pre=await guardianRunFullBackup(actor,'pre-restore');
+  const keepCurrent=new Set(planned.map(x=>path.resolve(x.full)));
+  for(const item of guardianBackupWalk())if(!keepCurrent.has(path.resolve(item.full))){try{fs.unlinkSync(item.full)}catch(e){throw new Error('Could not remove data file '+item.rel+': '+e.message)}}
+  for(const item of planned){fs.mkdirSync(path.dirname(item.full),{recursive:true});const tmp=item.full+'.restore-tmp';fs.writeFileSync(tmp,item.data);fs.renameSync(tmp,item.full)}
+  guardianBackupSettings=guardianBackupReadSettings();
+  guardianAdminAuditLog(String(actor||'SYSTEM'),'FULL_BACKUP_RESTORED',{backupId,filesRestored:planned.length,preRestoreBackupId:pre.id});
+  return {ok:true,filesRestored:planned.length,preRestoreBackupId:pre.id,restartRequired:true,message:'Backup restored. Restart the Guardian web service to reload all in-memory data.'};
+}
+app.post('/api/admin/recovery/backups/:id/restore',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const id=String(req.params.id||'');if(!/^backup-[a-z0-9-]+$/.test(id))return res.status(400).json({ok:false,error:'Invalid backup ID'});
+  const record=guardianBackupHistory.find(x=>x.id===id&&x.status==='success'&&x.fileName);if(!record)return res.status(404).json({ok:false,error:'Backup not found or no longer retained'});
+  const backupPath=path.join(guardianBackupsDir,path.basename(record.fileName));
+  try{const result=await guardianRestoreFullBackupBytes(fs.readFileSync(backupPath),req.guardianAdmin.username,id);res.json(result)}
+  catch(e){console.error('[Guardian Backups] Restore failed:',e?.message||e);res.status(400).json({ok:false,error:'Restore failed: '+String(e?.message||e)})}
+});
+app.post('/api/admin/recovery/restore-upload',guardianRequireAdmin('settings.edit'),express.raw({type:['application/gzip','application/x-gzip','application/octet-stream'],limit:'220mb'}),async(req,res)=>{
+  try{const result=await guardianRestoreFullBackupBytes(req.body,req.guardianAdmin.username,'uploaded-archive');res.json(result)}
+  catch(e){console.error('[Guardian Backups] Uploaded restore failed:',e?.message||e);res.status(400).json({ok:false,error:'Uploaded restore failed: '+String(e?.message||e)})}
+});
+async function guardianBackupScheduleTick(){
+  if(!guardianBackupSettings.enabled||guardianBackupRunning)return;
+  const due=guardianBackupSettings.nextRunAt?Date.parse(guardianBackupSettings.nextRunAt):NaN;
+  if(!Number.isFinite(due)){guardianBackupSettings.nextRunAt=new Date(Date.now()+guardianBackupSettings.intervalHours*3600000).toISOString();try{guardianBackupSaveSettings()}catch(e){console.error('[Guardian Backups] Schedule save failed:',e?.message||e)}return}
+  if(Date.now()<due)return;
+  guardianBackupSettings.nextRunAt=new Date(Date.now()+guardianBackupSettings.intervalHours*3600000).toISOString();
+  try{guardianBackupSaveSettings()}catch(e){console.error('[Guardian Backups] Could not advance schedule:',e?.message||e)}
+  try{await guardianRunFullBackup('SYSTEM','scheduled')}catch{}
+}
+setInterval(()=>{guardianBackupScheduleTick().catch(e=>console.error('[Guardian Backups] Scheduler error:',e?.message||e))},60000).unref?.();
+
+// Developer issue tracker: bugs, feature requests, tests and deployment history.
+const guardianDevIssueStatuses=['new','triaged','in_progress','testing','ready_to_deploy','resolved','closed'];
+const guardianDevIssueTypes=['bug','feature','task','incident'];
+const guardianDevIssuePriorities=['low','normal','high','critical'];
+const guardianDevIssueEnvironments=['development','staging','production'];
+let guardianDevIssues=guardianReadJson(guardianDevIssuesFile,[]);if(!Array.isArray(guardianDevIssues))guardianDevIssues=[];
+function guardianSaveDevIssues(){guardianWriteJson(guardianDevIssuesFile,guardianDevIssues)}
+function guardianDevIssueEvent(issue,actor,action,details={}){issue.events=Array.isArray(issue.events)?issue.events:[];issue.events.unshift({id:crypto.randomUUID(),at:new Date().toISOString(),actor:String(actor||'SYSTEM'),action:String(action||'updated'),details});issue.events=issue.events.slice(0,300);issue.updatedAt=new Date().toISOString()}
+function guardianDevIssueSafe(issue){return {...issue,comments:Array.isArray(issue.comments)?issue.comments:[],tests:Array.isArray(issue.tests)?issue.tests:[],deployments:Array.isArray(issue.deployments)?issue.deployments:[],events:Array.isArray(issue.events)?issue.events:[]}}
+app.get('/api/admin/dev-issues',guardianRequireAdmin('settings.view'),(req,res)=>{
+  const q=String(req.query.q||'').trim().toLowerCase(),status=String(req.query.status||''),type=String(req.query.type||'');
+  const rows=guardianDevIssues.filter(i=>(!status||i.status===status)&&(!type||i.type===type)&&(!q||`${i.key} ${i.title} ${i.description} ${i.area} ${i.assignedTo} ${i.createdBy}`.toLowerCase().includes(q))).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
+  res.setHeader('Cache-Control','no-store');res.json({ok:true,issues:rows.map(guardianDevIssueSafe),summary:{total:guardianDevIssues.length,open:guardianDevIssues.filter(i=>!['resolved','closed'].includes(i.status)).length,testing:guardianDevIssues.filter(i=>i.status==='testing').length,readyToDeploy:guardianDevIssues.filter(i=>i.status==='ready_to_deploy').length,critical:guardianDevIssues.filter(i=>i.priority==='critical'&&!['resolved','closed'].includes(i.status)).length}});
+});
+app.post('/api/admin/dev-issues',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const b=req.body||{},title=String(b.title||'').trim(),description=String(b.description||'').trim();
+  const type=String(b.type||'bug'),priority=String(b.priority||'normal');
+  if(title.length<4||title.length>180)return res.status(400).json({ok:false,error:'Title must be between 4 and 180 characters'});
+  if(description.length<8||description.length>8000)return res.status(400).json({ok:false,error:'Description must be between 8 and 8,000 characters'});
+  if(!guardianDevIssueTypes.includes(type))return res.status(400).json({ok:false,error:'Invalid issue type'});
+  if(!guardianDevIssuePriorities.includes(priority))return res.status(400).json({ok:false,error:'Invalid priority'});
+  const issueNo=guardianDevIssues.reduce((n,x)=>Math.max(n,Number(x.sequence||0)),0)+1,nowIso=new Date().toISOString();
+  const issue={id:crypto.randomUUID(),sequence:issueNo,key:`GDN-DEV-${String(issueNo).padStart(4,'0')}`,title,description,type,priority,status:'new',area:String(b.area||'FiveM').trim().slice(0,100),assignedTo:String(b.assignedTo||'').trim().slice(0,80),createdBy:req.guardianAdmin.username,createdAt:nowIso,updatedAt:nowIso,dueDate:String(b.dueDate||'').slice(0,30),targetVersion:String(b.targetVersion||'').trim().slice(0,80),steps:String(b.steps||'').trim().slice(0,6000),expected:String(b.expected||'').trim().slice(0,3000),actual:String(b.actual||'').trim().slice(0,3000),resolution:'',comments:[],tests:[],deployments:[],events:[]};
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'created',{type,priority});guardianDevIssues.unshift(issue);guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_CREATED',{issueId:issue.id,key:issue.key,type,priority});res.json({ok:true,issue:guardianDevIssueSafe(issue)});
+});
+app.post('/api/admin/dev-issues/:id/update',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const b=req.body||{},changes={};
+  if(b.title!==undefined){const v=String(b.title).trim();if(v.length<4||v.length>180)return res.status(400).json({ok:false,error:'Title must be between 4 and 180 characters'});if(v!==issue.title)changes.title=[issue.title,v];issue.title=v}
+  for(const [field,max] of [['description',8000],['area',100],['assignedTo',80],['targetVersion',80],['resolution',5000],['steps',6000],['expected',3000],['actual',3000],['dueDate',30]])if(b[field]!==undefined){const v=String(b[field]||'').trim().slice(0,max);if(v!==String(issue[field]||''))changes[field]=[String(issue[field]||''),v];issue[field]=v}
+  if(b.type!==undefined){const v=String(b.type);if(!guardianDevIssueTypes.includes(v))return res.status(400).json({ok:false,error:'Invalid issue type'});if(v!==issue.type)changes.type=[issue.type,v];issue.type=v}
+  if(b.priority!==undefined){const v=String(b.priority);if(!guardianDevIssuePriorities.includes(v))return res.status(400).json({ok:false,error:'Invalid priority'});if(v!==issue.priority)changes.priority=[issue.priority,v];issue.priority=v}
+  if(b.status!==undefined){const v=String(b.status);if(!guardianDevIssueStatuses.includes(v))return res.status(400).json({ok:false,error:'Invalid issue status'});if(v!==issue.status)changes.status=[issue.status,v];issue.status=v;if(v==='resolved'||v==='closed')issue.resolvedAt=issue.resolvedAt||new Date().toISOString();else issue.resolvedAt=null}
+  if(Object.keys(changes).length){guardianDevIssueEvent(issue,req.guardianAdmin.username,'updated',changes);guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_UPDATED',{issueId:issue.id,key:issue.key,fields:Object.keys(changes)})}
+  res.json({ok:true,issue:guardianDevIssueSafe(issue)});
+});
+app.post('/api/admin/dev-issues/:id/comments',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const content=String(req.body?.content||'').trim();if(content.length<1||content.length>4000)return res.status(400).json({ok:false,error:'Comment must be between 1 and 4,000 characters'});
+  issue.comments=Array.isArray(issue.comments)?issue.comments:[];const comment={id:crypto.randomUUID(),content,createdBy:req.guardianAdmin.username,createdAt:new Date().toISOString()};issue.comments.push(comment);guardianDevIssueEvent(issue,req.guardianAdmin.username,'commented',{commentId:comment.id});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_COMMENT_ADDED',{issueId:issue.id,key:issue.key});res.json({ok:true,comment,issue:guardianDevIssueSafe(issue)});
+});
+app.post('/api/admin/dev-issues/:id/tests',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const result=String(req.body?.result||''),environment=String(req.body?.environment||'development'),notes=String(req.body?.notes||'').trim();
+  if(!['passed','failed','blocked'].includes(result))return res.status(400).json({ok:false,error:'Choose passed, failed or blocked'});
+  if(!guardianDevIssueEnvironments.includes(environment))return res.status(400).json({ok:false,error:'Invalid test environment'});
+  if(notes.length<3||notes.length>4000)return res.status(400).json({ok:false,error:'Test notes must be between 3 and 4,000 characters'});
+  issue.tests=Array.isArray(issue.tests)?issue.tests:[];const test={id:crypto.randomUUID(),result,environment,version:String(req.body?.version||'').trim().slice(0,80),notes,testedBy:req.guardianAdmin.username,testedAt:new Date().toISOString()};issue.tests.unshift(test);
+  if(result==='passed'&&issue.status==='testing')issue.status='ready_to_deploy';if(result==='failed'&&['testing','ready_to_deploy'].includes(issue.status))issue.status='in_progress';
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'test_recorded',{result,environment,version:test.version});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_TEST_RECORDED',{issueId:issue.id,key:issue.key,result,environment});res.json({ok:true,test,issue:guardianDevIssueSafe(issue)});
+});
+app.post('/api/admin/dev-issues/:id/deployments',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const environment=String(req.body?.environment||'staging'),status=String(req.body?.status||'deployed'),version=String(req.body?.version||'').trim().slice(0,80),commit=String(req.body?.commit||'').trim().slice(0,120),notes=String(req.body?.notes||'').trim();
+  if(!guardianDevIssueEnvironments.includes(environment))return res.status(400).json({ok:false,error:'Invalid deployment environment'});
+  if(!['deployed','failed','rolled_back'].includes(status))return res.status(400).json({ok:false,error:'Invalid deployment result'});
+  if(!version&&!commit&&!notes)return res.status(400).json({ok:false,error:'Add a version, commit reference or deployment note'});
+  issue.deployments=Array.isArray(issue.deployments)?issue.deployments:[];const dep={id:crypto.randomUUID(),environment,status,version,commit,notes,deployedBy:req.guardianAdmin.username,createdAt:new Date().toISOString()};issue.deployments.unshift(dep);
+  if(status==='deployed'&&environment==='production'){issue.status='resolved';issue.resolvedAt=new Date().toISOString()}else if(status==='failed'||status==='rolled_back'){issue.status='in_progress';issue.resolvedAt=null}
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'deployment_recorded',{environment,status,version,commit});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_DEPLOYMENT_RECORDED',{issueId:issue.id,key:issue.key,environment,status,version,commit});res.json({ok:true,deployment:dep,issue:guardianDevIssueSafe(issue)});
+});
 
 app.get('/api/admin/search',guardianRequireAdmin('settings.view'),(req,res)=>{const q=String(req.query.q||'').trim().toLowerCase();if(q.length<2)return res.json({ok:true,results:[]});const out=[],push=(type,title,subtitle,link)=>{const hay=`${title} ${subtitle}`.toLowerCase();if(hay.includes(q))out.push({type,title,subtitle,link})};for(const u of guardianAdminUsers.values())push('MEMBER',u.displayName||u.username,`${u.username} ${(u.serviceAssignments||[]).map(a=>`${a.callsign||''} ${a.rank||''} ${a.division||''}`).join(' ')}`,'/settings.html#governance');for(const s of guardianServices)push('SERVICE',s.name,`${s.id} ${(s.ranks||[]).join(' ')} ${(s.divisions||[]).join(' ')}`,'/settings.html#services');for(const st of guardianConfig.stations||[])push('LOCATION',st.name,`${st.code||''} ${st.postal||''} ${st.serviceId||''}`,'/settings.html#stations');for(const a of guardianConfig.appliances||[])push('VEHICLE',a.callsign||a.name,`${a.type||''} ${a.station||''} ${(a.skills||[]).join(' ')}`,'/settings.html#appliances');for(const f of guardianForms)push('FORM',f.title,`${f.category||''} ${f.description||''}`,'/settings.html#formsbuilder');for(const g of guardianGuides)push('GUIDE',g.title,`${g.category||''} ${g.summary||''}`,'/settings.html#guides');for(const ql of guardianQualifications)push('QUAL',ql.name,`${ql.serviceId||''} ${ql.category||''}`,'/settings.html#training');for(const inc of state.incidents||[])push('INCIDENT',`Incident #${inc.id}`,`${inc.type||''} ${inc.address||''} ${inc.postal||''}`,'/control/');res.json({ok:true,results:out.slice(0,40)})});
 

@@ -65,7 +65,7 @@ async function refreshAll(){
 function render(){
   if(!config||!operational)return;
   try{
-    const renderers={overview:renderOverview,operations:renderOperationsCentre,dispatch:renderDispatchControl,fivem:window.renderGuardianFiveM,tickets:window.renderGuardianTickets,stations:renderStations,appliances:renderAppliances,map:renderMap,config:renderConfig,portal:renderPortal,applications:renderApplications,formsbuilder:renderFormsBuilder,patrols:renderPatrols,training:renderTraining,fleet:renderFleet,announcements:renderAnnouncements,guides:renderGuides,permissions:renderPermissions,services:renderServices,discord:renderDiscord,radio:renderRadio,users:renderUsers,governance:renderGovernance,templates:renderTemplates,platform:renderPlatform,backup:renderBackup,audit:renderAudit}; const renderer=renderers[active]||renderOverview; if(typeof renderer!=="function")throw new Error(`Guardian page script did not load for '${active}'. Refresh the page; if this persists, check /guardian_control_centre.js in Network.`); renderer()
+    const renderers={overview:renderOverview,operations:renderOperationsCentre,dispatch:renderDispatchControl,fivem:window.renderGuardianFiveM,tickets:window.renderGuardianTickets,stations:renderStations,appliances:renderAppliances,map:renderMap,config:renderConfig,portal:renderPortal,applications:renderApplications,formsbuilder:renderFormsBuilder,patrols:renderPatrols,training:renderTraining,fleet:renderFleet,announcements:renderAnnouncements,guides:renderGuides,permissions:renderPermissions,services:renderServices,discord:renderDiscord,radio:renderRadio,users:renderUsers,governance:renderGovernance,templates:renderTemplates,platform:renderPlatform,backup:window.renderGuardianBackups||renderBackup,issues:window.renderGuardianIssues,audit:renderAudit}; const renderer=renderers[active]||renderOverview; if(typeof renderer!=="function")throw new Error(`Guardian page script did not load for '${active}'. Refresh the page; if this persists, check /guardian_control_centre.js in Network.`); renderer()
   }catch(e){errorView("This Settings page failed to render",e)}
 }
 
@@ -398,7 +398,7 @@ renderPermissions=async function(){
    {name:'Stations & fleet',items:[['stations','Stations / Locations'],['appliances','Appliances / Vehicles'],['map','Station Map'],['config','Configuration'],['fleet','Fleet management']]},
    {name:'People & community',items:[['portal','Portal & Access'],['applications','Applications'],['governance','People & Governance'],['formsbuilder','Forms Builder'],['users','Users & Access']]},
    {name:'Operations & learning',items:[['patrols','Operations & Deployment'],['training','Training & Qualifications'],['announcements','Announcements'],['guides','Rules & Guides'],['templates','Template Library']]},
-   {name:'Platform & administration',items:[['permissions','Roles & Permissions'],['services','Services / Ranks / Callsigns'],['discord','Discord Integration'],['fivem','FiveM Integration'],['radio','Radio'],['backup','Backups / Restore Points'],['platform','Status & Platform'],['audit','Audit Log']]}
+   {name:'Platform & administration',items:[['permissions','Roles & Permissions'],['services','Services / Ranks / Callsigns'],['discord','Discord Integration'],['fivem','FiveM Integration'],['radio','Radio'],['backup','Backups / Restore Points'],['issues','Developer Issue Tracker'],['platform','Status & Platform'],['audit','Audit Log']]}
   ];
   const labels={portal:'Portal & Access',formsbuilder:'Forms Builder',governance:'People & Governance'};
   const all=groups.flatMap(g=>g.items);let selected=Object.keys(perms)[0]||'player';
@@ -424,7 +424,7 @@ renderPermissions=async function(){
     const legacyAllowed=rp.settings===true||['owner','admin','dev'].includes(roleKey);
     for(const [k] of all)rp['setting_'+k]=legacyAllowed;
    }else{
-    for(const [k] of all)if(typeof rp['setting_'+k]!=='boolean')rp['setting_'+k]=false;
+    for(const [k] of all)if(typeof rp['setting_'+k]!=='boolean')rp['setting_'+k]=(k==='issues'&&['owner','admin','dev'].includes(roleKey));
     // Only repair the known broken state (all granular flags false) when legacy flags or
     // the built-in role definition indicate this role should have section access.
     const legacyIntent=rp.settings===true||rp.staff===true||rp.portal===true||rp.mdt===true||rp.control===true||rp.radio===true||rp.forms===true||rp.patrols===true||rp.training===true;

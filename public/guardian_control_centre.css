@@ -12,3 +12,58 @@
 .gctlTicketDetailHead select:disabled,.gctlAssign input:disabled,.gctlAssign button:disabled{opacity:.7;cursor:not-allowed}
 @media(max-width:1050px){.gctlTicketFilters{grid-template-columns:repeat(2,minmax(0,1fr))}.gctlTicketFilters input{grid-column:1/-1}}
 @media(max-width:600px){.gctlTicketFilters{grid-template-columns:1fr}.gctlTicketFilters input{grid-column:auto}.gctlTicketFilters button{width:100%}}
+
+/* Guardian backup and developer workflow screens */
+.gctlBackupWrap,.gctlIssueWrap{display:flex;flex-direction:column;gap:14px}
+.gctlBackupColumns{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:14px;align-items:start}
+.gctlFormGrid,.gctlIssueFields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.gctlFormGrid label,.gctlIssueFields label,.gctlIssueCreate label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:11px;font-weight:700;color:#b9d8e8}
+.gctlFormGrid input,.gctlFormGrid select,.gctlIssueFields input,.gctlIssueFields select,.gctlIssueFields textarea,.gctlIssueCreate input,.gctlIssueCreate select,.gctlIssueCreate textarea,.gctlCommentForm textarea,.gctlBackupWrap textarea{width:100%;box-sizing:border-box;min-width:0;background:#061a26;border:1px solid #245068;color:#e7f7ff;border-radius:8px;padding:10px 11px;font:inherit}
+.gctlFullWidth{grid-column:1/-1}
+.gctlToggleLine{display:flex!important;align-items:center;flex-direction:row!important;gap:9px;padding:12px;border-radius:8px;background:#092534;border:1px solid #21485d}
+.gctlToggleLine input{width:auto!important}
+.gctlRecoveryNote{border:1px solid #22485d;border-left:3px solid #28a9e8;background:#081d29;border-radius:8px;padding:12px 13px;margin:10px 0}
+.gctlRecoveryNote strong{display:block;color:#d8f3ff;font-size:12px;margin-bottom:5px}
+.gctlRecoveryNote p{margin:0;color:#94b6c8;font-size:11px;line-height:1.6}
+.gctlRecoveryTable td{vertical-align:top}
+.gctlRecoveryTable td small{display:block;max-width:220px;white-space:normal;overflow-wrap:anywhere}
+.gctlErrorText{color:#ff9ea8!important}
+.gctlSuccessText{color:#6ce5b0!important}
+.gctlSnapshotCreate{margin:12px 0}
+.gctlSnapshotCreate input{flex:1;min-width:180px}
+.gctlSnapshotList{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+.gctlSnapshotRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #1e4357;border-radius:8px;background:#071c28}
+.gctlSnapshotRow>div{min-width:0;display:flex;flex-direction:column;gap:5px}
+.gctlSnapshotRow strong{font-size:12px}.gctlSnapshotRow small{color:#89adbf;font-size:10px}
+.gctlBackupWrap textarea{display:block;margin:10px 0}
+.gctlIssueCreate{display:grid;grid-template-columns:minmax(0,2fr) minmax(130px,1fr) minmax(130px,1fr) minmax(0,1.2fr);gap:12px;margin-top:12px}
+.gctlIssueLayout{display:grid;grid-template-columns:minmax(280px,.78fr) minmax(0,1.6fr);gap:14px;align-items:start}
+.gctlIssueFilters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.gctlIssueFilters input{flex:1;min-width:170px}
+.gctlIssueFilters select{min-width:135px}
+.gctlIssueList{display:flex;flex-direction:column;gap:7px;max-height:70vh;overflow:auto}
+.gctlIssueListRow{display:flex;flex-direction:column;gap:6px;text-align:left;width:100%;padding:12px;border-radius:9px;border:1px solid #1e4357;background:#071b27;color:#e5f6ff;cursor:pointer}
+.gctlIssueListRow:hover{border-color:#2b91c5;background:#0a2636}
+.gctlIssueListRow.active{border-color:#1fa5e8;box-shadow:inset 3px 0 #29b8ff;background:#0b2a3b}
+.gctlIssueKey{font-size:10px;color:#57caff;letter-spacing:1px;font-weight:900}
+.gctlIssueListRow strong{font-size:12px;line-height:1.4}
+.gctlIssueMeta{font-size:10px;color:#8eb4c8}
+.gctlIssuePills{display:flex;flex-wrap:wrap;gap:6px}
+.gctlIssuePills i{font-style:normal;font-size:9px;font-weight:800;border:1px solid #2c5064;border-radius:15px;padding:3px 7px;color:#a6c6d7}
+.gctlIssuePills i.critical,.gctlIssuePills i.high{color:#ffb1b8;border-color:#8a3f52;background:#321923}
+.gctlIssueDetailHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:12px;border-bottom:1px solid #214358;margin-bottom:12px}
+.gctlIssueDetailHead h3{margin:5px 0;font-size:17px;line-height:1.4}
+.gctlIssueDetailHead p{font-size:10px;color:#91b3c5;margin:5px 0}
+.gctlIssueFields .gctlTwoCols{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.gctlIssueSubsection{border-top:1px solid #1c4053;margin-top:18px;padding-top:14px}
+.gctlIssueSubsection h4{margin:0 0 10px;color:#d9f2ff;font-size:13px}
+.gctlTimeline{display:flex;flex-direction:column;gap:8px;margin-top:11px}
+.gctlTimeline article{border:1px solid #1c4053;border-radius:8px;background:#071b27;padding:10px 12px;overflow-wrap:anywhere}
+.gctlTimeline header{font-size:10px;color:#9fc1d2;line-height:1.5}
+.gctlTimeline p{white-space:pre-wrap;font-size:11px;line-height:1.55;color:#d2e6f0;margin:7px 0}
+.gctlTimeline small{color:#7398ac;font-size:10px;overflow-wrap:anywhere}
+.gctlCommentForm{display:flex;flex-direction:column;gap:8px}
+.gctlCommentForm button{align-self:flex-start}
+.gctlIssueStats{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1050px){.gctlBackupColumns,.gctlIssueLayout{grid-template-columns:1fr}.gctlIssueCreate{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.gctlFormGrid,.gctlIssueFields,.gctlIssueFields .gctlTwoCols,.gctlIssueCreate{grid-template-columns:1fr}.gctlSnapshotRow{align-items:flex-start;flex-direction:column}.gctlIssueStats{grid-template-columns:repeat(2,minmax(0,1fr))}.gctlFullWidth{grid-column:1}}
