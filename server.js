@@ -1131,10 +1131,12 @@ async function guardianStartDiscordGateway(){
         if(interaction.isButton?.() && customId.startsWith('guardian_ticket_close:')){
           const id=customId.split(':')[1];const ticket=guardianTickets.find(t=>t.id===id);
           if(!ticket)return interaction.reply({content:'Ticket not found.',ephemeral:true});
+          if(ticket.status==='closed')return interaction.reply({content:'This ticket is already closed.',ephemeral:true});
           if(!guardianDiscordCanManageTicket(interaction,ticket))return interaction.reply({content:'You do not have permission to close this ticket.',ephemeral:true});
-          ticket.status='closed';ticket.closedAt=new Date().toISOString();ticket.closedBy=interaction.user.id;guardianSaveTickets();
-          await interaction.reply({content:`Ticket ${ticket.number} closed.`});
-          await guardianTicketSyncStatus(ticket,'closed','Discord');
+          await interaction.deferUpdate();
+          const previousStatus=ticket.status;
+          const result=await guardianTicketSyncStatus(ticket,'closed','Discord',interaction.user?.globalName||interaction.user?.username||interaction.user?.id,previousStatus);
+          if(!result.ok)console.warn(`[Guardian Tickets] ${ticket.number} was marked closed but the Discord channel could not be locked: ${result.error||'unknown error'}`);
           return;
         }
         if(!interaction.isButton?.() || !/^guardian_patrol_(attend|decline):/.test(customId))return;
@@ -3096,16 +3098,105 @@ if(!Array.isArray(guardianTickets))guardianTickets=[];
 function guardianSaveTickets(){guardianWriteJson(guardianTicketsFile,guardianTickets)}
 function guardianTicketNumber(){const n=guardianTickets.reduce((m,t)=>Math.max(m,Number(t.sequence||0)),0)+1;return {sequence:n,number:`GDN-${String(n).padStart(5,"0")}`}}
 function guardianTicketSafe(t){return {...t,discordToken:undefined}}
+const guardianTicketCategoriesFile=path.join(guardianAdminDataDir,"guardian-ticket-categories.json");
+const guardianTicketDefaultCategories=[
+  {key:"support",label:"General Support",style:"Primary",priority:"normal"},
+  {key:"report",label:"Player Report",style:"Danger",priority:"high"},
+  {key:"appeal",label:"Ban Appeal",style:"Secondary",priority:"high"},
+  {key:"bug",label:"Bug Report",style:"Secondary",priority:"normal"},
+  {key:"complaint",label:"Staff Complaint",style:"Secondary",priority:"high"},
+  {key:"payment",label:"Payment Support",style:"Secondary",priority:"normal"}
+];
+function guardianTicketCategoryKey(value){return String(value||"").trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40)}
+function guardianTicketNormaliseCategories(value){
+  if(!Array.isArray(value)||value.length<1||value.length>25)throw new Error("Add between 1 and 25 ticket categories.");
+  const seen=new Set();
+  return value.map((item,index)=>{
+    const label=String(item?.label||item?.name||"").trim().slice(0,80);
+    const key=guardianTicketCategoryKey(item?.key||label);
+    const style=["Primary","Secondary","Success","Danger"].includes(String(item?.style))?String(item.style):"Secondary";
+    const priority=String(item?.priority)==="high"?"high":"normal";
+    if(!label)throw new Error(`Category ${index+1} needs a name.`);
+    if(!key)throw new Error(`Category ${index+1} needs a valid ID/name.`);
+    if(seen.has(key))throw new Error(`The category ID “${key}” is used more than once.`);
+    seen.add(key);
+    return {key,label,style,priority};
+  });
+}
+const guardianTicketCategoryRaw=guardianReadJson(guardianTicketCategoriesFile,guardianTicketDefaultCategories);
+let guardianTicketCategories=guardianTicketNormaliseCategories(Array.isArray(guardianTicketCategoryRaw)&&guardianTicketCategoryRaw.length?guardianTicketCategoryRaw:guardianTicketDefaultCategories);
+const guardianTicketPanelStateFile=path.join(guardianAdminDataDir,"guardian-ticket-panel.json");
+let guardianTicketPanelState=guardianReadJson(guardianTicketPanelStateFile,{channelId:"",messageId:""});
+if(!guardianTicketPanelState||typeof guardianTicketPanelState!=="object")guardianTicketPanelState={channelId:"",messageId:""};
 function guardianDiscordCanManageTicket(interaction,ticket){
   if(interaction.user?.id===ticket.createdByDiscordId)return true;
   const ids=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
   const roles=interaction.member?.roles?.cache;
   return ids.some(id=>roles?.has?.(id)) || interaction.memberPermissions?.has?.("ManageChannels")===true;
 }
-async function guardianCreateDiscordTicket(interaction,category){
+function guardianTicketPanelPayload(djs){
+  const embed=new djs.EmbedBuilder().setColor(0x139fe8).setTitle("GUARDIAN SUPPORT").setDescription("Select a category below to open a private support ticket. Please do not open duplicate tickets.").setFooter({text:"Guardian Operations • Ticket System"});
+  const rows=[];
+  for(let i=0;i<guardianTicketCategories.length;i+=5){
+    const row=new djs.ActionRowBuilder();
+    for(const category of guardianTicketCategories.slice(i,i+5)){
+      const style=djs.ButtonStyle[category.style]||djs.ButtonStyle.Secondary;
+      row.addComponents(new djs.ButtonBuilder().setCustomId(`guardian_ticket_open:${category.key}`).setLabel(category.label).setStyle(style));
+    }
+    rows.push(row);
+  }
+  return {embeds:[embed],components:rows};
+}
+async function guardianPublishTicketPanel(channelId){
+  if(!guardianDiscordGatewayClient?.isReady?.())throw new Error("Discord bot is not connected. Configure DISCORD_BOT_TOKEN first.");
+  const ch=await guardianDiscordGatewayClient.channels.fetch(String(channelId||guardianTicketPanelState.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim());
+  if(!ch?.isTextBased?.()||!ch.messages)throw new Error("The selected Discord channel is not a text channel.");
+  const djs=await import("discord.js"),payload=guardianTicketPanelPayload(djs);
+  let message=null,updated=false;
+  if(guardianTicketPanelState.channelId===ch.id&&guardianTicketPanelState.messageId){message=await ch.messages.fetch(guardianTicketPanelState.messageId).catch(()=>null);}
+  if(message){await message.edit(payload);updated=true}else{message=await ch.send(payload)}
+  guardianTicketPanelState={channelId:ch.id,messageId:message.id,updatedAt:new Date().toISOString()};
+  guardianWriteJson(guardianTicketPanelStateFile,guardianTicketPanelState);
+  return {channelId:ch.id,messageId:message.id,updated};
+}
+async function guardianTicketDisableCloseButton(channel,ticket){
+  try{
+    let message=null;
+    if(ticket.openingMessageId)message=await channel.messages.fetch(ticket.openingMessageId).catch(()=>null);
+    if(!message){
+      const recent=await channel.messages.fetch({limit:50}).catch(()=>null);
+      if(recent)message=[...recent.values()].find(m=>(m.components||[]).some(row=>(row.components||[]).some(component=>String(component.customId||"")===`guardian_ticket_close:${ticket.id}`)))||null;
+    }
+    if(message&&message.components?.length)await message.edit({components:[]});
+  }catch(e){console.warn("[Guardian Tickets] unable to remove close button:",e?.message||e)}
+}
+async function guardianTicketApplyChannelStatus(ticket,status,previousStatus){
+  if(!guardianDiscordGatewayClient?.isReady?.()||!ticket.channelId)return {ok:false,error:"Discord bot/channel unavailable"};
+  const channel=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);
+  if(!channel?.isTextBased?.()||!channel.permissionOverwrites)return {ok:false,error:"Ticket Discord channel not found"};
+  try{
+    if(status==="closed"){
+      if(ticket.createdByDiscordId){
+        await channel.permissionOverwrites.edit(ticket.createdByDiscordId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:false,AttachFiles:false,AddReactions:false});
+      }
+      if(!ticket.channelName)ticket.channelName=channel.name;
+      if(!String(channel.name||"").startsWith("closed-"))await channel.setName(`closed-${channel.name||ticket.number}`.slice(0,100));
+      await guardianTicketDisableCloseButton(channel,ticket);
+    }else if(previousStatus==="closed"){
+      if(ticket.createdByDiscordId){
+        await channel.permissionOverwrites.edit(ticket.createdByDiscordId,{ViewChannel:true,ReadMessageHistory:true,SendMessages:true,AttachFiles:true,AddReactions:true});
+      }
+      if(String(channel.name||"").startsWith("closed-"))await channel.setName(String(ticket.channelName||channel.name.replace(/^closed-/,"")).slice(0,100));
+    }
+    guardianSaveTickets();
+    return {ok:true};
+  }catch(e){console.warn("[Guardian Tickets] channel close/reopen sync failed:",e?.message||e);return {ok:false,error:e?.message||"Could not update Discord channel permissions"}}
+}
+async function guardianCreateDiscordTicket(interaction,categoryKey){
   const guild=interaction.guild;if(!guild)return null;
-  const valid={support:"General Support",report:"Player Report",appeal:"Ban Appeal",bug:"Bug Report",complaint:"Staff Complaint",payment:"Payment Support"};
-  const label=valid[category]||valid.support;
+  const category=guardianTicketCategories.find(c=>c.key===guardianTicketCategoryKey(categoryKey));
+  if(!category)return null;
+  const label=category.label;
   const staffRoles=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
   const overwrites=[{id:guild.roles.everyone.id,deny:["ViewChannel"]},{id:interaction.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]}];
   if(interaction.client?.user?.id)overwrites.push({id:interaction.client.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","ManageChannels","EmbedLinks","AttachFiles"]});
@@ -3114,40 +3205,57 @@ async function guardianCreateDiscordTicket(interaction,category){
   const num=guardianTicketNumber();
   let channel;
   try{channel=await guild.channels.create({name:`ticket-${String(num.sequence).padStart(4,"0")}`,type:0,parent:parent||undefined,permissionOverwrites:overwrites,topic:`Guardian ${num.number} | ${label} | creator ${interaction.user.id}`})}catch(e){console.error('[Guardian Tickets] channel create failed:',e?.message||e);return null}
-  const ticket={id:crypto.randomUUID(),...num,title:label,category,description:"",status:"open",priority:category==="report"||category==="appeal"?"high":"normal",createdByDiscordId:interaction.user.id,createdByName:interaction.user.globalName||interaction.user.username,channelId:channel.id,guildId:guild.id,assignedTo:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[]};
+  const ticket={id:crypto.randomUUID(),...num,title:label,category:category.key,description:"",status:"open",priority:category.priority||"normal",createdByDiscordId:interaction.user.id,createdByName:interaction.user.globalName||interaction.user.username,channelId:channel.id,channelName:channel.name,guildId:guild.id,assignedTo:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[]};
   guardianTickets.push(ticket);guardianSaveTickets();
-  try{const djs=await import('discord.js');await channel.send({content:`<@${interaction.user.id}>`,embeds:[new djs.EmbedBuilder().setColor(0x139fe8).setTitle(`${num.number} · ${label}`).setDescription("Welcome to Guardian Support. Please explain your issue and a member of staff will assist you.").addFields({name:"Status",value:"Open",inline:true},{name:"Priority",value:ticket.priority,inline:true}).setTimestamp()],components:[new djs.ActionRowBuilder().addComponents(new djs.ButtonBuilder().setCustomId(`guardian_ticket_close:${ticket.id}`).setLabel("Close Ticket").setStyle(djs.ButtonStyle.Danger))]})}catch{}
+  try{const djs=await import('discord.js');const opening=await channel.send({content:`<@${interaction.user.id}>`,embeds:[new djs.EmbedBuilder().setColor(0x139fe8).setTitle(`${num.number} · ${label}`).setDescription("Welcome to Guardian Support. Please explain your issue and a member of staff will assist you.").addFields({name:"Status",value:"Open",inline:true},{name:"Priority",value:ticket.priority,inline:true}).setTimestamp()],components:[new djs.ActionRowBuilder().addComponents(new djs.ButtonBuilder().setCustomId(`guardian_ticket_close:${ticket.id}`).setLabel("Close Ticket").setStyle(djs.ButtonStyle.Danger))]});ticket.openingMessageId=opening.id;guardianSaveTickets()}catch(e){console.warn('[Guardian Tickets] opening message failed:',e?.message||e)}
   return ticket;
 }
-async function guardianTicketSyncStatus(ticket,status,source){
-  ticket.status=status;ticket.updatedAt=new Date().toISOString();guardianSaveTickets();
-  try{if(guardianDiscordGatewayClient&&ticket.channelId){const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);if(ch)await ch.send(`🔒 Ticket **${ticket.number}** marked **${status}** from ${source}.`)}}catch{}
+async function guardianTicketSyncStatus(ticket,status,source,actorName="Guardian",previousStatus=ticket.status){
+  ticket.status=status;ticket.updatedAt=new Date().toISOString();
+  if(status==="closed"){ticket.closedAt=ticket.updatedAt;ticket.closedBy=String(actorName||source||"Guardian")}else if(previousStatus==="closed"){ticket.reopenedAt=ticket.updatedAt;}
+  guardianSaveTickets();
+  const channelResult=await guardianTicketApplyChannelStatus(ticket,status,previousStatus);
+  try{
+    if(guardianDiscordGatewayClient?.isReady?.()&&ticket.channelId){
+      const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);
+      if(ch?.isTextBased?.())await ch.send(status==="closed"?`🔒 Ticket **${ticket.number}** was closed by **${String(actorName||source||"Guardian")}**. The channel is now read-only; its history has been preserved.`:previousStatus==="closed"?`🔓 Ticket **${ticket.number}** was reopened by **${String(actorName||source||"Guardian")}**.`:`🔔 Ticket **${ticket.number}** marked **${status.replace("_"," ")}** from ${source}.`);
+    }
+  }catch(e){console.warn("[Guardian Tickets] status notice failed:",e?.message||e)}
+  guardianAdminAuditLog(String(actorName||source||"GUARDIAN"),status==="closed"?"TICKET_CLOSED":previousStatus==="closed"?"TICKET_REOPENED":"TICKET_STATUS_UPDATED",{ticket:ticket.number,status,source,channelUpdated:channelResult.ok});
+  return channelResult;
 }
 app.get("/api/admin/tickets",guardianRequireAdmin("settings.view"),(req,res)=>{
   const q=String(req.query.q||"").toLowerCase(),status=String(req.query.status||"");
   const tickets=guardianTickets.filter(t=>(!status||t.status===status)&&(!q||`${t.number} ${t.title} ${t.createdByName} ${t.category}`.toLowerCase().includes(q))).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  res.json({ok:true,tickets:tickets.map(guardianTicketSafe),discordConnected:!!guardianDiscordGatewayClient?.isReady?.()});
+  res.json({ok:true,tickets:tickets.map(guardianTicketSafe),categories:guardianTicketCategories,discordConnected:!!guardianDiscordGatewayClient?.isReady?.(),panel:guardianTicketPanelState});
+});
+app.get("/api/admin/tickets/categories",guardianRequireAdmin("settings.view"),(_req,res)=>res.json({ok:true,categories:guardianTicketCategories}));
+app.post("/api/admin/tickets/categories",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  let categories;
+  try{categories=guardianTicketNormaliseCategories(req.body?.categories)}catch(e){return res.status(400).json({ok:false,error:e?.message||"Invalid ticket categories"})}
+  guardianTicketCategories=categories;guardianWriteJson(guardianTicketCategoriesFile,guardianTicketCategories);
+  let panelUpdated=false,panelWarning="";
+  if(guardianTicketPanelState.channelId&&guardianDiscordGatewayClient?.isReady?.()){
+    try{await guardianPublishTicketPanel(guardianTicketPanelState.channelId);panelUpdated=true}
+    catch(e){panelWarning=e?.message||"Categories saved, but the Discord panel could not be updated.";console.warn("[Guardian Tickets] category panel refresh failed:",panelWarning)}
+  }
+  guardianAdminAuditLog(req.guardianAdmin.username,"TICKET_CATEGORIES_UPDATED",{categories:categories.map(c=>({key:c.key,label:c.label,style:c.style,priority:c.priority})),panelUpdated});
+  res.json({ok:true,categories:guardianTicketCategories,panelUpdated,panelWarning});
 });
 app.post("/api/admin/tickets/panel",guardianRequireAdmin("settings.edit"),async(req,res)=>{
-  const channelId=String(req.body?.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim();
+  const channelId=String(req.body?.channelId||guardianTicketPanelState.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim();
   if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected. Configure DISCORD_BOT_TOKEN first."});
   if(!channelId)return res.status(400).json({ok:false,error:"Enter the Discord channel ID for the ticket panel."});
   try{
-    const ch=await guardianDiscordGatewayClient.channels.fetch(channelId);
-    if(!ch?.isTextBased?.())return res.status(400).json({ok:false,error:"The selected Discord channel is not a text channel."});
-    const djs=await import("discord.js");
-    const embed=new djs.EmbedBuilder().setColor(0x139fe8).setTitle("GUARDIAN SUPPORT").setDescription("Select a category below to open a private support ticket. Please do not open duplicate tickets.").setFooter({text:"Guardian Operations • Ticket System"});
-    const row1=new djs.ActionRowBuilder().addComponents(
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:support").setLabel("General Support").setStyle(djs.ButtonStyle.Primary),
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:report").setLabel("Player Report").setStyle(djs.ButtonStyle.Danger),
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:appeal").setLabel("Ban Appeal").setStyle(djs.ButtonStyle.Secondary));
-    const row2=new djs.ActionRowBuilder().addComponents(
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:bug").setLabel("Bug Report").setStyle(djs.ButtonStyle.Secondary),
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:complaint").setLabel("Staff Complaint").setStyle(djs.ButtonStyle.Secondary),
-      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:payment").setLabel("Payment Support").setStyle(djs.ButtonStyle.Secondary));
-    const msg=await ch.send({embeds:[embed],components:[row1,row2]});
-    res.json({ok:true,messageId:msg.id,channelId:ch.id});
-  }catch(e){res.status(400).json({ok:false,error:e?.message||"Could not post ticket panel"})}
+    const result=await guardianPublishTicketPanel(channelId);
+    guardianAdminAuditLog(req.guardianAdmin.username,result.updated?"TICKET_PANEL_UPDATED":"TICKET_PANEL_PUBLISHED",{channelId:result.channelId,messageId:result.messageId,categoryCount:guardianTicketCategories.length});
+    res.json({ok:true,...result,categoryCount:guardianTicketCategories.length});
+  }catch(e){
+    const message=e?.message||"Could not post ticket panel";
+    const code=Number(e?.code||e?.rawError?.code||0);
+    const forbidden=code===50013||/missing permissions|missing access/i.test(message);
+    res.status(forbidden?403:400).json({ok:false,error:forbidden?"Discord says the bot is missing channel permissions. Grant View Channel, Send Messages, and Embed Links in the panel channel.":message});
+  }
 });
 app.post("/api/admin/tickets/:id/messages",guardianRequireAdmin("settings.edit"),async(req,res)=>{
   const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
@@ -3161,9 +3269,14 @@ app.post("/api/admin/tickets/:id/messages",guardianRequireAdmin("settings.edit")
 app.post("/api/admin/tickets/:id/status",guardianRequireAdmin("settings.edit"),async(req,res)=>{
   const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
   const status=String(req.body?.status||"");if(!["open","in_progress","waiting","closed"].includes(status))return res.status(400).json({ok:false,error:"Invalid ticket status"});
-  ticket.status=status;ticket.updatedAt=new Date().toISOString();if(status==="closed"){ticket.closedAt=ticket.updatedAt;ticket.closedBy=req.guardianAdmin.username}guardianSaveTickets();
-  try{if(guardianDiscordGatewayClient?.isReady?.()&&ticket.channelId){const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);if(ch)await ch.send(`🔔 Ticket **${ticket.number}** status changed to **${status.replace("_"," ")}** by ${req.guardianAdmin.username}.`)}}catch{}
-  res.json({ok:true,ticket:guardianTicketSafe(ticket)});
+  const previousStatus=ticket.status;
+  if(previousStatus===status&&status!=="closed")return res.json({ok:true,ticket:guardianTicketSafe(ticket),channelUpdated:true});
+  if(previousStatus===status&&status==="closed"){
+    const channelResult=await guardianTicketApplyChannelStatus(ticket,"closed","closed");
+    return res.json({ok:true,ticket:guardianTicketSafe(ticket),channelUpdated:channelResult.ok,channelWarning:channelResult.ok?"":(channelResult.error||"Discord channel could not be updated")});
+  }
+  const channelResult=await guardianTicketSyncStatus(ticket,status,"website",req.guardianAdmin.username,previousStatus);
+  res.json({ok:true,ticket:guardianTicketSafe(ticket),channelUpdated:channelResult.ok,channelWarning:channelResult.ok?"":(channelResult.error||"Discord channel could not be updated")});
 });
 app.post("/api/admin/tickets/:id/assign",guardianRequireAdmin("settings.edit"),(req,res)=>{
   const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
