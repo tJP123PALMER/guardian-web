@@ -1117,17 +1117,43 @@ async function guardianStartDiscordGateway(){
   const token=String(process.env.DISCORD_BOT_TOKEN||'').trim();if(!token)return;
   try{
     const djs=await import('discord.js');
-    const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds]});guardianDiscordGatewayClient=client;
+    const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds,djs.GatewayIntentBits.GuildMessages,djs.GatewayIntentBits.MessageContent]});guardianDiscordGatewayClient=client;
     client.on('interactionCreate',async interaction=>{
       try{
-        if(!interaction.isButton?.())return;const customId=String(interaction.customId||'');if(!/^guardian_patrol_(attend|decline):/.test(customId))return;
+        const customId=String(interaction.customId||'');
+        if(interaction.isButton?.() && customId.startsWith('guardian_ticket_open:')){
+          const category=customId.split(':')[1]||'support';
+          const ticket=await guardianCreateDiscordTicket(interaction,category);
+          if(ticket) await interaction.reply({content:`Your Guardian ticket **${ticket.number}** has been created: <#${ticket.channelId}>`,ephemeral:true});
+          else await interaction.reply({content:'I could not create your ticket. Please contact staff.',ephemeral:true});
+          return;
+        }
+        if(interaction.isButton?.() && customId.startsWith('guardian_ticket_close:')){
+          const id=customId.split(':')[1];const ticket=guardianTickets.find(t=>t.id===id);
+          if(!ticket)return interaction.reply({content:'Ticket not found.',ephemeral:true});
+          if(!guardianDiscordCanManageTicket(interaction,ticket))return interaction.reply({content:'You do not have permission to close this ticket.',ephemeral:true});
+          ticket.status='closed';ticket.closedAt=new Date().toISOString();ticket.closedBy=interaction.user.id;guardianSaveTickets();
+          await interaction.reply({content:`Ticket ${ticket.number} closed.`});
+          await guardianTicketSyncStatus(ticket,'closed','Discord');
+          return;
+        }
+        if(!interaction.isButton?.() || !/^guardian_patrol_(attend|decline):/.test(customId))return;
         const result=guardianApplyPatrolDiscordResponse({customId,discordUserId:interaction.user?.id,discordUsername:interaction.user?.username,discordDisplayName:interaction.user?.globalName,discordNick:interaction.member?.nickname,messageId:interaction.message?.id,channelId:interaction.channelId});
         if(result.ok)await interaction.reply({content:result.status==='attending'?'✅ You are attending this patrol.':'❌ You are marked as not attending.',ephemeral:true});
         else await interaction.reply({content:`⚠️ ${result.error}`,ephemeral:true});
         if(result.patrol)await guardianPatrolSyncDiscord(result.patrol,{createIfMissing:false});
       }catch(e){console.error('[Guardian] Discord gateway patrol interaction failed:',e);try{if(!interaction.replied&&!interaction.deferred)await interaction.reply({content:'⚠️ Guardian could not process that attendance response. Please try again.',ephemeral:true})}catch{}}
     });
-    client.once('ready',()=>console.log(`[Guardian] Discord gateway connected as ${client.user?.tag||client.user?.id||'bot'}; patrol buttons are live.`));
+    client.on('messageCreate',async message=>{
+      try{
+        if(message.author?.bot || !message.guildId)return;
+        const ticket=guardianTickets.find(t=>t.channelId===message.channelId && t.status!=='closed');
+        if(!ticket)return;
+        const item={id:message.id,authorId:message.author.id,authorName:message.member?.displayName||message.author.username,source:'discord',content:String(message.content||''),createdAt:message.createdAt?.toISOString?.()||new Date().toISOString(),attachments:[...message.attachments.values()].map(a=>({name:a.name,url:a.url}))};
+        ticket.messages ||= [];ticket.messages.push(item);ticket.updatedAt=item.createdAt;guardianSaveTickets();
+      }catch(e){console.error('[Guardian Tickets] incoming Discord message failed:',e?.message||e)}
+    });
+    client.once('ready',()=>console.log(`[Guardian] Discord gateway connected as ${client.user?.tag||client.user?.id||client.user?.id||'bot'}; patrol buttons and tickets are live.`));
     await client.login(token);
   }catch(e){console.error('[Guardian] Discord gateway unavailable:',e?.message||e)}
 }
@@ -2027,6 +2053,7 @@ app.post("/api/fivem/state",auth,(req,res)=>{
   if(body.callSignStations && typeof body.callSignStations === "object") state.callSignStations = body.callSignStations;
   if(body.applianceSkills && typeof body.applianceSkills === "object") state.applianceSkills = body.applianceSkills;
   if(body.bookings && typeof body.bookings === "object") state.bookings = body.bookings;
+  if(body.serverMetrics && typeof body.serverMetrics === "object") state.serverMetrics = body.serverMetrics;
 
   state.connected = true;
   state.coreMode = "FIVEM CONNECTED";
@@ -3059,6 +3086,122 @@ app.use((req,res,next)=>{
   }
   next();
 });
+
+// ============================================================
+// Guardian FiveM Control Centre + Discord Ticket System
+// ============================================================
+const guardianTicketsFile=path.join(guardianAdminDataDir,"guardian-tickets.json");
+let guardianTickets=guardianReadJson(guardianTicketsFile,[]);
+if(!Array.isArray(guardianTickets))guardianTickets=[];
+function guardianSaveTickets(){guardianWriteJson(guardianTicketsFile,guardianTickets)}
+function guardianTicketNumber(){const n=guardianTickets.reduce((m,t)=>Math.max(m,Number(t.sequence||0)),0)+1;return {sequence:n,number:`GDN-${String(n).padStart(5,"0")}`}}
+function guardianTicketSafe(t){return {...t,discordToken:undefined}}
+function guardianDiscordCanManageTicket(interaction,ticket){
+  if(interaction.user?.id===ticket.createdByDiscordId)return true;
+  const ids=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const roles=interaction.member?.roles?.cache;
+  return ids.some(id=>roles?.has?.(id)) || interaction.memberPermissions?.has?.("ManageChannels")===true;
+}
+async function guardianCreateDiscordTicket(interaction,category){
+  const guild=interaction.guild;if(!guild)return null;
+  const valid={support:"General Support",report:"Player Report",appeal:"Ban Appeal",bug:"Bug Report",complaint:"Staff Complaint",payment:"Payment Support"};
+  const label=valid[category]||valid.support;
+  const staffRoles=String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const overwrites=[{id:guild.roles.everyone.id,deny:["ViewChannel"]},{id:interaction.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]}];
+  if(interaction.client?.user?.id)overwrites.push({id:interaction.client.user.id,allow:["ViewChannel","SendMessages","ReadMessageHistory","ManageChannels","EmbedLinks","AttachFiles"]});
+  for(const id of staffRoles)overwrites.push({id,allow:["ViewChannel","SendMessages","ReadMessageHistory","AttachFiles"]});
+  const parent=String(process.env.DISCORD_TICKET_CATEGORY_ID||"").trim();
+  const num=guardianTicketNumber();
+  let channel;
+  try{channel=await guild.channels.create({name:`ticket-${String(num.sequence).padStart(4,"0")}`,type:0,parent:parent||undefined,permissionOverwrites:overwrites,topic:`Guardian ${num.number} | ${label} | creator ${interaction.user.id}`})}catch(e){console.error('[Guardian Tickets] channel create failed:',e?.message||e);return null}
+  const ticket={id:crypto.randomUUID(),...num,title:label,category,description:"",status:"open",priority:category==="report"||category==="appeal"?"high":"normal",createdByDiscordId:interaction.user.id,createdByName:interaction.user.globalName||interaction.user.username,channelId:channel.id,guildId:guild.id,assignedTo:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[]};
+  guardianTickets.push(ticket);guardianSaveTickets();
+  try{const djs=await import('discord.js');await channel.send({content:`<@${interaction.user.id}>`,embeds:[new djs.EmbedBuilder().setColor(0x139fe8).setTitle(`${num.number} · ${label}`).setDescription("Welcome to Guardian Support. Please explain your issue and a member of staff will assist you.").addFields({name:"Status",value:"Open",inline:true},{name:"Priority",value:ticket.priority,inline:true}).setTimestamp()],components:[new djs.ActionRowBuilder().addComponents(new djs.ButtonBuilder().setCustomId(`guardian_ticket_close:${ticket.id}`).setLabel("Close Ticket").setStyle(djs.ButtonStyle.Danger))]})}catch{}
+  return ticket;
+}
+async function guardianTicketSyncStatus(ticket,status,source){
+  ticket.status=status;ticket.updatedAt=new Date().toISOString();guardianSaveTickets();
+  try{if(guardianDiscordGatewayClient&&ticket.channelId){const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);if(ch)await ch.send(`🔒 Ticket **${ticket.number}** marked **${status}** from ${source}.`)}}catch{}
+}
+app.get("/api/admin/tickets",guardianRequireAdmin("settings.view"),(req,res)=>{
+  const q=String(req.query.q||"").toLowerCase(),status=String(req.query.status||"");
+  const tickets=guardianTickets.filter(t=>(!status||t.status===status)&&(!q||`${t.number} ${t.title} ${t.createdByName} ${t.category}`.toLowerCase().includes(q))).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  res.json({ok:true,tickets:tickets.map(guardianTicketSafe),discordConnected:!!guardianDiscordGatewayClient?.isReady?.()});
+});
+app.post("/api/admin/tickets/panel",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  const channelId=String(req.body?.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim();
+  if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected. Configure DISCORD_BOT_TOKEN first."});
+  if(!channelId)return res.status(400).json({ok:false,error:"Enter the Discord channel ID for the ticket panel."});
+  try{
+    const ch=await guardianDiscordGatewayClient.channels.fetch(channelId);
+    if(!ch?.isTextBased?.())return res.status(400).json({ok:false,error:"The selected Discord channel is not a text channel."});
+    const djs=await import("discord.js");
+    const embed=new djs.EmbedBuilder().setColor(0x139fe8).setTitle("GUARDIAN SUPPORT").setDescription("Select a category below to open a private support ticket. Please do not open duplicate tickets.").setFooter({text:"Guardian Operations • Ticket System"});
+    const row1=new djs.ActionRowBuilder().addComponents(
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:support").setLabel("General Support").setStyle(djs.ButtonStyle.Primary),
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:report").setLabel("Player Report").setStyle(djs.ButtonStyle.Danger),
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:appeal").setLabel("Ban Appeal").setStyle(djs.ButtonStyle.Secondary));
+    const row2=new djs.ActionRowBuilder().addComponents(
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:bug").setLabel("Bug Report").setStyle(djs.ButtonStyle.Secondary),
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:complaint").setLabel("Staff Complaint").setStyle(djs.ButtonStyle.Secondary),
+      new djs.ButtonBuilder().setCustomId("guardian_ticket_open:payment").setLabel("Payment Support").setStyle(djs.ButtonStyle.Secondary));
+    const msg=await ch.send({embeds:[embed],components:[row1,row2]});
+    res.json({ok:true,messageId:msg.id,channelId:ch.id});
+  }catch(e){res.status(400).json({ok:false,error:e?.message||"Could not post ticket panel"})}
+});
+app.post("/api/admin/tickets/:id/messages",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
+  if(ticket.status==="closed")return res.status(400).json({ok:false,error:"Ticket is closed"});
+  const content=String(req.body?.content||"").trim();if(!content||content.length>4000)return res.status(400).json({ok:false,error:"Message must be between 1 and 4000 characters"});
+  const item={id:crypto.randomUUID(),authorId:req.guardianAdmin.username,authorName:req.guardianAdmin.username,source:"website",content,createdAt:new Date().toISOString(),attachments:[]};
+  ticket.messages ||= [];ticket.messages.push(item);ticket.updatedAt=item.createdAt;guardianSaveTickets();
+  try{if(guardianDiscordGatewayClient?.isReady?.()&&ticket.channelId){const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);if(ch)await ch.send({content:`**${req.guardianAdmin.username} · Guardian Staff**\n${content}`})}}catch(e){console.warn("[Guardian Tickets] reply sync failed:",e?.message||e)}
+  res.json({ok:true,message:item,ticket:guardianTicketSafe(ticket)});
+});
+app.post("/api/admin/tickets/:id/status",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
+  const status=String(req.body?.status||"");if(!["open","in_progress","waiting","closed"].includes(status))return res.status(400).json({ok:false,error:"Invalid ticket status"});
+  ticket.status=status;ticket.updatedAt=new Date().toISOString();if(status==="closed"){ticket.closedAt=ticket.updatedAt;ticket.closedBy=req.guardianAdmin.username}guardianSaveTickets();
+  try{if(guardianDiscordGatewayClient?.isReady?.()&&ticket.channelId){const ch=await guardianDiscordGatewayClient.channels.fetch(ticket.channelId).catch(()=>null);if(ch)await ch.send(`🔔 Ticket **${ticket.number}** status changed to **${status.replace("_"," ")}** by ${req.guardianAdmin.username}.`)}}catch{}
+  res.json({ok:true,ticket:guardianTicketSafe(ticket)});
+});
+app.post("/api/admin/tickets/:id/assign",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
+  ticket.assignedTo=String(req.body?.assignedTo||"").trim().slice(0,100);ticket.updatedAt=new Date().toISOString();guardianSaveTickets();guardianAdminAuditLog(req.guardianAdmin.username,"TICKET_ASSIGNED",{ticket:ticket.number,assignedTo:ticket.assignedTo});res.json({ok:true,ticket:guardianTicketSafe(ticket)});
+});
+const guardianRestartScheduleFile=path.join(guardianAdminDataDir,"guardian-restart-schedule.json");
+let guardianRestartSchedule=guardianReadJson(guardianRestartScheduleFile,{at:"",channelId:""});
+app.get("/api/admin/fivem/restart-schedule",guardianRequireAdmin("settings.view"),(_req,res)=>res.json({ok:true,schedule:guardianRestartSchedule}));
+app.post("/api/admin/fivem/restart-schedule",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const at=String(req.body?.at||"").trim(),channelId=String(req.body?.channelId||"").trim();
+  if(at&&!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at))return res.status(400).json({ok:false,error:"Invalid local date/time"});
+  guardianRestartSchedule={at,channelId};guardianWriteJson(guardianRestartScheduleFile,guardianRestartSchedule);
+  guardianAdminAuditLog(req.guardianAdmin.username,"FIVEM_RESTART_SCHEDULE_SAVED",{at,channelId});
+  res.json({ok:true,schedule:guardianRestartSchedule});
+});
+app.post("/api/admin/fivem/restart-schedule/announce",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected"});
+  const channelId=String(req.body?.channelId||guardianRestartSchedule.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim();
+  if(!channelId)return res.status(400).json({ok:false,error:"Enter a Discord announcement channel ID"});
+  try{const ch=await guardianDiscordGatewayClient.channels.fetch(channelId);if(!ch?.isTextBased?.())return res.status(400).json({ok:false,error:"Channel is not a text channel"});await ch.send(String(req.body?.message||"Guardian server restart announcement.").slice(0,1800));res.json({ok:true})}catch(e){res.status(400).json({ok:false,error:e?.message||"Announcement failed"})}
+});
+app.get("/api/admin/fivem/monitor",guardianRequireAdmin("settings.view"),(_req,res)=>{
+  const metrics=state.serverMetrics||{};
+  const heartbeat=state.lastHeartbeat?Date.parse(state.lastHeartbeat):0;
+  res.json({ok:true,connected:!!(heartbeat&&Date.now()-heartbeat<15000),lastHeartbeat:state.lastHeartbeat||null,updatedAt:state.updatedAt||null,metrics,units:state.units||{},resources:Array.isArray(metrics.resources)?metrics.resources:[],players:Array.isArray(metrics.players)?metrics.players:[],pendingCommands:[...commands.values()].filter(c=>!c.acknowledged).length});
+});
+app.post("/api/admin/fivem/action",guardianRequireAdmin("settings.edit"),(req,res)=>{
+  const operation=String(req.body?.operation||"");const data=req.body?.data||{};
+  const allowed=["kickPlayer","startResource","stopResource","restartResource"];
+  if(!allowed.includes(operation))return res.status(400).json({ok:false,error:"Unsupported FiveM operation"});
+  if(operation==="kickPlayer"&&(!Number.isInteger(Number(data.serverId))||!String(data.reason||"").trim()))return res.status(400).json({ok:false,error:"A valid server ID and reason are required"});
+  if(operation!=="kickPlayer"&&!/^[a-zA-Z0-9_.-]{1,64}$/.test(String(data.resource||"")))return res.status(400).json({ok:false,error:"Invalid resource name"});
+  if(!state.connected)return res.status(503).json({ok:false,error:"FiveM bridge is offline"});
+  const command=queueCommand("guardianControl",{operation,...data,requestedBy:req.guardianAdmin.username,requestedAt:new Date().toISOString()});
+  guardianAdminAuditLog(req.guardianAdmin.username,"FIVEM_CONTROL_ACTION",{operation,data});
+  res.json({ok:true,command});
+});
+
 app.use(express.static(path.join(__dirname,"public"),{etag:true,maxAge:0}));
 
 app.listen(PORT,"0.0.0.0",()=>console.log(`Guardian Operations v2.7.0 Production Sync running on port ${PORT}`));

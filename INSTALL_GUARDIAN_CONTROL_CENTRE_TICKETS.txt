@@ -1,0 +1,33 @@
+GUARDIAN FIVE M CONTROL CENTRE + DISCORD TICKETS — INSTALL
+
+Files in this ZIP are patch files for the existing Guardian project. Extract them into the ROOT of your existing project/repository and allow them to overwrite matching files. Do not replace your entire project with this patch ZIP.
+
+Files included:
+- server.js
+- public/settings.html
+- public/settings.js
+- public/guardian_control_centre.js (new)
+- public/guardian_control_centre.css (new)
+- fivem_guardian_web_v2/server/main.lua
+
+DEPLOY
+1. Commit/push the replaced and new files so your existing Render web service deploys them.
+2. In Render, add/verify these environment variables:
+   DISCORD_BOT_TOKEN = your existing Discord bot token
+   DISCORD_TICKET_STAFF_ROLE_IDS = comma-separated Discord role IDs permitted to see/manage tickets
+   DISCORD_TICKET_CATEGORY_ID = optional Discord category ID where ticket channels should be created
+   DISCORD_TICKET_PANEL_CHANNEL_ID = optional default channel ID for the panel
+   The bot must be in your Discord server and have View Channels, Send Messages, Embed Links, Read Message History, and Manage Channels permissions.
+3. In the Discord Developer Portal, enable the privileged Message Content Intent for the bot if you want messages typed by users in ticket channels to be copied into Guardian's ticket history. Restart/redeploy the web service after changing environment variables.
+4. Upload the updated fivem_guardian_web_v2 resource to your FiveM server, replacing server/main.lua, and ensure that resource is started. It uses the existing shared/config.lua API URL/key configuration.
+5. Sign into Guardian Settings. Open FiveM Operations to view live players/resources and send supported kick/resource commands. Open Discord Tickets and enter a text-channel ID, then click Post ticket panel.
+
+IMPORTANT LIMITATIONS
+- This add-on does not expose a txAdmin restart API. The restart schedule field is saved in Guardian and the test announcement sends a Discord message; actual automatic server restart scheduling must still be configured in txAdmin/your host unless you provide a supported restart API.
+- CPU/memory metrics are not shown because standard FiveM resource APIs do not reliably expose host-level CPU/RAM usage.
+- Resource actions are limited to start/stop/restart; core resources and the Guardian bridge resource are protected.
+- Ticket channels require the bot's Manage Channels permission and correct staff role IDs. Discord Message Content Intent must be enabled to capture incoming message text.
+- Existing Guardian permissions apply: viewing requires settings.view; modifying tickets/control actions requires settings.edit.
+
+SECURITY
+The original uploaded FiveM resource config contained a hard-coded Guardian API key. Treat that key as exposed and rotate GUARDIAN_API_KEY in Render and the matching Config.ApiKey in fivem_guardian_web_v2/shared/config.lua before/after deploying. Never publish the key in a public repository or send it in screenshots. Ensure both values match or the FiveM bridge will stop authenticating.
