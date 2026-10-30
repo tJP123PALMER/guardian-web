@@ -1,4 +1,6 @@
-GUARDIAN DEVELOPER DISCORD INTAKE + LOG UPLOAD PATCH
+GUARDIAN DEVELOPER DISCORD INTAKE + LOG UPLOAD PATCH — SYNTAX FIXED
+
+This archive includes a fix for the deployment SyntaxError reported at server.js:3309. The development-panel description now uses escaped newline characters (\n\n) instead of literal line breaks inside a single-quoted JavaScript string.
 
 WHAT THIS ADDS
 - Publishes a Submit Development Issue button in a Discord submission channel.
@@ -13,9 +15,6 @@ FILES IN THIS PATCH
 - server.js
 - public/guardian_control_centre.js
 - public/guardian_control_centre.css
-
-PREREQUISITE
-This patch extends the Guardian Developer Issue Tracker added in the previous Backup & Recovery + Developer Issue Tracker patch. Keep your existing tracker navigation and the rest of the project. This is not a standalone website.
 
 INSTALL
 1. Back up server.js, public/guardian_control_centre.js, public/guardian_control_centre.css and the entire data/ directory.
@@ -53,6 +52,7 @@ IMPORTANT
 - Check Render logs for [Guardian Developer Issues] or [Guardian Discord] messages if a notification/upload fails.
 
 TEST CHECKLIST
+[ ] Confirm Render starts successfully (no SyntaxError at server.js:3309).
 [ ] Publish the form panel in the submission channel.
 [ ] Submit a test issue from Discord and verify it appears in the website Developer Issue Tracker.
 [ ] Verify an issue summary appears in the developer channel.
