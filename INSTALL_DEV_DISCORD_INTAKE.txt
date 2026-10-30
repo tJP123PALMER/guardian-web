@@ -1,0 +1,61 @@
+GUARDIAN DEVELOPER DISCORD INTAKE + LOG UPLOAD PATCH
+
+WHAT THIS ADDS
+- Publishes a Submit Development Issue button in a Discord submission channel.
+- Opens a Discord modal for issue summary, type, resource/system, description and reproduction steps/evidence link.
+- Creates the issue in the Guardian Developer Issue Tracker website.
+- Sends an issue summary embed to a separate developer notification channel.
+- After submit, attempts to DM the reporter. The reporter can reply to that private DM with log files/screenshots; supported files are saved against the issue and forwarded to the developer channel.
+- Files attached by authorised developers through the Guardian website are also saved on the issue and forwarded to the developer channel.
+- Validates DM upload size and file extension; it does not accept executable/script file extensions.
+
+FILES IN THIS PATCH
+- server.js
+- public/guardian_control_centre.js
+- public/guardian_control_centre.css
+
+PREREQUISITE
+This patch extends the Guardian Developer Issue Tracker added in the previous Backup & Recovery + Developer Issue Tracker patch. Keep your existing tracker navigation and the rest of the project. This is not a standalone website.
+
+INSTALL
+1. Back up server.js, public/guardian_control_centre.js, public/guardian_control_centre.css and the entire data/ directory.
+2. Extract the ZIP into the root of your Guardian project and replace the matching files, preserving the public/ folder.
+3. Commit and push the files to the GitHub repository connected to Render.
+4. Wait for Render to finish deploying successfully.
+5. Reload Guardian Settings with Ctrl+F5.
+
+CONFIGURE IN GUARDIAN
+1. Open Settings > Developer Issue Tracker.
+2. In "Form / submission channel ID", enter the ID of the Discord channel where members can open the form (for example #dev-report-submissions).
+3. In "Developer notification channel ID", enter the ID of the private channel for developers (for example #dev-inbox).
+4. Click "Save Discord settings".
+5. Click "Publish / update form panel".
+6. Test the button with a non-staff test Discord account.
+
+DISCORD BOT REQUIREMENTS
+- Keep DISCORD_BOT_TOKEN configured in Render.
+- The bot must be online in the same Discord server as both channels.
+- Submission channel: View Channel, Send Messages, Embed Links.
+- Developer channel: View Channel, Send Messages, Embed Links, Attach Files.
+- In Discord Developer Portal, enable Message Content Intent for the existing bot. The code subscribes to the Direct Messages gateway intent so DM evidence uploads can be received.
+- The reporter must allow DMs from server members/bots to receive the optional private upload instructions. If DMs are disabled, they can still submit the form and include an evidence URL.
+
+HOW IT WORKS
+- Users click the Discord panel and submit the modal. Discord modals don't support file-picker fields, so the bot opens a private DM after successful submission.
+- The reporter replies to that DM with the log/screenshots. If they have more than one open report, they should include the issue key (GDN-DEV-0001) in the message. The bot stores the file against the matching website issue and forwards it to the configured developer channel.
+- Alternatively, authorised developers can add files from the website issue detail screen; each upload is forwarded to Discord as well.
+- Files accepted from DMs: .log, .txt, .json, .zip, .png, .jpg, .jpeg, .webp, .gif, .mp4, .webm, .csv, .dmp, .stacktrace, .xml and .cfg. Maximum 5 MB per file, maximum five attachments per message. No executable/script file extensions.
+
+IMPORTANT
+- Never upload passwords, API keys, Discord bot tokens, session cookies or other secrets.
+- The tracker stores uploads under data/dev-issue-attachments. Use persistent storage on Render for the data/ directory or uploaded files may be lost when the instance is replaced. Back up data/ regularly.
+- If a reporter's DM fails, form submission still succeeds; they can include an HTTPS evidence link or ask staff for an approved alternate upload method.
+- Check Render logs for [Guardian Developer Issues] or [Guardian Discord] messages if a notification/upload fails.
+
+TEST CHECKLIST
+[ ] Publish the form panel in the submission channel.
+[ ] Submit a test issue from Discord and verify it appears in the website Developer Issue Tracker.
+[ ] Verify an issue summary appears in the developer channel.
+[ ] Reply to the bot's DM with a small .txt or .log file and verify it appears on the issue and in the developer channel.
+[ ] Upload a test file from the website and verify the same delivery behaviour.
+[ ] Try an unsupported extension or file over 5 MB and confirm it is rejected.

@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 10000);
 const API_KEY = process.env.GUARDIAN_API_KEY || "";
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "4mb", verify:(req,_res,buf)=>{req.rawBody=Buffer.from(buf)} }));
+app.use(express.json({ limit: "12mb", verify:(req,_res,buf)=>{req.rawBody=Buffer.from(buf)} }));
 
 
 
@@ -1119,10 +1119,41 @@ async function guardianStartDiscordGateway(){
   const token=String(process.env.DISCORD_BOT_TOKEN||'').trim();if(!token)return;
   try{
     const djs=await import('discord.js');
-    const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds,djs.GatewayIntentBits.GuildMessages,djs.GatewayIntentBits.MessageContent]});guardianDiscordGatewayClient=client;
+    const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds,djs.GatewayIntentBits.GuildMessages,djs.GatewayIntentBits.DirectMessages,djs.GatewayIntentBits.MessageContent],partials:[djs.Partials.Channel]});guardianDiscordGatewayClient=client;
     client.on('interactionCreate',async interaction=>{
       try{
         const customId=String(interaction.customId||'');
+        if(interaction.isButton?.() && customId==='guardian_dev_issue_open'){
+          const configuredPanel=String(guardianDevIssueSettings?.panelChannelId||'').trim();
+          if(configuredPanel && interaction.channelId!==configuredPanel){await interaction.reply({content:'Please open the development form from the configured Guardian submission channel.',ephemeral:true});return;}
+          const djs=await import('discord.js');
+          const modal=new djs.ModalBuilder().setCustomId('guardian_dev_issue_submit').setTitle('Guardian Development Report');
+          const short=djs.TextInputStyle.Short,paragraph=djs.TextInputStyle.Paragraph;
+          modal.addComponents(
+            new djs.ActionRowBuilder().addComponents(new djs.TextInputBuilder().setCustomId('title').setLabel('Issue summary').setStyle(short).setMinLength(4).setMaxLength(100).setRequired(true).setPlaceholder('e.g. Garage menu freezes after storing a vehicle')),
+            new djs.ActionRowBuilder().addComponents(new djs.TextInputBuilder().setCustomId('type').setLabel('Issue type: Bug, Feature, Task, Incident').setStyle(short).setMaxLength(20).setRequired(true).setValue('Bug')),
+            new djs.ActionRowBuilder().addComponents(new djs.TextInputBuilder().setCustomId('area').setLabel('Area / resource / location').setStyle(short).setMaxLength(100).setRequired(true).setPlaceholder('FiveM resource, MLO, vehicle, website, Discord bot…')),
+            new djs.ActionRowBuilder().addComponents(new djs.TextInputBuilder().setCustomId('description').setLabel('What happened? Include impact/context').setStyle(paragraph).setMinLength(8).setMaxLength(1800).setRequired(true)),
+            new djs.ActionRowBuilder().addComponents(new djs.TextInputBuilder().setCustomId('steps').setLabel('Steps to reproduce / evidence link').setStyle(paragraph).setMaxLength(1800).setRequired(false).setPlaceholder('Steps, expected vs actual, time, screenshot/log link (no secrets)'))
+          );
+          await interaction.showModal(modal);return;
+        }
+        if(interaction.isModalSubmit?.() && customId==='guardian_dev_issue_submit'){
+          const configuredPanel=String(guardianDevIssueSettings?.panelChannelId||'').trim();
+          if(configuredPanel && interaction.channelId && interaction.channelId!==configuredPanel){await interaction.reply({content:'Please submit the form from the configured Guardian submission channel.',ephemeral:true});return;}
+          await interaction.deferReply({ephemeral:true});
+          const field=id=>String(interaction.fields.getTextInputValue(id)||'').trim();
+          const details=field('steps');
+          const steps=details;
+          const evidenceMatch=details.match(/https?:\/\/[^\s<>]+/i);
+          const created=guardianDevIssueCreateRecord({title:field('title'),type:field('type'),priority:'normal',area:field('area'),description:field('description'),steps,evidenceUrl:evidenceMatch?evidenceMatch[0]:''},`${interaction.user?.globalName||interaction.user?.username||'Discord user'} (Discord)`, 'discord', interaction.user?.id||'');
+          if(!created.ok){await interaction.editReply({content:`I could not create this issue: ${created.error}`});return;}
+          const delivered=await guardianDevIssueNotifyDiscord(created.issue);
+          const response=delivered.ok
+            ? `✅ Submitted **${created.issue.key} — ${created.issue.title}**. It is now on the Guardian Developer Issue Tracker and has been sent to the developers' channel. ${created.issue.evidenceUrl?'Evidence link recorded.':''} To upload a log file, open the issue in Guardian and use its Attach log / evidence control.`
+            : `✅ Submitted **${created.issue.key} — ${created.issue.title}** to the Guardian website. The developers' Discord notification could not be delivered: ${delivered.error||'channel not configured'}. Please tell a developer/administrator.`;
+          await interaction.editReply({content:response});return;
+        }
         if(interaction.isButton?.() && customId.startsWith('guardian_ticket_open:')){
           const category=customId.split(':')[1]||'support';
           const ticket=await guardianCreateDiscordTicket(interaction,category);
@@ -3201,29 +3232,145 @@ const guardianDevIssuePriorities=['low','normal','high','critical'];
 const guardianDevIssueEnvironments=['development','staging','production'];
 let guardianDevIssues=guardianReadJson(guardianDevIssuesFile,[]);if(!Array.isArray(guardianDevIssues))guardianDevIssues=[];
 function guardianSaveDevIssues(){guardianWriteJson(guardianDevIssuesFile,guardianDevIssues)}
+const guardianDevIssueSettingsFile=path.join(guardianAdminDataDir,'guardian-dev-issue-settings.json');
+function guardianDevIssueReadSettings(){
+  const saved=guardianReadJson(guardianDevIssueSettingsFile,{});
+  return {panelChannelId:String(saved.panelChannelId||process.env.GUARDIAN_DEV_ISSUE_PANEL_CHANNEL_ID||'').trim(),devChannelId:String(saved.devChannelId||process.env.GUARDIAN_DEV_ISSUE_CHANNEL_ID||'').trim(),panelMessageId:String(saved.panelMessageId||''),updatedAt:saved.updatedAt||null,updatedBy:saved.updatedBy||'SYSTEM'};
+}
+let guardianDevIssueSettings=guardianDevIssueReadSettings();
+function guardianSaveDevIssueSettings(){guardianDevIssueSettings.updatedAt=new Date().toISOString();fs.writeFileSync(guardianDevIssueSettingsFile,JSON.stringify(guardianDevIssueSettings,null,2),'utf8')}
 function guardianDevIssueEvent(issue,actor,action,details={}){issue.events=Array.isArray(issue.events)?issue.events:[];issue.events.unshift({id:crypto.randomUUID(),at:new Date().toISOString(),actor:String(actor||'SYSTEM'),action:String(action||'updated'),details});issue.events=issue.events.slice(0,300);issue.updatedAt=new Date().toISOString()}
-function guardianDevIssueSafe(issue){return {...issue,comments:Array.isArray(issue.comments)?issue.comments:[],tests:Array.isArray(issue.tests)?issue.tests:[],deployments:Array.isArray(issue.deployments)?issue.deployments:[],events:Array.isArray(issue.events)?issue.events:[]}}
+function guardianDevIssueSafe(issue){return {...issue,attachments:(Array.isArray(issue.attachments)?issue.attachments:[]).map(a=>({id:a.id,name:a.name,contentType:a.contentType,size:a.size,uploadedBy:a.uploadedBy,uploadedAt:a.uploadedAt,url:a.url,discordUrl:a.discordUrl||'',discordMessageUrl:a.discordMessageUrl||'',discordDelivered:a.discordDelivered===true,deliveryError:a.deliveryError||''})),comments:Array.isArray(issue.comments)?issue.comments:[],tests:Array.isArray(issue.tests)?issue.tests:[],deployments:Array.isArray(issue.deployments)?issue.deployments:[],events:Array.isArray(issue.events)?issue.events:[]}}
+function guardianDevIssueNormaliseType(value){
+  const v=String(value||'bug').trim().toLowerCase();
+  if(v.includes('feature'))return 'feature';if(v.includes('task'))return 'task';if(v.includes('incident')||v.includes('crash')||v.includes('outage'))return 'incident';return 'bug';
+}
+function guardianDevIssueCreateRecord(body,actor='SYSTEM',source='website',discordUserId=''){
+  const b=body||{},title=String(b.title||'').trim(),description=String(b.description||'').trim();
+  const type=guardianDevIssueNormaliseType(b.type),priority=String(b.priority||'normal').toLowerCase();
+  if(title.length<4||title.length>180)return {ok:false,error:'Title must be between 4 and 180 characters'};
+  if(description.length<8||description.length>8000)return {ok:false,error:'Description must be between 8 and 8,000 characters'};
+  if(!guardianDevIssueTypes.includes(type))return {ok:false,error:'Invalid issue type'};
+  if(!guardianDevIssuePriorities.includes(priority))return {ok:false,error:'Invalid priority'};
+  const evidenceUrl=String(b.evidenceUrl||'').trim().slice(0,1200);
+  if(evidenceUrl){try{const u=new URL(evidenceUrl);if(!['http:','https:'].includes(u.protocol))return {ok:false,error:'Evidence link must use HTTP or HTTPS'};}catch{return {ok:false,error:'Evidence link must be a valid HTTP or HTTPS URL'};}}
+  const sequence=guardianDevIssues.reduce((n,x)=>Math.max(n,Number(x.sequence||0)),0)+1,createdAt=new Date().toISOString();
+  const issue={id:crypto.randomUUID(),sequence,key:`GDN-DEV-${String(sequence).padStart(4,'0')}`,title,description,type,priority,status:'new',area:String(b.area||'FiveM').trim().slice(0,100),assignedTo:String(b.assignedTo||'').trim().slice(0,80),createdBy:String(actor||'SYSTEM').slice(0,120),createdByDiscordId:String(discordUserId||'').slice(0,30),source:String(source||'website').slice(0,40),createdAt,updatedAt:createdAt,dueDate:String(b.dueDate||'').slice(0,30),targetVersion:String(b.targetVersion||'').trim().slice(0,80),steps:String(b.steps||'').trim().slice(0,6000),expected:String(b.expected||'').trim().slice(0,3000),actual:String(b.actual||'').trim().slice(0,3000),evidenceUrl,resolution:'',attachments:[],comments:[],tests:[],deployments:[],events:[],discordNotification:null};
+  guardianDevIssueEvent(issue,actor,'created',{type,priority,source});guardianDevIssues.unshift(issue);guardianSaveDevIssues();
+  try{guardianAdminAuditLog(String(actor||'SYSTEM'),'DEV_ISSUE_CREATED',{issueId:issue.id,key:issue.key,type,priority,source})}catch{}
+  return {ok:true,issue};
+}
+async function guardianDevIssueGetChannel(channelId){
+  if(!guardianDiscordGatewayClient?.isReady?.())throw new Error('Discord bot is not connected. Configure DISCORD_BOT_TOKEN and confirm the bot is online.');
+  if(!/^\d{15,22}$/.test(String(channelId||'')))throw new Error('Configure a valid Discord channel ID first.');
+  const channel=await guardianDiscordGatewayClient.channels.fetch(String(channelId)).catch(()=>null);
+  if(!channel?.isTextBased?.()||!channel.send)throw new Error('Discord channel not found or the bot cannot send messages there.');
+  return channel;
+}
+async function guardianDevIssueNotifyDiscord(issue){
+  try{
+    const channel=await guardianDevIssueGetChannel(guardianDevIssueSettings.devChannelId);
+    const djs=await import('discord.js');
+    const embed=new djs.EmbedBuilder().setColor(issue.priority==='critical'?0xc92f48:issue.priority==='high'?0xe67e22:0x159cdb)
+      .setTitle(`${issue.key} · ${String(issue.title||'Developer issue').slice(0,200)}`)
+      .setDescription(String(issue.description||'No description supplied').slice(0,3900))
+      .addFields(
+        {name:'Type',value:String(issue.type||'bug').slice(0,100),inline:true},
+        {name:'Priority',value:String(issue.priority||'normal').toUpperCase(),inline:true},
+        {name:'Status',value:String(issue.status||'new').replace(/_/g,' '),inline:true},
+        {name:'Area / resource',value:String(issue.area||'Not specified').slice(0,1000),inline:true},
+        {name:'Submitted by',value:String(issue.createdBy||'Unknown').slice(0,500),inline:true},
+        {name:'Source',value:String(issue.source||'website').slice(0,100),inline:true}
+      ).setFooter({text:'Guardian Developer Issue Tracker'}).setTimestamp(new Date(issue.createdAt||Date.now()));
+    if(issue.steps)embed.addFields({name:'Steps / context',value:String(issue.steps).slice(0,1000)});
+    if(issue.evidenceUrl)embed.addFields({name:'Evidence link',value:String(issue.evidenceUrl).slice(0,1000)});
+    const sent=await channel.send({embeds:[embed],allowedMentions:{parse:[]}});
+    issue.discordNotification={channelId:channel.id,messageId:sent.id,url:`https://discord.com/channels/${sent.guildId||channel.guildId}/${channel.id}/${sent.id}`,sentAt:new Date().toISOString()};
+    guardianSaveDevIssues();
+    return {ok:true,messageId:sent.id,channelId:channel.id};
+  }catch(e){console.warn('[Guardian Developer Issues] Discord notification failed:',e?.message||e);return {ok:false,error:String(e?.message||'Could not send Discord notification').slice(0,500)}}
+}
+const guardianDevIssueUploadsDir=path.join(guardianAdminDataDir,'dev-issue-attachments');
+try{fs.mkdirSync(guardianDevIssueUploadsDir,{recursive:true})}catch{}
+app.get('/api/admin/dev-issues/settings',guardianRequireAdmin('settings.view'),(_req,res)=>res.json({ok:true,settings:guardianDevIssueSettings,discordConnected:!!guardianDiscordGatewayClient?.isReady?.()}));
+app.post('/api/admin/dev-issues/settings',guardianRequireAdmin('settings.edit'),(req,res)=>{
+  const panelChannelId=String(req.body?.panelChannelId||'').trim(),devChannelId=String(req.body?.devChannelId||'').trim();
+  for(const [name,id] of [['submission channel',panelChannelId],['developer notification channel',devChannelId]])if(id&&!/^\d{15,22}$/.test(id))return res.status(400).json({ok:false,error:`Enter a valid Discord ${name} ID, or leave it blank.`});
+  guardianDevIssueSettings={...guardianDevIssueSettings,panelChannelId,devChannelId,updatedBy:req.guardianAdmin.username};
+  try{guardianSaveDevIssueSettings()}catch(e){return res.status(500).json({ok:false,error:'Could not save developer issue settings: '+String(e?.message||e)})}
+  guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_DISCORD_SETTINGS_UPDATED',{panelChannelConfigured:!!panelChannelId,devChannelConfigured:!!devChannelId});
+  res.json({ok:true,settings:guardianDevIssueSettings});
+});
+app.post('/api/admin/dev-issues/panel',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const channelId=String(req.body?.panelChannelId||guardianDevIssueSettings.panelChannelId||'').trim();
+  if(!channelId)return res.status(400).json({ok:false,error:'Enter the Discord submission channel ID and save settings first.'});
+  try{
+    const channel=await guardianDevIssueGetChannel(channelId),djs=await import('discord.js');
+    const payload={embeds:[new djs.EmbedBuilder().setColor(0x159cdb).setTitle('🛠️ GREATER GLASGOW RP — DEVELOPMENT REPORT').setDescription('Use the button below to submit a bug, feature request, task or incident. Your form is sent to the Guardian website issue tracker and the developer notification channel.
+
+Please include as much detail as possible: affected resource/system, what happened, expected vs actual behaviour and steps to reproduce. Add evidence links when available. Never include passwords, API keys, bot tokens or session cookies.').setFooter({text:'Guardian Developer Issue Tracker'})],components:[new djs.ActionRowBuilder().addComponents(new djs.ButtonBuilder().setCustomId('guardian_dev_issue_open').setLabel('Submit Development Issue').setStyle(djs.ButtonStyle.Primary).setEmoji('🛠️'))]};
+    let message=null;
+    if(guardianDevIssueSettings.panelChannelId===channel.id&&guardianDevIssueSettings.panelMessageId)message=await channel.messages.fetch(guardianDevIssueSettings.panelMessageId).catch(()=>null);
+    if(message)await message.edit(payload);else message=await channel.send(payload);
+    guardianDevIssueSettings={...guardianDevIssueSettings,panelChannelId:channel.id,panelMessageId:message.id,updatedBy:req.guardianAdmin.username};guardianSaveDevIssueSettings();
+    guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_FORM_PANEL_PUBLISHED',{channelId:channel.id,messageId:message.id,updated:!!message});
+    res.json({ok:true,channelId:channel.id,messageId:message.id});
+  }catch(e){res.status(400).json({ok:false,error:String(e?.message||'Could not publish developer form panel').slice(0,500)})}
+});
+app.get('/api/admin/dev-issues/:id/attachments/:attachmentId',guardianRequireAdmin('settings.view'),(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const attachment=(issue.attachments||[]).find(a=>a.id===req.params.attachmentId);if(!attachment?.storageName)return res.status(404).json({ok:false,error:'Attachment not found'});
+  const full=path.join(guardianDevIssueUploadsDir,path.basename(attachment.storageName));if(!fs.existsSync(full))return res.status(404).json({ok:false,error:'Stored attachment file is missing'});
+  res.download(full,String(attachment.name||'developer-issue-attachment').replace(/[\"\r\n]/g,'_'));
+});
 app.get('/api/admin/dev-issues',guardianRequireAdmin('settings.view'),(req,res)=>{
   const q=String(req.query.q||'').trim().toLowerCase(),status=String(req.query.status||''),type=String(req.query.type||'');
   const rows=guardianDevIssues.filter(i=>(!status||i.status===status)&&(!type||i.type===type)&&(!q||`${i.key} ${i.title} ${i.description} ${i.area} ${i.assignedTo} ${i.createdBy}`.toLowerCase().includes(q))).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
   res.setHeader('Cache-Control','no-store');res.json({ok:true,issues:rows.map(guardianDevIssueSafe),summary:{total:guardianDevIssues.length,open:guardianDevIssues.filter(i=>!['resolved','closed'].includes(i.status)).length,testing:guardianDevIssues.filter(i=>i.status==='testing').length,readyToDeploy:guardianDevIssues.filter(i=>i.status==='ready_to_deploy').length,critical:guardianDevIssues.filter(i=>i.priority==='critical'&&!['resolved','closed'].includes(i.status)).length}});
 });
-app.post('/api/admin/dev-issues',guardianRequireAdmin('settings.edit'),(req,res)=>{
-  const b=req.body||{},title=String(b.title||'').trim(),description=String(b.description||'').trim();
-  const type=String(b.type||'bug'),priority=String(b.priority||'normal');
-  if(title.length<4||title.length>180)return res.status(400).json({ok:false,error:'Title must be between 4 and 180 characters'});
-  if(description.length<8||description.length>8000)return res.status(400).json({ok:false,error:'Description must be between 8 and 8,000 characters'});
-  if(!guardianDevIssueTypes.includes(type))return res.status(400).json({ok:false,error:'Invalid issue type'});
-  if(!guardianDevIssuePriorities.includes(priority))return res.status(400).json({ok:false,error:'Invalid priority'});
-  const issueNo=guardianDevIssues.reduce((n,x)=>Math.max(n,Number(x.sequence||0)),0)+1,nowIso=new Date().toISOString();
-  const issue={id:crypto.randomUUID(),sequence:issueNo,key:`GDN-DEV-${String(issueNo).padStart(4,'0')}`,title,description,type,priority,status:'new',area:String(b.area||'FiveM').trim().slice(0,100),assignedTo:String(b.assignedTo||'').trim().slice(0,80),createdBy:req.guardianAdmin.username,createdAt:nowIso,updatedAt:nowIso,dueDate:String(b.dueDate||'').slice(0,30),targetVersion:String(b.targetVersion||'').trim().slice(0,80),steps:String(b.steps||'').trim().slice(0,6000),expected:String(b.expected||'').trim().slice(0,3000),actual:String(b.actual||'').trim().slice(0,3000),resolution:'',comments:[],tests:[],deployments:[],events:[]};
-  guardianDevIssueEvent(issue,req.guardianAdmin.username,'created',{type,priority});guardianDevIssues.unshift(issue);guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_CREATED',{issueId:issue.id,key:issue.key,type,priority});res.json({ok:true,issue:guardianDevIssueSafe(issue)});
+app.post('/api/admin/dev-issues',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const created=guardianDevIssueCreateRecord(req.body||{},req.guardianAdmin.username,'website','');
+  if(!created.ok)return res.status(400).json({ok:false,error:created.error});
+  const discordNotification=await guardianDevIssueNotifyDiscord(created.issue);
+  res.json({ok:true,issue:guardianDevIssueSafe(created.issue),discordNotification});
+});
+app.post('/api/admin/dev-issues/:id/attachments',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const originalName=String(req.body?.name||'attachment').replace(/[\\/\0-\x1f\x7f]/g,'_').trim().slice(0,160)||'attachment';
+  const encoded=String(req.body?.base64||'').replace(/^data:[^,]*;base64,/i,'').trim();
+  if(!encoded||encoded.length>7*1024*1024)return res.status(400).json({ok:false,error:'Choose a non-empty file no larger than 5 MB.'});
+  let buffer;try{buffer=Buffer.from(encoded,'base64')}catch{return res.status(400).json({ok:false,error:'File data is invalid.'})}
+  if(!buffer.length||buffer.length>5*1024*1024)return res.status(400).json({ok:false,error:'Files must be no larger than 5 MB.'});
+  const safeFile=path.basename(originalName).replace(/[^a-zA-Z0-9._() -]/g,'_').slice(0,120)||'attachment.bin';
+  const id=crypto.randomUUID(),storageName=`${issue.id}_${id}_${safeFile}`;
+  try{fs.mkdirSync(guardianDevIssueUploadsDir,{recursive:true});fs.writeFileSync(path.join(guardianDevIssueUploadsDir,storageName),buffer,{flag:'wx'})}catch(e){return res.status(500).json({ok:false,error:'Could not store attachment: '+String(e?.message||e)})}
+  const attachment={id,name:originalName,contentType:String(req.body?.contentType||'application/octet-stream').slice(0,120),size:buffer.length,uploadedBy:req.guardianAdmin.username,uploadedAt:new Date().toISOString(),storageName,url:`/api/admin/dev-issues/${encodeURIComponent(issue.id)}/attachments/${encodeURIComponent(id)}`,discordUrl:'',discordMessageUrl:'',discordDelivered:false,deliveryError:''};
+  issue.attachments=Array.isArray(issue.attachments)?issue.attachments:[];issue.attachments.unshift(attachment);
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'attachment_uploaded',{attachmentId:id,name:originalName,size:buffer.length});guardianSaveDevIssues();
+  let discord={ok:false,error:'Developer Discord channel is not configured.'};
+  try{
+    const channel=await guardianDevIssueGetChannel(guardianDevIssueSettings.devChannelId);
+    const sent=await channel.send({content:`📎 **Log / evidence uploaded** for **${issue.key} — ${String(issue.title||'').slice(0,180)}**\nUploaded by: ${req.guardianAdmin.username}\nFile: ${originalName}`,files:[{attachment:buffer,name:safeFile}],allowedMentions:{parse:[]}});
+    const file=[...(sent.attachments?.values?.()||[])][0];
+    attachment.discordDelivered=true;attachment.discordMessageId=sent.id;attachment.discordUrl=file?.url||'';attachment.discordMessageUrl=`https://discord.com/channels/${sent.guildId||channel.guildId}/${channel.id}/${sent.id}`;
+    discord={ok:true,messageId:sent.id,channelId:channel.id,url:attachment.discordUrl};
+  }catch(e){attachment.deliveryError=String(e?.message||'Discord upload failed').slice(0,500);discord={ok:false,error:attachment.deliveryError};console.warn('[Guardian Developer Issues] attachment Discord delivery failed:',attachment.deliveryError)}
+  guardianSaveDevIssues();
+  res.json({ok:true,attachment:guardianDevIssueSafe(issue).attachments.find(a=>a.id===id),discordNotification:discord,warning:discord.ok?'':'File is stored in Guardian but was not sent to Discord. Check the configured developer channel and bot permissions.'});
+});
+app.post('/api/admin/dev-issues/:id/notify',guardianRequireAdmin('settings.edit'),async(req,res)=>{
+  const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
+  const delivered=await guardianDevIssueNotifyDiscord(issue);
+  if(!delivered.ok)return res.status(502).json({ok:false,error:delivered.error||'Discord notification could not be delivered'});
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'discord_notification_sent',{channelId:delivered.channelId,messageId:delivered.messageId});guardianSaveDevIssues();
+  res.json({ok:true,issue:guardianDevIssueSafe(issue),discordNotification:delivered});
 });
 app.post('/api/admin/dev-issues/:id/update',guardianRequireAdmin('settings.edit'),(req,res)=>{
   const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
   const b=req.body||{},changes={};
+  if(b.evidenceUrl!==undefined){const url=String(b.evidenceUrl||'').trim();if(url){try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))return res.status(400).json({ok:false,error:'Evidence link must use HTTP or HTTPS'});}catch{return res.status(400).json({ok:false,error:'Evidence link must be a valid HTTP or HTTPS URL'});}}}
   if(b.title!==undefined){const v=String(b.title).trim();if(v.length<4||v.length>180)return res.status(400).json({ok:false,error:'Title must be between 4 and 180 characters'});if(v!==issue.title)changes.title=[issue.title,v];issue.title=v}
-  for(const [field,max] of [['description',8000],['area',100],['assignedTo',80],['targetVersion',80],['resolution',5000],['steps',6000],['expected',3000],['actual',3000],['dueDate',30]])if(b[field]!==undefined){const v=String(b[field]||'').trim().slice(0,max);if(v!==String(issue[field]||''))changes[field]=[String(issue[field]||''),v];issue[field]=v}
+  for(const [field,max] of [['description',8000],['area',100],['assignedTo',80],['targetVersion',80],['resolution',5000],['steps',6000],['expected',3000],['actual',3000],['evidenceUrl',1200],['dueDate',30]])if(b[field]!==undefined){const v=String(b[field]||'').trim().slice(0,max);if(v!==String(issue[field]||''))changes[field]=[String(issue[field]||''),v];issue[field]=v}
   if(b.type!==undefined){const v=String(b.type);if(!guardianDevIssueTypes.includes(v))return res.status(400).json({ok:false,error:'Invalid issue type'});if(v!==issue.type)changes.type=[issue.type,v];issue.type=v}
   if(b.priority!==undefined){const v=String(b.priority);if(!guardianDevIssuePriorities.includes(v))return res.status(400).json({ok:false,error:'Invalid priority'});if(v!==issue.priority)changes.priority=[issue.priority,v];issue.priority=v}
   if(b.status!==undefined){const v=String(b.status);if(!guardianDevIssueStatuses.includes(v))return res.status(400).json({ok:false,error:'Invalid issue status'});if(v!==issue.status)changes.status=[issue.status,v];issue.status=v;if(v==='resolved'||v==='closed')issue.resolvedAt=issue.resolvedAt||new Date().toISOString();else issue.resolvedAt=null}

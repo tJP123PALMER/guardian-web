@@ -67,3 +67,13 @@
 .gctlIssueStats{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:1050px){.gctlBackupColumns,.gctlIssueLayout{grid-template-columns:1fr}.gctlIssueCreate{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.gctlFormGrid,.gctlIssueFields,.gctlIssueFields .gctlTwoCols,.gctlIssueCreate{grid-template-columns:1fr}.gctlSnapshotRow{align-items:flex-start;flex-direction:column}.gctlIssueStats{grid-template-columns:repeat(2,minmax(0,1fr))}.gctlFullWidth{grid-column:1}}
+
+/* Developer intake form, Discord routing and issue evidence uploads */
+.gdiDiscordConfig .gctlIssueFields{margin:10px 0}
+.gdiDiscordConfig .gctlRecoveryNote{display:block;line-height:1.5}
+.gdiDiscordConfig .gctlRecoveryNote p{margin:0}
+.gctlIssueCreate input[type=file],.gctlIssueFields input[type=file],.gctlCommentForm input[type=file]{padding:9px;background:#061a26;border:1px dashed #30647d;border-radius:8px;color:#c6e4f1}
+.gctlIssueDetailHead a,.gctlTimeline a,.gctlIssueSubsection a{color:#55c4ff;text-decoration:underline;overflow-wrap:anywhere}
+.gctlIssueSubsection label small{font-weight:400;color:#89adbf;line-height:1.5}
+.gctlIssueCreate .gctlFullWidth{grid-column:1/-1}
+@media(max-width:640px){.gctlIssueCreate .gctlFullWidth{grid-column:1}}
