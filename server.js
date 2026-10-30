@@ -3240,7 +3240,7 @@ function guardianDevIssueReadSettings(){
 let guardianDevIssueSettings=guardianDevIssueReadSettings();
 function guardianSaveDevIssueSettings(){guardianDevIssueSettings.updatedAt=new Date().toISOString();fs.writeFileSync(guardianDevIssueSettingsFile,JSON.stringify(guardianDevIssueSettings,null,2),'utf8')}
 function guardianDevIssueEvent(issue,actor,action,details={}){issue.events=Array.isArray(issue.events)?issue.events:[];issue.events.unshift({id:crypto.randomUUID(),at:new Date().toISOString(),actor:String(actor||'SYSTEM'),action:String(action||'updated'),details});issue.events=issue.events.slice(0,300);issue.updatedAt=new Date().toISOString()}
-function guardianDevIssueSafe(issue){return {...issue,attachments:(Array.isArray(issue.attachments)?issue.attachments:[]).map(a=>({id:a.id,name:a.name,contentType:a.contentType,size:a.size,uploadedBy:a.uploadedBy,uploadedAt:a.uploadedAt,url:a.url,discordUrl:a.discordUrl||'',discordMessageUrl:a.discordMessageUrl||'',discordDelivered:a.discordDelivered===true,deliveryError:a.deliveryError||''})),comments:Array.isArray(issue.comments)?issue.comments:[],tests:Array.isArray(issue.tests)?issue.tests:[],deployments:Array.isArray(issue.deployments)?issue.deployments:[],events:Array.isArray(issue.events)?issue.events:[]}}
+function guardianDevIssueSafe(issue){return {...issue,attachments:(Array.isArray(issue.attachments)?issue.attachments:[]).map(a=>({id:a.id,name:a.name,contentType:a.contentType,size:a.size,uploadedBy:a.uploadedBy,uploadedAt:a.uploadedAt,url:a.url,discordUrl:a.discordUrl||'',discordMessageUrl:a.discordMessageUrl||'',discordDelivered:a.discordDelivered===true,deliveryError:a.deliveryError||''})),comments:Array.isArray(issue.comments)?issue.comments:[],tests:Array.isArray(issue.tests)?issue.tests:[],deployments:Array.isArray(issue.deployments)?issue.deployments:[],events:Array.isArray(issue.events)?issue.events:[],submitterNotifications:Array.isArray(issue.submitterNotifications)?issue.submitterNotifications:[]}}
 function guardianDevIssueNormaliseType(value){
   const v=String(value||'bug').trim().toLowerCase();
   if(v.includes('feature'))return 'feature';if(v.includes('task'))return 'task';if(v.includes('incident')||v.includes('crash')||v.includes('outage'))return 'incident';return 'bug';
@@ -3290,6 +3290,59 @@ async function guardianDevIssueNotifyDiscord(issue){
     return {ok:true,messageId:sent.id,channelId:channel.id};
   }catch(e){console.warn('[Guardian Developer Issues] Discord notification failed:',e?.message||e);return {ok:false,error:String(e?.message||'Could not send Discord notification').slice(0,500)}}
 }
+
+// Notify the person who submitted a development form when its status changes.
+// Discord-origin forms store their immutable Discord user ID at submission time;
+// no username guessing or public-channel mention is used for these updates.
+const guardianDevIssueStatusLabels={
+  new:'New',triaged:'Under review',in_progress:'In progress',testing:'Testing',
+  ready_to_deploy:'Ready to deploy',resolved:'Resolved',closed:'Closed'
+};
+const guardianDevIssueStatusMessages={
+  new:'Your report has been received and is waiting for the development team to review it.',
+  triaged:'The development team has reviewed your report and added it to the work queue.',
+  in_progress:'The development team has started working on your report.',
+  testing:'A change is being tested to check that the issue is fixed or the requested feature works correctly.',
+  ready_to_deploy:'The work has passed its current testing stage and is waiting to be deployed.',
+  resolved:'Your report has been marked as resolved. Thank you for helping improve Greater Glasgow RP.',
+  closed:'Your report has been closed. Thank you for taking the time to send it in.'
+};
+async function guardianDevIssueNotifySubmitter(issue,{fromStatus,toStatus,message=''}={}){
+  const discordUserId=String(issue?.createdByDiscordId||'').trim();
+  if(!/^\d{15,22}$/.test(discordUserId))return {ok:false,skipped:true,error:'No Discord user ID was recorded for this submitter. They may have submitted from a website account that is not linked to Discord.'};
+  if(!guardianDiscordGatewayClient?.isReady?.())return {ok:false,skipped:false,error:'Guardian Discord bot is not connected; the status was saved but no DM could be sent.'};
+  try{
+    const user=await guardianDiscordGatewayClient.users.fetch(discordUserId);
+    const djs=await import('discord.js');
+    const from=guardianDevIssueStatusLabels[fromStatus]||String(fromStatus||'Unknown');
+    const to=guardianDevIssueStatusLabels[toStatus]||String(toStatus||'Unknown');
+    const description=String(message||'').trim().slice(0,1500);
+    const embed=new djs.EmbedBuilder()
+      .setColor(issue.priority==='critical'?0xc92f48:issue.priority==='high'?0xe67e22:['resolved','closed'].includes(toStatus)?0x2ecc71:0x159cdb)
+      .setTitle(`Update on ${String(issue.key||'your development report')}`)
+      .setDescription(`${guardianDevIssueStatusMessages[toStatus]||'The development team has updated your report.'}${description?`\n\n**Message from the development team**\n${description}`:''}`)
+      .addFields(
+        {name:'Report',value:String(issue.title||'Development report').slice(0,900)},
+        {name:'Status',value:to,inline:true},
+        ...(fromStatus&&fromStatus!==toStatus?[{name:'Previous status',value:from,inline:true}]:[])
+      )
+      .setFooter({text:'Greater Glasgow RP • Guardian Development'})
+      .setTimestamp(new Date());
+    const sent=await user.send({embeds:[embed],allowedMentions:{parse:[]}});
+    return {ok:true,skipped:false,sentAt:new Date().toISOString(),messageId:sent.id};
+  }catch(e){
+    const error=String(e?.message||'Discord could not deliver the submitter DM').slice(0,500);
+    console.warn(`[Guardian Developer Issues] Could not DM submitter for ${issue?.key||'issue'}:`,error);
+    return {ok:false,skipped:false,error};
+  }
+}
+function guardianDevIssueRecordSubmitterNotification(issue,result,{fromStatus,toStatus,actor,message=''}={}){
+  issue.submitterNotifications=Array.isArray(issue.submitterNotifications)?issue.submitterNotifications:[];
+  const record={id:crypto.randomUUID(),at:new Date().toISOString(),channel:'discord_dm',status:result?.ok?'sent':result?.skipped?'skipped':'failed',fromStatus:String(fromStatus||''),toStatus:String(toStatus||''),actor:String(actor||'Guardian Development Team'),hasMessage:!!String(message||'').trim(),error:result?.ok?'':String(result?.error||'').slice(0,500),messageId:result?.messageId||''};
+  issue.submitterNotifications.unshift(record);issue.submitterNotifications=issue.submitterNotifications.slice(0,50);
+  guardianDevIssueEvent(issue,actor,'submitter_notification_'+record.status,{fromStatus:record.fromStatus,toStatus:record.toStatus,error:record.error||undefined});
+  return record;
+}
 const guardianDevIssueUploadsDir=path.join(guardianAdminDataDir,'dev-issue-attachments');
 try{fs.mkdirSync(guardianDevIssueUploadsDir,{recursive:true})}catch{}
 app.get('/api/admin/dev-issues/settings',guardianRequireAdmin('settings.view'),(_req,res)=>res.json({ok:true,settings:guardianDevIssueSettings,discordConnected:!!guardianDiscordGatewayClient?.isReady?.()}));
@@ -3327,7 +3380,7 @@ app.get('/api/admin/dev-issues',guardianRequireAdmin('settings.view'),(req,res)=
   res.setHeader('Cache-Control','no-store');res.json({ok:true,issues:rows.map(guardianDevIssueSafe),summary:{total:guardianDevIssues.length,open:guardianDevIssues.filter(i=>!['resolved','closed'].includes(i.status)).length,testing:guardianDevIssues.filter(i=>i.status==='testing').length,readyToDeploy:guardianDevIssues.filter(i=>i.status==='ready_to_deploy').length,critical:guardianDevIssues.filter(i=>i.priority==='critical'&&!['resolved','closed'].includes(i.status)).length}});
 });
 app.post('/api/admin/dev-issues',guardianRequireAdmin('settings.edit'),async(req,res)=>{
-  const created=guardianDevIssueCreateRecord(req.body||{},req.guardianAdmin.username,'website','');
+  const creator=guardianAdminUsers.get(req.guardianAdmin.username);const created=guardianDevIssueCreateRecord(req.body||{},req.guardianAdmin.username,'website',String(creator?.discordUserId||''));
   if(!created.ok)return res.status(400).json({ok:false,error:created.error});
   const discordNotification=await guardianDevIssueNotifyDiscord(created.issue);
   res.json({ok:true,issue:guardianDevIssueSafe(created.issue),discordNotification});
@@ -3363,42 +3416,55 @@ app.post('/api/admin/dev-issues/:id/notify',guardianRequireAdmin('settings.edit'
   guardianDevIssueEvent(issue,req.guardianAdmin.username,'discord_notification_sent',{channelId:delivered.channelId,messageId:delivered.messageId});guardianSaveDevIssues();
   res.json({ok:true,issue:guardianDevIssueSafe(issue),discordNotification:delivered});
 });
-app.post('/api/admin/dev-issues/:id/update',guardianRequireAdmin('settings.edit'),(req,res)=>{
+app.post('/api/admin/dev-issues/:id/update',guardianRequireAdmin('settings.edit'),async(req,res)=>{
   const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
-  const b=req.body||{},changes={};
+  const b=req.body||{},changes={},previousStatus=String(issue.status||'new');
+  const submitterMessage=String(b.submitterMessage||'').trim();if(submitterMessage.length>1500)return res.status(400).json({ok:false,error:'Submitter update must be 1,500 characters or fewer'});
   if(b.evidenceUrl!==undefined){const url=String(b.evidenceUrl||'').trim();if(url){try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))return res.status(400).json({ok:false,error:'Evidence link must use HTTP or HTTPS'});}catch{return res.status(400).json({ok:false,error:'Evidence link must be a valid HTTP or HTTPS URL'});}}}
   if(b.title!==undefined){const v=String(b.title).trim();if(v.length<4||v.length>180)return res.status(400).json({ok:false,error:'Title must be between 4 and 180 characters'});if(v!==issue.title)changes.title=[issue.title,v];issue.title=v}
   for(const [field,max] of [['description',8000],['area',100],['assignedTo',80],['targetVersion',80],['resolution',5000],['steps',6000],['expected',3000],['actual',3000],['evidenceUrl',1200],['dueDate',30]])if(b[field]!==undefined){const v=String(b[field]||'').trim().slice(0,max);if(v!==String(issue[field]||''))changes[field]=[String(issue[field]||''),v];issue[field]=v}
   if(b.type!==undefined){const v=String(b.type);if(!guardianDevIssueTypes.includes(v))return res.status(400).json({ok:false,error:'Invalid issue type'});if(v!==issue.type)changes.type=[issue.type,v];issue.type=v}
   if(b.priority!==undefined){const v=String(b.priority);if(!guardianDevIssuePriorities.includes(v))return res.status(400).json({ok:false,error:'Invalid priority'});if(v!==issue.priority)changes.priority=[issue.priority,v];issue.priority=v}
   if(b.status!==undefined){const v=String(b.status);if(!guardianDevIssueStatuses.includes(v))return res.status(400).json({ok:false,error:'Invalid issue status'});if(v!==issue.status)changes.status=[issue.status,v];issue.status=v;if(v==='resolved'||v==='closed')issue.resolvedAt=issue.resolvedAt||new Date().toISOString();else issue.resolvedAt=null}
-  if(Object.keys(changes).length){guardianDevIssueEvent(issue,req.guardianAdmin.username,'updated',changes);guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_UPDATED',{issueId:issue.id,key:issue.key,fields:Object.keys(changes)})}
-  res.json({ok:true,issue:guardianDevIssueSafe(issue)});
+  const statusChanged=previousStatus!==String(issue.status||'new');
+  if(statusChanged){guardianDevIssueEvent(issue,req.guardianAdmin.username,'updated',changes);guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_UPDATED',{issueId:issue.id,key:issue.key,fields:Object.keys(changes)})}
+  else if(Object.keys(changes).length){guardianDevIssueEvent(issue,req.guardianAdmin.username,'updated',changes);guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_UPDATED',{issueId:issue.id,key:issue.key,fields:Object.keys(changes)})}
+  else if(submitterMessage){guardianDevIssueEvent(issue,req.guardianAdmin.username,'submitter_update_prepared',{status:issue.status})}
+  if(Object.keys(changes).length||submitterMessage)guardianSaveDevIssues();
+  let submitterNotification=null;
+  if(statusChanged||submitterMessage){
+    const delivery=await guardianDevIssueNotifySubmitter(issue,{fromStatus:previousStatus,toStatus:issue.status,message:submitterMessage});
+    submitterNotification=guardianDevIssueRecordSubmitterNotification(issue,delivery,{fromStatus:previousStatus,toStatus:issue.status,actor:req.guardianAdmin.username,message:submitterMessage});
+    guardianSaveDevIssues();
+  }
+  res.json({ok:true,issue:guardianDevIssueSafe(issue),submitterNotification});
 });
 app.post('/api/admin/dev-issues/:id/comments',guardianRequireAdmin('settings.edit'),(req,res)=>{
   const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
   const content=String(req.body?.content||'').trim();if(content.length<1||content.length>4000)return res.status(400).json({ok:false,error:'Comment must be between 1 and 4,000 characters'});
   issue.comments=Array.isArray(issue.comments)?issue.comments:[];const comment={id:crypto.randomUUID(),content,createdBy:req.guardianAdmin.username,createdAt:new Date().toISOString()};issue.comments.push(comment);guardianDevIssueEvent(issue,req.guardianAdmin.username,'commented',{commentId:comment.id});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_COMMENT_ADDED',{issueId:issue.id,key:issue.key});res.json({ok:true,comment,issue:guardianDevIssueSafe(issue)});
 });
-app.post('/api/admin/dev-issues/:id/tests',guardianRequireAdmin('settings.edit'),(req,res)=>{
+app.post('/api/admin/dev-issues/:id/tests',guardianRequireAdmin('settings.edit'),async(req,res)=>{
   const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
-  const result=String(req.body?.result||''),environment=String(req.body?.environment||'development'),notes=String(req.body?.notes||'').trim();
+  const result=String(req.body?.result||''),environment=String(req.body?.environment||'development'),notes=String(req.body?.notes||'').trim(),previousStatus=String(issue.status||'new');
   if(!['passed','failed','blocked'].includes(result))return res.status(400).json({ok:false,error:'Choose passed, failed or blocked'});
   if(!guardianDevIssueEnvironments.includes(environment))return res.status(400).json({ok:false,error:'Invalid test environment'});
   if(notes.length<3||notes.length>4000)return res.status(400).json({ok:false,error:'Test notes must be between 3 and 4,000 characters'});
   issue.tests=Array.isArray(issue.tests)?issue.tests:[];const test={id:crypto.randomUUID(),result,environment,version:String(req.body?.version||'').trim().slice(0,80),notes,testedBy:req.guardianAdmin.username,testedAt:new Date().toISOString()};issue.tests.unshift(test);
   if(result==='passed'&&issue.status==='testing')issue.status='ready_to_deploy';if(result==='failed'&&['testing','ready_to_deploy'].includes(issue.status))issue.status='in_progress';
-  guardianDevIssueEvent(issue,req.guardianAdmin.username,'test_recorded',{result,environment,version:test.version});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_TEST_RECORDED',{issueId:issue.id,key:issue.key,result,environment});res.json({ok:true,test,issue:guardianDevIssueSafe(issue)});
+  let submitterNotification=null;if(issue.status!==previousStatus){const delivery=await guardianDevIssueNotifySubmitter(issue,{fromStatus:previousStatus,toStatus:issue.status});submitterNotification=guardianDevIssueRecordSubmitterNotification(issue,delivery,{fromStatus:previousStatus,toStatus:issue.status,actor:req.guardianAdmin.username});}
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'test_recorded',{result,environment,version:test.version});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_TEST_RECORDED',{issueId:issue.id,key:issue.key,result,environment});res.json({ok:true,test,issue:guardianDevIssueSafe(issue),submitterNotification});
 });
-app.post('/api/admin/dev-issues/:id/deployments',guardianRequireAdmin('settings.edit'),(req,res)=>{
+app.post('/api/admin/dev-issues/:id/deployments',guardianRequireAdmin('settings.edit'),async(req,res)=>{
   const issue=guardianDevIssues.find(x=>x.id===req.params.id||x.key===req.params.id);if(!issue)return res.status(404).json({ok:false,error:'Issue not found'});
-  const environment=String(req.body?.environment||'staging'),status=String(req.body?.status||'deployed'),version=String(req.body?.version||'').trim().slice(0,80),commit=String(req.body?.commit||'').trim().slice(0,120),notes=String(req.body?.notes||'').trim();
+  const environment=String(req.body?.environment||'staging'),status=String(req.body?.status||'deployed'),version=String(req.body?.version||'').trim().slice(0,80),commit=String(req.body?.commit||'').trim().slice(0,120),notes=String(req.body?.notes||'').trim(),previousStatus=String(issue.status||'new');
   if(!guardianDevIssueEnvironments.includes(environment))return res.status(400).json({ok:false,error:'Invalid deployment environment'});
   if(!['deployed','failed','rolled_back'].includes(status))return res.status(400).json({ok:false,error:'Invalid deployment result'});
   if(!version&&!commit&&!notes)return res.status(400).json({ok:false,error:'Add a version, commit reference or deployment note'});
   issue.deployments=Array.isArray(issue.deployments)?issue.deployments:[];const dep={id:crypto.randomUUID(),environment,status,version,commit,notes,deployedBy:req.guardianAdmin.username,createdAt:new Date().toISOString()};issue.deployments.unshift(dep);
   if(status==='deployed'&&environment==='production'){issue.status='resolved';issue.resolvedAt=new Date().toISOString()}else if(status==='failed'||status==='rolled_back'){issue.status='in_progress';issue.resolvedAt=null}
-  guardianDevIssueEvent(issue,req.guardianAdmin.username,'deployment_recorded',{environment,status,version,commit});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_DEPLOYMENT_RECORDED',{issueId:issue.id,key:issue.key,environment,status,version,commit});res.json({ok:true,deployment:dep,issue:guardianDevIssueSafe(issue)});
+  let submitterNotification=null;if(issue.status!==previousStatus){const delivery=await guardianDevIssueNotifySubmitter(issue,{fromStatus:previousStatus,toStatus:issue.status});submitterNotification=guardianDevIssueRecordSubmitterNotification(issue,delivery,{fromStatus:previousStatus,toStatus:issue.status,actor:req.guardianAdmin.username});}
+  guardianDevIssueEvent(issue,req.guardianAdmin.username,'deployment_recorded',{environment,status,version,commit});guardianSaveDevIssues();guardianAdminAuditLog(req.guardianAdmin.username,'DEV_ISSUE_DEPLOYMENT_RECORDED',{issueId:issue.id,key:issue.key,environment,status,version,commit});res.json({ok:true,deployment:dep,issue:guardianDevIssueSafe(issue),submitterNotification});
 });
 
 app.get('/api/admin/search',guardianRequireAdmin('settings.view'),(req,res)=>{const q=String(req.query.q||'').trim().toLowerCase();if(q.length<2)return res.json({ok:true,results:[]});const out=[],push=(type,title,subtitle,link)=>{const hay=`${title} ${subtitle}`.toLowerCase();if(hay.includes(q))out.push({type,title,subtitle,link})};for(const u of guardianAdminUsers.values())push('MEMBER',u.displayName||u.username,`${u.username} ${(u.serviceAssignments||[]).map(a=>`${a.callsign||''} ${a.rank||''} ${a.division||''}`).join(' ')}`,'/settings.html#governance');for(const s of guardianServices)push('SERVICE',s.name,`${s.id} ${(s.ranks||[]).join(' ')} ${(s.divisions||[]).join(' ')}`,'/settings.html#services');for(const st of guardianConfig.stations||[])push('LOCATION',st.name,`${st.code||''} ${st.postal||''} ${st.serviceId||''}`,'/settings.html#stations');for(const a of guardianConfig.appliances||[])push('VEHICLE',a.callsign||a.name,`${a.type||''} ${a.station||''} ${(a.skills||[]).join(' ')}`,'/settings.html#appliances');for(const f of guardianForms)push('FORM',f.title,`${f.category||''} ${f.description||''}`,'/settings.html#formsbuilder');for(const g of guardianGuides)push('GUIDE',g.title,`${g.category||''} ${g.summary||''}`,'/settings.html#guides');for(const ql of guardianQualifications)push('QUAL',ql.name,`${ql.serviceId||''} ${ql.category||''}`,'/settings.html#training');for(const inc of state.incidents||[])push('INCIDENT',`Incident #${inc.id}`,`${inc.type||''} ${inc.address||''} ${inc.postal||''}`,'/control/');res.json({ok:true,results:out.slice(0,40)})});

@@ -1,0 +1,80 @@
+GUARDIAN — DEVELOPMENT ISSUE STATUS NOTIFICATIONS
+=================================================
+
+WHAT THIS UPDATE DOES
+---------------------
+When a developer changes a submitted issue's status in Guardian, the person who
+submitted the report is sent a private Discord DM from the Guardian bot.
+
+Status updates include:
+- New
+- Under review
+- In progress
+- Testing
+- Ready to deploy
+- Resolved
+- Closed
+
+The same notification is sent when a test result or deployment automatically
+moves an issue to a different status.
+
+On the issue detail page, developers also get an optional
+"Update to the person who submitted this report" message. That message is sent
+privately with the status update. It is not the same as the internal comments
+and must not contain internal staff notes.
+
+Delivery attempts are recorded in the issue's "Submitter notifications" history.
+If Discord cannot deliver a DM, the issue status is still saved and Guardian
+shows the delivery failure or skip reason.
+
+FILES TO REPLACE
+----------------
+Copy these two files into your existing Guardian project, preserving paths:
+
+1. server.js
+2. public/guardian_control_centre.js
+
+Back up your existing copies first. Do not replace the rest of your project or
+your data/ directory. Keep the currently deployed developer intake, issue
+tracker, ticketing, backup and settings files in place.
+
+DEPLOY
+-----
+1. Commit and push the two replacement files to the GitHub repository used by
+   your Render web service.
+2. Allow Render to deploy.
+3. Hard-refresh Guardian Settings with Ctrl+F5.
+4. Open Platform > Developer Issue Tracker.
+
+TEST
+----
+1. Use a separate test Discord account that is a member of your Discord server.
+2. Make sure that account allows direct messages from server members and has
+   not blocked the Guardian bot.
+3. Submit a NEW development report using the Discord development form panel.
+4. In Guardian, open the new issue, change its status from New to Under review,
+   and click "Save issue & notify submitter".
+5. The test account should receive a DM containing the issue key, title and new
+   status. Check the issue's "Submitter notifications" section for delivery
+   confirmation.
+6. Repeat with another status, and try an optional message to the submitter.
+7. Also test a status transition made by a test result or deployment record.
+
+IMPORTANT LIMITS
+----------------
+- Discord-form submissions made after this update automatically retain the
+  submitter's Discord user ID and can be DM'd.
+- Existing issues can only be DM'd if they already contain a valid
+  createdByDiscordId value. Old issues without that ID will show as skipped.
+- Website-created issues can be DM'd only when the creating Guardian account
+  has a linked Discord user ID.
+- The recipient must allow DMs from server members and must not have blocked
+  the bot. Discord may reject DMs because of the recipient's privacy settings.
+- A failed DM does not undo the status change. The attempt and error are shown
+  in the notification history.
+- The message entered in the submitter-update box is sent to the reporter.
+  Keep it suitable for the player/community member; internal comments remain
+  separate and are not sent.
+
+No new Render environment variables are required. The existing DISCORD_BOT_TOKEN
+and Discord bot connection are used.
