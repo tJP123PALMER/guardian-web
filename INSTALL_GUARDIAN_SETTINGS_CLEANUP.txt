@@ -1,0 +1,43 @@
+GUARDIAN SETTINGS CLEAN-UP
+==========================
+
+This patch makes two focused changes without replacing your server.js or data:
+
+1) Developer Issue Tracker becomes a management/review page only. The manual
+   "Create an issue" form and its website submit handler are removed. New
+   reports should continue to arrive through the Discord development form.
+   Existing issue list, filters, assignment, status updates, comments, tests,
+   deployment history, attachments and submitter notifications remain.
+
+2) The Audit Log opened from the existing Settings sidebar is upgraded in
+   place. It now has summary cards, search, activity-type filters, actor/date
+   filters, page sizing, pagination, readable action labels, expandable detail
+   payloads and filtered CSV export. The Audit Log stays in the Settings
+   navigation; this patch does not move it to a separate page.
+
+FILES TO REPLACE (preserve the public/ folder paths):
+- public/guardian_control_centre.js
+- public/settings.js
+- public/guardian_control_centre.css
+
+DO NOT replace server.js, package.json, your data/ folder, or other scripts.
+The current server routes and Discord intake continue to provide issue records.
+
+DEPLOY:
+1. Back up the three existing files.
+2. Copy the three files from this patch into your project, replacing the same
+   files in public/.
+3. Commit and push to the GitHub repository connected to Render.
+4. Wait for Render to deploy successfully.
+5. Open Guardian Settings and press Ctrl+F5.
+6. Open Developer Issue Tracker: the Create an issue form should be gone,
+   while incoming Discord reports remain listed and manageable.
+7. Open Audit Log in the existing Settings sidebar: the redesigned page
+   should appear with filters, summary cards and export controls.
+
+NOTES:
+- The browser's hard refresh is important because the files keep their names.
+- The Audit Log can only show events Guardian has actually recorded. It does
+  not reconstruct historical actions that were never written to the audit log.
+- The API currently returns the stored audit history; the existing backend
+  retention limit still applies.

@@ -260,8 +260,94 @@ function renderBackup(){
 }
 
 async function renderAudit(){
- setContent(`<div class="card"><div class="sectionHead"><div><h3>Audit Log</h3><p>Administrative logins and configuration changes.</p></div><button id="refreshAudit">REFRESH</button></div><div class="auditTools"><input id="auditSearch" placeholder="Filter by user, action or detail"></div><div id="auditArea">Loading audit log…</div></div>`);
- try{const all=(await api("/api/admin/audit")).audit||[];const draw=()=>{const q=String($("auditSearch")?.value||"").toLowerCase(),a=all.filter(x=>!q||`${x.actor} ${x.action} ${JSON.stringify(x.details||{})}`.toLowerCase().includes(q));$("auditArea").innerHTML=`<p class="small">${a.length} of ${all.length} entries</p>`+(a.length?`<div class="tableWrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>${a.map(x=>`<tr><td>${new Date(x.at).toLocaleString()}</td><td>${esc(x.actor)}</td><td><span class="auditAction">${esc(x.action)}</span></td><td><code>${esc(JSON.stringify(x.details||{}))}</code></td></tr>`).join("")}</tbody></table></div>`:`<p>No matching audit entries.</p>`)};draw();$("auditSearch").oninput=draw;$("refreshAudit").onclick=renderAudit}catch(e){errorView("Audit Log",e)}
+ const categoryFor=action=>{
+  const a=String(action||'').toUpperCase();
+  if(/LOGIN|AUTH|SESSION|OWNER_BOOTSTRAPPED/.test(a))return 'Authentication';
+  if(/TICKET|SUPPORT_CASE/.test(a))return 'Ticketing';
+  if(/FIVEM|PLAYER_KICK|RESOURCE_|RESTART|SERVER_|BRIDGE/.test(a))return 'FiveM & server';
+  if(/BACKUP|SNAPSHOT|RESTORE|EXPORT|IMPORT/.test(a))return 'Backups & recovery';
+  if(/DEV_ISSUE|DEVELOPER|ISSUE_|DEPLOY|BUG_REPORT/.test(a))return 'Developer work';
+  if(/USER_|ROLE|PERMISSION|WHITELIST|SECURITY|PASSWORD|ACCOUNT/.test(a))return 'Accounts & access';
+  if(/CONFIG|PORTAL|RADIO|STATION|FLEET|SERVICE|FORM|TEMPLATE|ANNOUNCEMENT|TRAINING|PATROL|GUIDE|QUALIFICATION|MAP_/.test(a))return 'Configuration';
+  return 'Other';
+ };
+ const actionLabels={
+  OWNER_BOOTSTRAPPED:'Owner account initialised',LOGIN:'Signed in',LOGIN_FAILED:'Failed sign-in',
+  CONFIG_EXPORTED:'Configuration exported',CONFIG_IMPORTED:'Configuration imported',CONFIG_UPDATED:'Configuration updated',
+  USER_CREATED:'User account created',USER_DELETED:'User account deleted',USER_PASSWORD_RESET:'Password reset',
+  USER_WHITELIST_CHANGED:'Whitelist status changed',WHITELIST_APPLICATION_REVIEWED:'Whitelist application reviewed',
+  RADIO_CONFIG_UPDATED:'Radio configuration updated',LOCATIONS_UPDATED:'Stations / locations updated',FLEET_UPDATED:'Fleet updated',
+  SERVICE_ONBOARDED:'Service onboarded',SNAPSHOT_CREATED:'Restore point created',
+  USER_PROMOTED:'User promoted',USER_BOOKED_ON_DUTY:'Staff member booked on duty',USER_BOOKED_OFF_DUTY:'Staff member booked off duty',
+  PERSONNEL_NOTE_ADDED:'Personnel note added',COMMENDATION_ADDED:'Commendation added',DISCIPLINARY_CASE_OPENED:'Disciplinary case opened',
+  FIVEM_CONTROL_ACTION:'FiveM control action',TICKET_CLOSED:'Ticket closed',TICKET_CREATED:'Ticket created',DEV_ISSUE_CREATED:'Developer issue created'
+ };
+ const labelFor=action=>actionLabels[String(action||'').toUpperCase()]||String(action||'Unknown action').toLowerCase().replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+ const safeDate=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'Unknown time':d.toLocaleString()};
+ const localDate=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '';const z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`};
+ const shortDetails=details=>{
+  const entries=Object.entries(details&&typeof details==='object'?details:{ });
+  if(!entries.length)return 'No additional details';
+  const text=entries.slice(0,3).map(([k,v])=>`${k}: ${typeof v==='object'?JSON.stringify(v):String(v)}`).join(' · ');
+  return text.length>180?text.slice(0,177)+'…':text;
+ };
+ setContent(`<div class="auditV2">
+  <section class="card auditV2Hero"><div><div class="eyebrow">SECURITY & ACCOUNTABILITY</div><h2>Audit Log</h2><p>Search administrative activity, investigate changes and export records for review.</p></div><div class="auditV2HeroActions"><button id="auditExport" class="secondary">EXPORT CSV</button><button id="refreshAudit">REFRESH</button></div></section>
+  <div class="auditV2Stats" id="auditStats"><div class="card"><small>RECORDED EVENTS</small><strong>—</strong><span>Latest stored activity</span></div><div class="card"><small>EVENTS TODAY</small><strong>—</strong><span>Based on your local date</span></div><div class="card"><small>FAILED SIGN-INS</small><strong>—</strong><span>Recorded authentication failures</span></div><div class="card"><small>UNIQUE ACTORS</small><strong>—</strong><span>Users / system identities</span></div></div>
+  <section class="card"><div class="auditV2SectionHead"><div><h3>Activity records</h3><p>Use the filters together to narrow down a change or incident.</p></div><span id="auditCount" class="auditV2Count">Loading…</span></div>
+   <div class="auditV2Filters"><label class="auditV2Search">Search<input id="auditSearch" placeholder="User, action, record ID or detail…"></label><label>Activity type<select id="auditCategory"><option value="">All activity</option><option>Authentication</option><option>Accounts &amp; access</option><option>Ticketing</option><option>FiveM &amp; server</option><option>Backups &amp; recovery</option><option>Developer work</option><option>Configuration</option><option>Other</option></select></label><label>Actor<select id="auditActor"><option value="">All actors</option></select></label><label>From<input id="auditFrom" type="date"></label><label>To<input id="auditTo" type="date"></label><label>Rows<select id="auditPageSize"><option value="25">25 per page</option><option value="50">50 per page</option><option value="100">100 per page</option></select></label><button id="auditClear" class="secondary">CLEAR FILTERS</button></div>
+   <div id="auditArea" class="auditV2Area"><div class="auditV2Loading">Loading audit records…</div></div>
+  </section>
+  <p class="auditV2Footnote">Audit records are displayed from Guardian's stored audit history. Details can contain sensitive information, so export and share them only with authorised staff.</p>
+ </div>`);
+ try{
+  const response=await api('/api/admin/audit');
+  const all=(Array.isArray(response.audit)?response.audit:[]).slice().sort((a,b)=>new Date(b.at||0)-new Date(a.at||0));
+  const state={page:1,pageSize:25};
+  const actorSelect=$('auditActor');
+  [...new Set(all.map(x=>String(x.actor||'SYSTEM')))].sort((a,b)=>a.localeCompare(b)).forEach(actor=>{const option=document.createElement('option');option.value=actor;option.textContent=actor;actorSelect.appendChild(option)});
+  const today=localDate(new Date());
+  const failed=all.filter(x=>/LOGIN_FAILED|AUTH_FAILED|SIGN_IN_FAILED/i.test(String(x.action||''))).length;
+  const actors=new Set(all.map(x=>String(x.actor||'SYSTEM'))).size;
+  $('auditStats').innerHTML=`<div class="card"><small>RECORDED EVENTS</small><strong>${all.length}</strong><span>Latest stored activity</span></div><div class="card"><small>EVENTS TODAY</small><strong>${all.filter(x=>localDate(x.at)===today).length}</strong><span>Based on your local date</span></div><div class="card"><small>FAILED SIGN-INS</small><strong>${failed}</strong><span>Recorded authentication failures</span></div><div class="card"><small>UNIQUE ACTORS</small><strong>${actors}</strong><span>Users / system identities</span></div>`;
+  const filteredRows=()=>{
+   const q=String($('auditSearch')?.value||'').trim().toLowerCase();
+   const category=String($('auditCategory')?.value||'');
+   const actor=String($('auditActor')?.value||'');
+   const from=String($('auditFrom')?.value||''),to=String($('auditTo')?.value||'');
+   return all.filter(x=>{
+    const action=String(x.action||'Unknown action'),details=x.details||{},who=String(x.actor||'SYSTEM');
+    const haystack=`${who} ${action} ${labelFor(action)} ${JSON.stringify(details)}`.toLowerCase();
+    const day=localDate(x.at);
+    return (!q||haystack.includes(q))&&(!category||categoryFor(action)===category)&&(!actor||who===actor)&&(!from||day>=from)&&(!to||day<=to);
+   });
+  };
+  const draw=()=>{
+   const filtered=filteredRows(),size=Number($('auditPageSize')?.value||25),pages=Math.max(1,Math.ceil(filtered.length/size));
+   state.pageSize=size;state.page=Math.max(1,Math.min(state.page,pages));
+   const start=(state.page-1)*size,visible=filtered.slice(start,start+size);
+   $('auditCount').textContent=`${filtered.length} matching · ${all.length} total`;
+   $('auditArea').innerHTML=filtered.length?`<div class="tableWrap auditV2TableWrap"><table class="auditV2Table"><thead><tr><th>When</th><th>Actor</th><th>Activity</th><th>Summary</th><th>Details</th></tr></thead><tbody>${visible.map((x,index)=>{
+    const action=String(x.action||'Unknown action'),cat=categoryFor(action),details=x.details&&typeof x.details==='object'?x.details:{};
+    const detailJson=JSON.stringify(details,null,2);
+    return `<tr><td class="auditV2Time"><strong>${esc(safeDate(x.at))}</strong><small>${esc(x.at||'')}</small></td><td><span class="auditV2Actor">${esc(x.actor||'SYSTEM')}</span></td><td><span class="auditV2Category ${cat==='Authentication'?'auth':cat==='FiveM & server'?'fivem':cat==='Ticketing'?'ticket':cat==='Backups & recovery'?'backup':cat==='Developer work'?'dev':cat==='Accounts & access'?'access':''}">${esc(cat)}</span><strong class="auditV2Action">${esc(labelFor(action))}</strong><small class="auditV2RawAction">${esc(action)}</small></td><td class="auditV2Summary">${esc(shortDetails(details))}</td><td><details class="auditV2Details"><summary>View payload</summary><pre>${esc(detailJson)}</pre></details></td></tr>`;
+   }).join('')}</tbody></table></div><div class="auditV2Pagination"><span>Showing ${start+1}–${Math.min(start+visible.length,filtered.length)} of ${filtered.length}</span><div><button id="auditPrev" class="secondary" ${state.page<=1?'disabled':''}>← Previous</button><span>Page ${state.page} of ${pages}</span><button id="auditNext" class="secondary" ${state.page>=pages?'disabled':''}>Next →</button></div></div>`:`<div class="auditV2Empty"><span>◇</span><strong>No matching audit records</strong><p>Try a different search or clear the filters.</p></div>`;
+   $('auditPrev')?.addEventListener('click',()=>{state.page--;draw()});
+   $('auditNext')?.addEventListener('click',()=>{state.page++;draw()});
+  };
+  ['auditSearch','auditCategory','auditActor','auditFrom','auditTo','auditPageSize'].forEach(id=>{const el=$(id);el.addEventListener(id==='auditSearch'?'input':'change',()=>{state.page=1;draw()})});
+  $('auditClear').onclick=()=>{['auditSearch','auditCategory','auditActor','auditFrom','auditTo'].forEach(id=>$(id).value='');$('auditPageSize').value='25';state.page=1;draw()};
+  $('auditExport').onclick=()=>{
+   const chosen=filteredRows();
+   const fields=['at','actor','action','category','details'];
+   const quote=value=>{const s=String(value??'');return '"'+s.replace(/"/g,'""')+'"'};
+   const csv=[fields.map(quote).join(','),...chosen.map(x=>[x.at||'',x.actor||'SYSTEM',x.action||'',categoryFor(x.action),JSON.stringify(x.details||{})].map(quote).join(','))].join('\r\n');
+   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+   a.href=url;a.download=`guardian-audit-${new Date().toISOString().slice(0,10)}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  };
+  $('refreshAudit').onclick=renderAudit;
+  draw();
+ }catch(e){errorView('Audit Log',e)}
 }
 
 boot();
