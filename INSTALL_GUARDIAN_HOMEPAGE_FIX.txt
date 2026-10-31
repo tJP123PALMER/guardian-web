@@ -1,0 +1,28 @@
+GUARDIAN HOMEPAGE NOT FOUND - FIX
+
+This patch changes only server.js. It does not change or delete /var/data, backups,
+member records, station records, tickets, uploads, or any other persistent data.
+
+INSTALL
+1. Open the GitHub repository connected to the Render service.
+2. In the repository ROOT (the same folder as package.json), open server.js.
+   Do not edit server.js inside a second/nested guardian-web-main folder.
+3. Replace the root server.js with the server.js in this ZIP and commit the change.
+4. Render should automatically deploy the commit. Wait until the deployment log says
+   the service is live.
+5. Open https://YOUR-SERVICE.onrender.com/__guardian_deploy_check
+   The response should be JSON and include build "guardian-homepage-fallback-2026-10-31".
+6. Then open https://YOUR-SERVICE.onrender.com/
+
+WHAT THIS DOES
+- Keeps the normal public/portal/index.html page as the preferred homepage.
+- If that file is missing in the deployed build, tries public/index.html, then the
+  project-root index.html.
+- If none of those exist, shows an on-screen diagnostic instead of plain Not Found.
+- Adds /__guardian_deploy_check so we can see which page files are actually present
+  in the running Render deployment.
+
+IMPORTANT
+- Keep GUARDIAN_DATA_DIR=/var/data unchanged.
+- Do not delete or replace the Render persistent disk.
+- Replace only the ROOT server.js file.
