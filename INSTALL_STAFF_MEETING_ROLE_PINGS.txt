@@ -1,0 +1,34 @@
+GUARDIAN STAFF MEETING ROLE PING FIX
+
+This is a server.js-only update for the existing Guardian Staff Meetings feature.
+It keeps the existing meeting creation, RSVP buttons, permissions, storage and
+backup/recovery behaviour.
+
+INSTALL
+1. Extract this ZIP.
+2. In your GitHub repository, open the application root (the same folder that
+   contains package.json and server.js).
+3. Replace server.js with the server.js from this ZIP.
+4. Commit and push the change. Let Render deploy.
+5. Do not change GUARDIAN_DATA_DIR or the Render persistent disk settings.
+
+WHAT CHANGES
+- The selected Discord roles are explicitly included as allowed role mentions.
+- If the bot has MentionEveryone permission in the announcement channel, it
+  uses that permission to ping selected roles directly.
+- If it does not have that permission, the code temporarily makes selected
+  non-mentionable roles mentionable only while sending the announcement, then
+  restores their original mentionability setting immediately.
+- If Discord permissions or role hierarchy prevent this, the website now shows
+  an actionable error instead of silently publishing a non-pinging post.
+- Existing RSVP eligibility is still limited to members who have at least one
+  of the selected roles.
+
+DISCORD PERMISSIONS
+The bot must have View Channel, Send Messages and Embed Links in the target
+announcement channel. For roles that are not already mentionable, either:
+- grant the bot Mention @everyone, @here and All Roles in the channel; OR
+- grant the bot Manage Roles and move its bot role above every selected staff
+  role so it can briefly enable and then restore role mentionability.
+
+The patch does not permanently change the mentionable setting on any role.

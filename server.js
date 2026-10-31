@@ -4197,7 +4197,64 @@ app.post("/api/admin/meetings",guardianRequireAdmin("settings.edit"),async(req,r
     const meeting={id:crypto.randomUUID(),number:`GDN-MTG-${String(guardianStaffMeetings.length+1).padStart(4,"0")}`,title,description,location,startsAt:new Date(startsAt).toISOString(),channelId,guildId:guild.id,roleIds:chosen.map(r=>r.id),roleNames:chosen.map(r=>r.name),createdBy:req.guardianAdmin.username,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),status:"scheduled",responses:{},discordMessageId:""};
     const djs=await import("discord.js");
     const content=meeting.roleIds.map(id=>`<@&${id}>`).join(" ");
-    const message=await channel.send({content,embeds:[guardianStaffMeetingEmbed(meeting,djs)],components:guardianStaffMeetingComponents(meeting,djs),allowedMentions:{roles:meeting.roleIds}});
+
+    // Make sure Discord is allowed to notify every selected audience role.
+    // Mentionable roles can be pinged directly. For non-mentionable roles, use
+    // the bot's MentionEveryone permission where available; otherwise enable
+    // mentionability only for the duration of sending this meeting post, then
+    // immediately restore each role's original setting.
+    const botMember=await guild.members.fetchMe();
+    const channelPermissions=channel.permissionsFor(botMember);
+    if(!channelPermissions?.has(djs.PermissionFlagsBits.ViewChannel)){
+      return res.status(403).json({ok:false,error:"Guardian needs View Channel permission in the staff meeting announcement channel."});
+    }
+    if(!channelPermissions.has(djs.PermissionFlagsBits.SendMessages)){
+      return res.status(403).json({ok:false,error:"Guardian needs Send Messages permission in the staff meeting announcement channel."});
+    }
+    if(!channelPermissions.has(djs.PermissionFlagsBits.EmbedLinks)){
+      return res.status(403).json({ok:false,error:"Guardian needs Embed Links permission in the staff meeting announcement channel."});
+    }
+    const canMentionAll=channelPermissions.has(djs.PermissionFlagsBits.MentionEveryone);
+    const rolesToTemporarilyEnable=canMentionAll?[]:chosen.filter(role=>!role.mentionable);
+    if(rolesToTemporarilyEnable.length){
+      if(!channelPermissions.has(djs.PermissionFlagsBits.ManageRoles)){
+        const names=rolesToTemporarilyEnable.map(role=>`@${role.name}`).join(", ");
+        return res.status(403).json({ok:false,error:`Guardian cannot ping ${names} because those roles are not mentionable. Give the bot Mention @everyone, @here and All Roles permission in this channel, or give it Manage Roles and place its bot role above the selected staff roles.`});
+      }
+      const highestBotRole=botMember.roles.highest;
+      const aboveBot=rolesToTemporarilyEnable.filter(role=>role.managed||role.position>=highestBotRole.position);
+      if(aboveBot.length){
+        const names=aboveBot.map(role=>`@${role.name}`).join(", ");
+        return res.status(403).json({ok:false,error:`Guardian cannot temporarily enable pings for ${names} because those roles are at or above the bot's highest role. Move the Guardian bot role above the selected staff roles, or grant Mention @everyone, @here and All Roles permission.`});
+      }
+    }
+
+    const temporarilyEnabledRoles=[];
+    let message;
+    try{
+      for(const role of rolesToTemporarilyEnable){
+        try{
+          await role.edit({mentionable:true,reason:`Temporary staff meeting mention for ${meeting.number}`});
+          temporarilyEnabledRoles.push(role);
+        }catch(roleError){
+          throw new Error(`Guardian could not enable a temporary mention for @${role.name}. Check Manage Roles permission and bot role hierarchy. ${roleError?.message||""}`.trim());
+        }
+      }
+      message=await channel.send({
+        content,
+        embeds:[guardianStaffMeetingEmbed(meeting,djs)],
+        components:guardianStaffMeetingComponents(meeting,djs),
+        allowedMentions:{parse:[],roles:meeting.roleIds,users:[]}
+      });
+    }finally{
+      // Restore the original non-mentionable state after Discord has accepted
+      // the announcement, including when sending fails part way through.
+      for(const role of temporarilyEnabledRoles.reverse()){
+        await role.edit({mentionable:false,reason:`Restore role mention setting after ${meeting.number}`}).catch(restoreError=>{
+          console.error(`[Guardian Meetings] Could not restore mentionability for role ${role.id}:`,restoreError?.message||restoreError);
+        });
+      }
+    }
     meeting.discordMessageId=message.id;meeting.discordJumpUrl=message.url;
     guardianStaffMeetings.unshift(meeting);guardianSaveStaffMeetings();
     guardianStaffMeetingSettings={channelId};guardianSaveStaffMeetingSettings();
