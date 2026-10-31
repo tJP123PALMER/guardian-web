@@ -253,3 +253,54 @@
  };
 
 })();
+
+
+/* Guardian Staff Meetings settings page */
+(()=>{
+ const E=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ const call=async(url,opt={})=>{const r=await fetch(url,{credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(opt.headers||{})},...opt});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`Request failed (${r.status})`);return d;};
+ const toast=(message,bad=false)=>{const n=document.createElement("div");n.className="gctlNotice"+(bad?" bad":"");n.textContent=message;document.body.appendChild(n);setTimeout(()=>n.remove(),4200)};
+ const dateText=v=>v?new Date(v).toLocaleString():"Not set";
+ window.renderGuardianMeetings=async function(){
+  const c=document.getElementById("content");if(!c)return;
+  c.innerHTML='<div class="card"><h3>Loading Staff Meetings…</h3></div>';
+  try{
+   const d=await call('/api/admin/meetings');let meetings=d.meetings||[],roles=[],selected=new Set(),savedChannel=d.settings?.channelId||"";
+   const render=()=>{
+    c.innerHTML=`<div class="gMeetWrap">
+     <div class="gctlHeader"><div><div class="eyebrow">STAFF MANAGEMENT</div><h2>Staff Meetings</h2><p>Create a meeting, choose the staff roles it is for, and publish an announcement with attendance buttons.</p></div><span class="gctlBadge ${d.discordConnected?'good':'bad'}">Discord ${d.discordConnected?'connected':'disconnected'}</span></div>
+     <div class="gMeetGrid">
+      <section class="card gMeetCreate"><div class="gMeetSectionTitle"><div><h3>Create a meeting</h3><p>Selected roles receive a Discord mention. Only members with one of those roles can RSVP.</p></div></div>
+       <form id="gMeetForm">
+        <div class="gMeetFields"><label>Meeting title<input id="gMeetTitle" maxlength="180" required placeholder="e.g. Development Team Meeting"></label><label>Date and time<input id="gMeetDate" type="datetime-local" required></label>
+        <label class="gMeetWide">Description / agenda<textarea id="gMeetDescription" rows="4" maxlength="3500" required placeholder="What will be discussed? Include anything attendees should prepare."></textarea></label>
+        <label>Location / voice channel<input id="gMeetLocation" maxlength="500" placeholder="e.g. Discord voice: Development Room 1"></label>
+        <label>Discord announcement channel ID<input id="gMeetChannel" required value="${E(savedChannel)}" placeholder="Paste the channel ID"></label></div>
+        <div class="gMeetRoleHead"><div><b>Who is this meeting for?</b><small>Select one or more Discord roles. Those roles will be mentioned in the announcement and allowed to RSVP.</small></div><button type="button" id="gMeetLoadRoles">LOAD DISCORD ROLES</button></div>
+        <div id="gMeetRoleList" class="gMeetRoleList">Enter the announcement channel ID and load roles from your Discord server.</div>
+        <div class="gMeetSelected" id="gMeetSelected">No roles selected.</div>
+        <div class="gMeetActions"><button type="submit" id="gMeetPublish">PUBLISH MEETING</button><button type="button" class="secondary" id="gMeetClear">CLEAR FORM</button></div>
+       </form>
+      </section>
+      <section class="card gMeetHelp"><div class="eyebrow">HOW IT WORKS</div><h3>Attendance tracking</h3><div class="gMeetStep"><strong>01 · Choose the audience</strong><span>Select roles such as Development, Support, Management or Moderation.</span></div><div class="gMeetStep"><strong>02 · Publish to Discord</strong><span>Guardian posts the agenda, date/time, location and mentions the chosen roles.</span></div><div class="gMeetStep"><strong>03 · Staff respond</strong><span>Invited members click Attending or Not attending. Counts update on the Discord post and here.</span></div><div class="gMeetStep"><strong>04 · Review responses</strong><span>See who has responded and who is attending from the meeting history below.</span></div><p class="gMeetNote">The bot needs permission to view the destination channel, send messages, embed links and mention the selected roles. Discord role mention permissions must also allow the bot to mention those roles.</p></section>
+     </div>
+     <section class="card gMeetHistory"><div class="gctlSection"><div><h3>Meeting history</h3><p>Published meetings and live RSVP totals.</p></div><button type="button" id="gMeetRefresh">REFRESH</button></div>
+      <div class="gMeetList">${meetings.map(m=>{const count=m.counts||{attending:0,notAttending:0,total:0};const responses=Object.values(m.responses||{});return `<article class="gMeetItem"><div class="gMeetItemMain"><div><span class="gMeetNumber">${E(m.number||'MEETING')}</span><h4>${E(m.title)}</h4><p>${E(dateText(m.startsAt))} · ${E(m.location||'Location not specified')}</p><div class="gMeetRoleTags">${(m.roleNames||[]).map(n=>`<span>${E(n)}</span>`).join('')||'<span>No audience recorded</span>'}</div></div><span class="gctlBadge ${m.status==='cancelled'?'bad':'good'}">${E(String(m.status||'scheduled').toUpperCase())}</span></div>
+       <div class="gMeetCounts"><span>✅ <b>${count.attending||0}</b> attending</span><span>❌ <b>${count.notAttending||0}</b> not attending</span><span>👥 <b>${count.total||0}</b> responses</span></div>
+       <details class="gMeetResponses"><summary>View responses (${responses.length})</summary><div>${responses.map(r=>`<p><b>${E(r.displayName||r.username||r.discordUserId)}</b><span>${r.status==='attending'?'✅ Attending':'❌ Not attending'} · ${E(dateText(r.respondedAt))}</span></p>`).join('')||'<small>No responses yet.</small>'}</div></details>
+       <div class="gMeetItemActions">${m.discordJumpUrl?`<a href="${E(m.discordJumpUrl)}" target="_blank" rel="noopener">OPEN DISCORD ANNOUNCEMENT ↗</a>`:''}${m.status!=='cancelled'?`<button type="button" class="danger" data-gmeet-cancel="${E(m.id)}">CANCEL MEETING</button>`:''}</div></article>`}).join('')||'<div class="gctlEmpty">No meetings have been published yet.</div>'}</div>
+     </section></div>`;
+    const selectedText=()=>{const labels=roles.filter(r=>selected.has(r.id)).map(r=>r.name);const el=document.getElementById('gMeetSelected');if(el)el.textContent=labels.length?`Selected (${labels.length}): ${labels.join(', ')}`:'No roles selected.'};
+    const roleList=document.getElementById('gMeetRoleList');
+    if(roles.length){roleList.innerHTML=roles.map(r=>`<label class="gMeetRole"><input type="checkbox" value="${E(r.id)}" ${selected.has(r.id)?'checked':''}><span class="gMeetDot" style="--role-colour:${E(r.color||'#62717c')}"></span><span>${E(r.name)}</span></label>`).join('');roleList.querySelectorAll('input').forEach(input=>input.onchange=()=>{input.checked?selected.add(input.value):selected.delete(input.value);selectedText()});}
+    selectedText();
+    document.getElementById('gMeetLoadRoles').onclick=async()=>{const channelId=document.getElementById('gMeetChannel').value.trim();if(!channelId){toast('Enter the Discord announcement channel ID first.',true);return;}const b=document.getElementById('gMeetLoadRoles');b.disabled=true;b.textContent='LOADING…';try{const r=await call('/api/admin/meetings/roles?channelId='+encodeURIComponent(channelId));roles=r.roles||[];savedChannel=channelId;selected=new Set([...selected].filter(id=>roles.some(x=>x.id===id)));roleList.innerHTML=roles.map(x=>`<label class="gMeetRole"><input type="checkbox" value="${E(x.id)}" ${selected.has(x.id)?'checked':''}><span class="gMeetDot" style="--role-colour:${E(x.color||'#62717c')}"></span><span>${E(x.name)}</span></label>`).join('')||'<small>No assignable roles were found.</small>';roleList.querySelectorAll('input').forEach(input=>input.onchange=()=>{input.checked?selected.add(input.value):selected.delete(input.value);selectedText()});selectedText();toast(`Loaded ${roles.length} Discord roles from ${r.guild?.name||'your server'}.`);}catch(e){toast(e.message,true)}finally{b.disabled=false;b.textContent='LOAD DISCORD ROLES'}};
+    document.getElementById('gMeetClear').onclick=()=>{document.getElementById('gMeetForm').reset();selected.clear();roleList.querySelectorAll('input').forEach(x=>x.checked=false);selectedText()};
+    document.getElementById('gMeetForm').onsubmit=async e=>{e.preventDefault();const roleIds=[...selected];if(!roleIds.length){toast('Select at least one audience role.',true);return;}const channelId=document.getElementById('gMeetChannel').value.trim();const localDate=document.getElementById('gMeetDate').value;if(!localDate){toast('Choose a meeting date and time.',true);return;}const publish=document.getElementById('gMeetPublish');publish.disabled=true;publish.textContent='PUBLISHING…';try{await call('/api/admin/meetings',{method:'POST',body:JSON.stringify({title:document.getElementById('gMeetTitle').value,description:document.getElementById('gMeetDescription').value,startsAt:new Date(localDate).toISOString(),location:document.getElementById('gMeetLocation').value,channelId,roleIds})});toast('Meeting published to Discord.');const r=await call('/api/admin/meetings');meetings=r.meetings||[];savedChannel=channelId;render();}catch(err){toast(err.message,true)}finally{const b=document.getElementById('gMeetPublish');if(b){b.disabled=false;b.textContent='PUBLISH MEETING'}}};
+    document.getElementById('gMeetRefresh').onclick=async()=>{try{const r=await call('/api/admin/meetings');meetings=r.meetings||[];savedChannel=r.settings?.channelId||savedChannel;render()}catch(e){toast(e.message,true)}};
+    document.querySelectorAll('[data-gmeet-cancel]').forEach(b=>b.onclick=async()=>{if(!confirm('Cancel this meeting? The Discord post will be marked cancelled and RSVP buttons disabled.'))return;b.disabled=true;try{const r=await call('/api/admin/meetings/'+encodeURIComponent(b.dataset.gmeetCancel)+'/cancel',{method:'POST',body:JSON.stringify({})});if(!r.discordUpdated&&r.warning)toast('Meeting cancelled in Guardian, but Discord update failed: '+r.warning,true);else toast('Meeting cancelled.');const latest=await call('/api/admin/meetings');meetings=latest.meetings||[];render()}catch(e){toast(e.message,true)} });
+   };
+   render();
+  }catch(e){c.innerHTML=`<div class="card"><h3>Staff Meetings unavailable</h3><p>${E(e.message)}</p><button onclick="renderGuardianMeetings()">RETRY</button></div>`;}
+ };
+})();

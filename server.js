@@ -239,7 +239,7 @@ const guardianSettingsRouteKeys=[
   [/^\/api\/admin\/(?:stations|station-map)/,'stations'],[/^\/api\/admin\/appliances/,'appliances'],
   [/^\/api\/admin\/(?:snapshots|export|import|recovery)/,'backup'],[/^\/api\/admin\/dev-issues/,'issues'],
   [/^\/api\/admin\/(?:config|baseline|operational)/,'config'],[/^\/api\/admin\/users/,'users'],
-  [/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
+  [/^\/api\/admin\/meetings/,'meetings'],[/^\/api\/admin\/forms/,'formsbuilder'],[/^\/api\/admin\/form-submissions/,'formsbuilder'],
   [/^\/api\/admin\/services/,'services'],[/^\/api\/admin\/discord/,'discord'],[/^\/api\/admin\/qualifications/,'training'],[/^\/api\/admin\/training/,'training'],
   [/^\/api\/admin\/fleet/,'fleet'],[/^\/api\/admin\/patrols/,'patrols'],[/^\/api\/admin\/patrol-templates/,'templates'],
   [/^\/api\/admin\/announcements/,'announcements'],[/^\/api\/admin\/guides/,'guides'],[/^\/api\/admin\/role-permissions/,'permissions'],
@@ -1114,6 +1114,62 @@ app.post('/api/interactions',guardianDiscordInteractionHttp);
 
 // Gateway fallback: if no outgoing Interactions Endpoint URL is configured in Discord,
 // buttons arrive over the bot gateway instead. Guardian now supports both delivery modes.
+// ============================================================
+// Guardian Staff Meetings — role-targeted Discord announcements + RSVP
+// ============================================================
+const guardianStaffMeetingsFile=path.join(guardianAdminDataDir,"guardian-staff-meetings.json");
+const guardianStaffMeetingSettingsFile=path.join(guardianAdminDataDir,"guardian-staff-meeting-settings.json");
+let guardianStaffMeetings=guardianReadJson(guardianStaffMeetingsFile,[]);
+if(!Array.isArray(guardianStaffMeetings))guardianStaffMeetings=[];
+let guardianStaffMeetingSettings=guardianReadJson(guardianStaffMeetingSettingsFile,{channelId:""});
+if(!guardianStaffMeetingSettings||typeof guardianStaffMeetingSettings!=="object"||Array.isArray(guardianStaffMeetingSettings))guardianStaffMeetingSettings={channelId:""};
+function guardianSaveStaffMeetings(){guardianWriteJson(guardianStaffMeetingsFile,guardianStaffMeetings)}
+function guardianSaveStaffMeetingSettings(){guardianWriteJson(guardianStaffMeetingSettingsFile,guardianStaffMeetingSettings)}
+function guardianStaffMeetingCounts(meeting){
+  const responses=Object.values(meeting.responses||{});
+  return {attending:responses.filter(x=>x.status==="attending").length,notAttending:responses.filter(x=>x.status==="not-attending").length,total:responses.length};
+}
+function guardianStaffMeetingEmbed(meeting,djs){
+  const counts=guardianStaffMeetingCounts(meeting);
+  const audience=(meeting.roleNames||[]).join(", ")||"No roles selected";
+  const date=meeting.startsAt?new Date(meeting.startsAt).toLocaleString("en-GB",{dateStyle:"full",timeStyle:"short",timeZone:"Europe/London"}):"Time not set";
+  const cancelled=meeting.status==="cancelled";
+  const embed=new djs.EmbedBuilder().setColor(cancelled?0x78838d:0x159cdb)
+    .setTitle(`${cancelled?"❌ CANCELLED · ":"📅 "}${meeting.title}`)
+    .setDescription(String(meeting.description||"Please use the buttons below to confirm whether you can attend.").slice(0,3500))
+    .addFields(
+      {name:"When",value:date,inline:true},
+      {name:"Who is this for?",value:audience.slice(0,1024),inline:true},
+      {name:"Location / voice channel",value:String(meeting.location||"Details to be confirmed").slice(0,1024),inline:false},
+      {name:"Attendance",value:`✅ Attending: **${counts.attending}**\n❌ Not attending: **${counts.notAttending}**\n👥 Responses: **${counts.total}**`,inline:false}
+    )
+    .setFooter({text:`Guardian Staff Meetings • ${meeting.number||"Meeting"}`})
+    .setTimestamp(new Date(meeting.createdAt||Date.now()));
+  return embed;
+}
+function guardianStaffMeetingComponents(meeting,djs,disabled=false){
+  return [new djs.ActionRowBuilder().addComponents(
+    new djs.ButtonBuilder().setCustomId(`guardian_meeting_attend:${meeting.id}`).setLabel("Attending").setEmoji("✅").setStyle(djs.ButtonStyle.Success).setDisabled(disabled),
+    new djs.ButtonBuilder().setCustomId(`guardian_meeting_decline:${meeting.id}`).setLabel("Not attending").setEmoji("❌").setStyle(djs.ButtonStyle.Secondary).setDisabled(disabled)
+  )];
+}
+function guardianStaffMeetingApplyResponse(interaction,action){
+  const id=String(interaction.user?.id||"");
+  const meeting=guardianStaffMeetings.find(x=>x.id===action.id);
+  if(!meeting)return {ok:false,error:"This Guardian meeting could not be found."};
+  if(meeting.status==="cancelled")return {ok:false,error:"This meeting has been cancelled."};
+  const allowed=new Set((meeting.roleIds||[]).map(String));
+  const memberRoles=interaction.member?.roles?.cache?Array.from(interaction.member.roles.cache.keys()):Array.isArray(interaction.member?.roles)?interaction.member.roles.map(String):[];
+  if(!memberRoles.some(roleId=>allowed.has(String(roleId))))return {ok:false,error:"This meeting is for selected staff roles only. You do not have an invited role."};
+  if(!id)return {ok:false,error:"Discord could not identify your account."};
+  meeting.responses=meeting.responses&&typeof meeting.responses==="object"?meeting.responses:{};
+  const status=action.kind==="attend"?"attending":"not-attending";
+  meeting.responses[id]={discordUserId:id,displayName:String(interaction.member?.displayName||interaction.user?.globalName||interaction.user?.username||"Discord member"),username:String(interaction.user?.username||""),status,respondedAt:new Date().toISOString()};
+  meeting.updatedAt=new Date().toISOString();guardianSaveStaffMeetings();
+  guardianAdminAuditLog(String(interaction.user?.username||"DISCORD"),"STAFF_MEETING_RSVP",{meetingId:meeting.id,meeting:meeting.number,status});
+  return {ok:true,meeting,status};
+}
+
 let guardianDiscordGatewayClient=null;
 async function guardianStartDiscordGateway(){
   const token=String(process.env.DISCORD_BOT_TOKEN||'').trim();if(!token)return;
@@ -1175,6 +1231,14 @@ async function guardianStartDiscordGateway(){
             await interaction.editReply({content:`Ticket ${ticket.number} has been marked closed, but its Discord channel could not be deleted or safely archived. ${result.error||'Check bot permissions and server logs, then retry from Guardian.'}`});
             console.warn(`[Guardian Tickets] ${ticket.number} could not be archived/deleted: ${result.error||'unknown error'}`);
           }
+          return;
+        }
+        if(interaction.isButton?.() && /^guardian_meeting_(attend|decline):/.test(customId)){
+          const [,kind,id]=customId.match(/^guardian_meeting_(attend|decline):(.+)$/)||[];
+          const result=guardianStaffMeetingApplyResponse(interaction,{kind:kind==="attend"?"attend":"decline",id});
+          if(!result.ok){await interaction.reply({content:`⚠️ ${result.error}`,ephemeral:true});return;}
+          const djs=await import('discord.js');
+          await interaction.update({embeds:[guardianStaffMeetingEmbed(result.meeting,djs)],components:guardianStaffMeetingComponents(result.meeting,djs)});
           return;
         }
         if(!interaction.isButton?.() || !/^guardian_patrol_(attend|decline):/.test(customId))return;
@@ -3910,6 +3974,61 @@ app.post("/api/admin/fivem/restart-schedule/announce",guardianRequireAdmin("sett
   if(!channelId)return res.status(400).json({ok:false,error:"Enter a Discord announcement channel ID"});
   try{const ch=await guardianDiscordGatewayClient.channels.fetch(channelId);if(!ch?.isTextBased?.())return res.status(400).json({ok:false,error:"Channel is not a text channel"});await ch.send(String(req.body?.message||"Guardian server restart announcement.").slice(0,1800));res.json({ok:true})}catch(e){res.status(400).json({ok:false,error:e?.message||"Announcement failed"})}
 });
+// Staff meeting configuration, role directory and publishing.
+app.get("/api/admin/meetings",guardianRequireAdmin("settings.view"),(_req,res)=>{
+  const meetings=guardianStaffMeetings.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).map(m=>({...m,counts:guardianStaffMeetingCounts(m)}));
+  res.json({ok:true,meetings,settings:guardianStaffMeetingSettings,discordConnected:!!guardianDiscordGatewayClient?.isReady?.()});
+});
+app.get("/api/admin/meetings/roles",guardianRequireAdmin("settings.view"),async(req,res)=>{
+  if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected. Configure DISCORD_BOT_TOKEN first."});
+  const channelId=String(req.query?.channelId||guardianStaffMeetingSettings.channelId||"").trim();
+  let guild=null;
+  if(channelId){const channel=await guardianDiscordGatewayClient.channels.fetch(channelId).catch(()=>null);if(!channel)return res.status(400).json({ok:false,error:"Could not find that Discord channel. Check the channel ID and bot access."});guild=channel.guild||null;}
+  if(!guild&&guardianDiscord.guildId)guild=await guardianDiscordGatewayClient.guilds.fetch(String(guardianDiscord.guildId)).catch(()=>null);
+  if(!guild&&guardianDiscordGatewayClient.guilds.cache.size===1)guild=guardianDiscordGatewayClient.guilds.cache.first();
+  if(!guild)return res.status(400).json({ok:false,error:"Guardian could not identify your Discord server. Enter the announcement channel ID or configure the guild in Discord Integration."});
+  try{const roles=await guild.roles.fetch();res.json({ok:true,guild:{id:guild.id,name:guild.name},roles:[...roles.values()].filter(r=>r.id!==guild.id&&!r.managed).map(r=>({id:r.id,name:r.name,color:r.hexColor,position:r.position,members:r.members?.size||0})).sort((a,b)=>b.position-a.position)});}
+  catch(e){res.status(400).json({ok:false,error:e?.message||"Unable to load Discord roles."});}
+});
+app.post("/api/admin/meetings",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  if(!guardianDiscordGatewayClient?.isReady?.())return res.status(503).json({ok:false,error:"Discord bot is not connected. Configure DISCORD_BOT_TOKEN first."});
+  const title=String(req.body?.title||"").trim().slice(0,180);
+  const description=String(req.body?.description||"").trim().slice(0,3500);
+  const location=String(req.body?.location||"").trim().slice(0,500);
+  const channelId=String(req.body?.channelId||guardianStaffMeetingSettings.channelId||"").trim();
+  const startsAt=String(req.body?.startsAt||"").trim();
+  const roleIds=[...new Set((Array.isArray(req.body?.roleIds)?req.body.roleIds:[]).map(x=>String(x).trim()).filter(x=>/^\d{17,20}$/.test(x)))].slice(0,20);
+  if(!title||!description)return res.status(400).json({ok:false,error:"Enter a meeting title and description."});
+  if(!channelId)return res.status(400).json({ok:false,error:"Enter a Discord announcement channel ID."});
+  if(!startsAt||!Number.isFinite(Date.parse(startsAt)))return res.status(400).json({ok:false,error:"Choose a valid meeting date and time."});
+  if(!roleIds.length)return res.status(400).json({ok:false,error:"Select at least one Discord role the meeting is for."});
+  try{
+    const channel=await guardianDiscordGatewayClient.channels.fetch(channelId);
+    if(!channel?.isTextBased?.()||!channel.guild)return res.status(400).json({ok:false,error:"The announcement destination must be a text channel in your Discord server."});
+    const guild=channel.guild;const roles=await guild.roles.fetch();
+    const chosen=roleIds.map(id=>roles.get(id)).filter(Boolean);
+    if(chosen.length!==roleIds.length)return res.status(400).json({ok:false,error:"One or more selected roles no longer exist in this Discord server. Reload roles and try again."});
+    const meeting={id:crypto.randomUUID(),number:`GDN-MTG-${String(guardianStaffMeetings.length+1).padStart(4,"0")}`,title,description,location,startsAt:new Date(startsAt).toISOString(),channelId,guildId:guild.id,roleIds:chosen.map(r=>r.id),roleNames:chosen.map(r=>r.name),createdBy:req.guardianAdmin.username,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),status:"scheduled",responses:{},discordMessageId:""};
+    const djs=await import("discord.js");
+    const content=meeting.roleIds.map(id=>`<@&${id}>`).join(" ");
+    const message=await channel.send({content,embeds:[guardianStaffMeetingEmbed(meeting,djs)],components:guardianStaffMeetingComponents(meeting,djs),allowedMentions:{roles:meeting.roleIds}});
+    meeting.discordMessageId=message.id;meeting.discordJumpUrl=message.url;
+    guardianStaffMeetings.unshift(meeting);guardianSaveStaffMeetings();
+    guardianStaffMeetingSettings={channelId};guardianSaveStaffMeetingSettings();
+    guardianAdminAuditLog(req.guardianAdmin.username,"STAFF_MEETING_PUBLISHED",{meetingId:meeting.id,number:meeting.number,channelId,roleIds:meeting.roleIds});
+    res.json({ok:true,meeting:{...meeting,counts:guardianStaffMeetingCounts(meeting)}});
+  }catch(e){console.error("[Guardian Meetings] publish failed:",e?.message||e);res.status(400).json({ok:false,error:e?.message||"Could not publish the staff meeting."});}
+});
+app.post("/api/admin/meetings/:id/cancel",guardianRequireAdmin("settings.edit"),async(req,res)=>{
+  const meeting=guardianStaffMeetings.find(x=>x.id===req.params.id);if(!meeting)return res.status(404).json({ok:false,error:"Meeting not found."});
+  if(meeting.status==="cancelled")return res.json({ok:true,meeting});
+  meeting.status="cancelled";meeting.cancelledAt=new Date().toISOString();meeting.cancelledBy=req.guardianAdmin.username;meeting.updatedAt=meeting.cancelledAt;guardianSaveStaffMeetings();
+  let discordUpdated=false,warning="";
+  try{if(guardianDiscordGatewayClient?.isReady?.()&&meeting.channelId&&meeting.discordMessageId){const channel=await guardianDiscordGatewayClient.channels.fetch(meeting.channelId);const message=await channel.messages.fetch(meeting.discordMessageId);const djs=await import("discord.js");await message.edit({embeds:[guardianStaffMeetingEmbed(meeting,djs)],components:guardianStaffMeetingComponents(meeting,djs,true)});discordUpdated=true;}}catch(e){warning=e?.message||"Discord announcement could not be updated.";}
+  guardianAdminAuditLog(req.guardianAdmin.username,"STAFF_MEETING_CANCELLED",{meetingId:meeting.id,number:meeting.number,discordUpdated});
+  res.json({ok:true,meeting,discordUpdated,warning});
+});
+
 app.get("/api/admin/fivem/monitor",guardianRequireAdmin("settings.view"),(_req,res)=>{
   const metrics=state.serverMetrics||{};
   const heartbeat=state.lastHeartbeat?Date.parse(state.lastHeartbeat):0;

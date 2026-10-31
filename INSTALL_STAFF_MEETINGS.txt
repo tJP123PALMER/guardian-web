@@ -1,0 +1,27 @@
+GUARDIAN STAFF MEETINGS — INSTALLATION
+
+Files in this patch replace matching files in your existing Guardian project:
+- server.js
+- public/settings.html
+- public/settings.js
+- public/guardian_control_centre.js
+- public/guardian_control_centre.css
+
+INSTALL
+1. Back up your current project and data directory.
+2. Copy these five files into the matching locations, replacing the existing files.
+3. Commit and push to the GitHub repository connected to Render.
+4. Let Render deploy, then open Guardian Settings and press Ctrl+F5.
+5. Open Staff Meetings in the sidebar. Enter a Discord text-channel ID, click LOAD DISCORD ROLES, select one or more roles, complete the meeting details and publish.
+
+DISCORD REQUIREMENTS
+- DISCORD_BOT_TOKEN must be configured in Render and the bot must be online.
+- Bot needs View Channel, Send Messages, Embed Links, Read Message History and permission to mention the selected roles in the destination channel.
+- Selected staff must have at least one of the chosen roles to use the RSVP buttons.
+- Staff Meetings access is controlled by the setting_meetings permission in Roles & Permissions. Owner always has access.
+
+DATA
+Meetings and RSVP responses are stored in data/guardian-staff-meetings.json; the last used announcement channel is stored in data/guardian-staff-meeting-settings.json. Keep the data directory on persistent storage or a managed persistent database.
+
+TEST
+Publish a test meeting to a private test channel, select a test staff role, and click Attending / Not attending with accounts that do and do not have the selected role. Confirm the count updates in Discord and Guardian. Cancel the test meeting and confirm the Discord RSVP buttons are disabled.
