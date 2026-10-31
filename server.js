@@ -32,8 +32,52 @@ const GUARDIAN_OWNER_PASSWORD=String(process.env.GUARDIAN_OWNER_PASSWORD||"");
 const guardianAdminSessions=new Map();
 const guardianAdminAudit=[];
 const guardianAdminUsers=new Map();
-const guardianAdminDataDir=path.join(__dirname,"data");
-try{fs.mkdirSync(guardianAdminDataDir,{recursive:true})}catch{}
+
+// All Guardian persistent records use ONE data root. On Render, set
+// GUARDIAN_DATA_DIR to the persistent disk mount path (for example /var/data).
+// The first startup copies legacy project/data files into that disk without
+// overwriting files that are already present on the disk.
+const guardianLegacyDataDir=path.resolve(path.join(__dirname,"data"));
+const guardianConfiguredDataDir=String(process.env.GUARDIAN_DATA_DIR||"").trim();
+const guardianAdminDataDir=path.resolve(guardianConfiguredDataDir||guardianLegacyDataDir);
+const guardianStorageMigration={configured:!!guardianConfiguredDataDir,source:guardianLegacyDataDir,destination:guardianAdminDataDir,copiedFiles:0,keptExistingFiles:0,skippedSymlinks:0,error:null};
+function guardianMigrateLegacyData(source,destination){
+  const src=path.resolve(source),dst=path.resolve(destination);
+  if(src===dst||!fs.existsSync(src))return;
+  const sourceToDestination=path.relative(src,dst);
+  const destinationToSource=path.relative(dst,src);
+  const isNested=r=>!!r&&r!== '..'&&!r.startsWith('..'+path.sep)&&!path.isAbsolute(r);
+  if(isNested(sourceToDestination)||isNested(destinationToSource)){
+    throw new Error('GUARDIAN_DATA_DIR must be separate from the old project data directory. Use a separate mount such as /var/data.');
+  }
+  fs.mkdirSync(dst,{recursive:true});
+  const stack=[{from:src,to:dst}];
+  while(stack.length){
+    const current=stack.pop();
+    for(const entry of fs.readdirSync(current.from,{withFileTypes:true})){
+      const from=path.join(current.from,entry.name),to=path.join(current.to,entry.name);
+      if(entry.isSymbolicLink()){guardianStorageMigration.skippedSymlinks++;continue;}
+      if(entry.isDirectory()){
+        fs.mkdirSync(to,{recursive:true});
+        stack.push({from,to});
+      }else if(entry.isFile()){
+        if(fs.existsSync(to)){guardianStorageMigration.keptExistingFiles++;continue;}
+        fs.mkdirSync(path.dirname(to),{recursive:true});
+        try{fs.copyFileSync(from,to,fs.constants.COPYFILE_EXCL);guardianStorageMigration.copiedFiles++;}
+        catch(e){if(e.code==='EEXIST')guardianStorageMigration.keptExistingFiles++;else throw e;}
+      }
+    }
+  }
+}
+try{
+  fs.mkdirSync(guardianAdminDataDir,{recursive:true});
+  if(guardianConfiguredDataDir)guardianMigrateLegacyData(guardianLegacyDataDir,guardianAdminDataDir);
+  console.log(`[Guardian Storage] Data directory: ${guardianAdminDataDir}; persistent path env: ${guardianStorageMigration.configured}; migrated files: ${guardianStorageMigration.copiedFiles}; existing files kept: ${guardianStorageMigration.keptExistingFiles}`);
+}catch(e){
+  guardianStorageMigration.error=String(e?.message||e);
+  console.error('[Guardian Storage] Data directory initialisation/migration failed:',guardianStorageMigration.error);
+  throw e;
+}
 const guardianConfigFile=path.join(guardianAdminDataDir,"guardian-admin-config.json");
 const guardianUsersFile=path.join(guardianAdminDataDir,"guardian-admin-users.json");
 const guardianAuditFile=path.join(guardianAdminDataDir,"guardian-admin-audit.json");
@@ -1797,7 +1841,8 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
 
-const guardianDataDir=process.env.GUARDIAN_DATA_DIR||path.join(__dirname,"data");
+// Legacy station-map data now shares the unified Guardian data directory.
+const guardianDataDir=guardianAdminDataDir;
 try{fs.mkdirSync(guardianDataDir,{recursive:true});}catch(_){}
 const stationMapPositionsFile=path.join(guardianDataDir,"station-map-positions.json");
 const stationMapLockFile=path.join(guardianDataDir,"station-map-lock.json");
@@ -3076,8 +3121,35 @@ let guardianPlatform=guardianReadJson(guardianPlatformFile,{statusPage:{enabled:
 function guardianSavePersonnel(){guardianWriteJson(guardianPersonnelFile,guardianPersonnel)}
 function guardianPersonnelFor(username){const key=String(username||'');if(!guardianPersonnel[key])guardianPersonnel[key]={notes:[],commendations:[],warnings:[],disciplinary:[],serviceHistory:[],promotionHistory:[],dutyHistory:[],activeDuty:null};return guardianPersonnel[key]}
 function guardianTotalDutyHours(p){return (p?.dutyHistory||[]).reduce((sum,d)=>sum+Number(d.hours||0),0)}
-function guardianSnapshotPayload(){return {version:51,exportedAt:new Date().toISOString(),config:guardianConfig,services:guardianServices,forms:guardianForms,guides:guardianGuides,announcements:guardianAnnouncements,rolePermissions:guardianRolePermissions,qualifications:guardianQualifications,personnel:guardianPersonnel,promotionPathways:guardianPromotionPathways,platform:guardianPlatform,stationMapPositions:{...stationMapPositions},stationMapLocked}}
-function guardianRestoreSnapshotPayload(p){if(!p?.config)throw new Error('Invalid Guardian snapshot');guardianConfig=p.config;if(Array.isArray(p.services))guardianServices=p.services;if(Array.isArray(p.forms))guardianForms=p.forms;if(Array.isArray(p.guides))guardianGuides=p.guides;if(Array.isArray(p.announcements))guardianAnnouncements=p.announcements;if(p.rolePermissions)guardianRolePermissions=p.rolePermissions;if(Array.isArray(p.qualifications))guardianQualifications=p.qualifications;if(p.personnel)guardianPersonnel=p.personnel;if(Array.isArray(p.promotionPathways))guardianPromotionPathways=p.promotionPathways;if(p.platform)guardianPlatform=p.platform;if(p.stationMapPositions)stationMapPositions={...p.stationMapPositions};if(typeof p.stationMapLocked==='boolean')stationMapLocked=p.stationMapLocked;guardianWriteJson(guardianConfigFile,guardianConfig);guardianSaveServices();guardianSaveForms();guardianWriteJson(guardianGuidesFile,guardianGuides);guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);guardianWriteJson(guardianRolePermissionsFile,guardianRolePermissions);guardianWriteJson(guardianQualificationsFile,guardianQualifications);guardianSavePersonnel();guardianWriteJson(guardianPromotionPathwaysFile,guardianPromotionPathways);guardianWriteJson(guardianPlatformFile,guardianPlatform);saveStationMapPositions();saveStationMapLock();applyGuardianBaselineToState();applySavedStationPositions()}
+function guardianSnapshotPayload(){return {version:52,exportedAt:new Date().toISOString(),config:guardianConfig,fleet:guardianFleet,services:guardianServices,forms:guardianForms,guides:guardianGuides,announcements:guardianAnnouncements,rolePermissions:guardianRolePermissions,qualifications:guardianQualifications,personnel:guardianPersonnel,promotionPathways:guardianPromotionPathways,platform:guardianPlatform,stationMapPositions:{...stationMapPositions},stationMapLocked}}
+function guardianRestoreSnapshotPayload(p){
+  if(!p?.config)throw new Error('Invalid Guardian snapshot');
+  guardianConfig=p.config;
+  if(Array.isArray(p.fleet))guardianFleet=p.fleet;
+  if(Array.isArray(p.services))guardianServices=p.services;
+  if(Array.isArray(p.forms))guardianForms=p.forms;
+  if(Array.isArray(p.guides))guardianGuides=p.guides;
+  if(Array.isArray(p.announcements))guardianAnnouncements=p.announcements;
+  if(p.rolePermissions)guardianRolePermissions=p.rolePermissions;
+  if(Array.isArray(p.qualifications))guardianQualifications=p.qualifications;
+  if(p.personnel)guardianPersonnel=p.personnel;
+  if(Array.isArray(p.promotionPathways))guardianPromotionPathways=p.promotionPathways;
+  if(p.platform)guardianPlatform=p.platform;
+  if(p.stationMapPositions)stationMapPositions={...p.stationMapPositions};
+  if(typeof p.stationMapLocked==='boolean')stationMapLocked=p.stationMapLocked;
+  guardianWriteJson(guardianConfigFile,guardianConfig);
+  guardianWriteJson(guardianFleetFile,guardianFleet);
+  guardianSaveServices();guardianSaveForms();
+  guardianWriteJson(guardianGuidesFile,guardianGuides);
+  guardianWriteJson(guardianAnnouncementsFile,guardianAnnouncements);
+  guardianWriteJson(guardianRolePermissionsFile,guardianRolePermissions);
+  guardianWriteJson(guardianQualificationsFile,guardianQualifications);
+  guardianSavePersonnel();
+  guardianWriteJson(guardianPromotionPathwaysFile,guardianPromotionPathways);
+  guardianWriteJson(guardianPlatformFile,guardianPlatform);
+  saveStationMapPositions();saveStationMapLock();
+  applyGuardianBaselineToState();applySavedStationPositions();
+}
 
 const guardianTemplates=[
  {id:'form-whitelist-pro',kind:'form',title:'Professional Whitelist Application',description:'Membership, experience, rules acknowledgement and operational interests.',data:{title:'Whitelist Application',category:'Applications',audience:'guest',published:true,requiresApproval:true,allowRepeat:false,description:'Apply for Guardian membership and operational access.',instructions:'Please answer honestly. Staff review every application.',confirmationText:'Application received. Track its status in Your Profile.',fields:[{id:'realname',label:'Preferred name',type:'text',required:true},{id:'discord',label:'Discord username / ID',type:'text',required:true},{id:'age',label:'Age',type:'number',required:true},{id:'experience',label:'Tell us about your roleplay experience',type:'textarea',required:true},{id:'service',label:'Which service interests you?',type:'select',options:['Fire & Rescue','Police','Ambulance / NHS','Control','Specialist'],required:true},{id:'rules',label:'I agree to follow the community rules and roleplay standards',type:'acknowledgement',required:true}]}},
@@ -3149,6 +3221,36 @@ function guardianBackupIsExcluded(rel){
   const norm=String(rel||'').replace(/\\/g,'/');
   return norm==='backups'||norm.startsWith('backups/')||norm==='guardian-backup-history.json'||norm.endsWith('.restore-tmp')||norm.includes('/.restore-tmp');
 }
+function guardianBackupSummaryFromEntries(entries){
+  const byPath=new Map((entries||[]).map(x=>[String(x.path||''),x]));
+  const read=(name,fallback)=>{
+    const entry=byPath.get(name);if(!entry)return fallback;
+    try{return JSON.parse(Buffer.from(String(entry.data||''),'base64').toString('utf8'))}catch{return fallback}
+  };
+  const config=read('guardian-admin-config.json',{});
+  const users=read('guardian-admin-users.json',[]);
+  const fleet=read('guardian-fleet.json',[]);
+  const applications=read('guardian-applications.json',[]);
+  const forms=read('guardian-form-submissions.json',[]);
+  const tickets=read('guardian-tickets.json',[]);
+  const devIssues=read('guardian-dev-issues.json',[]);
+  const meetings=read('guardian-staff-meetings.json',[]);
+  const patrols=read('guardian-patrols.json',[]);
+  const training=read('guardian-training.json',[]);
+  return {
+    members:Array.isArray(users)?users.length:0,
+    stations:Array.isArray(config.stations)?config.stations.length:0,
+    configuredVehicles:Array.isArray(config.appliances)?config.appliances.length:0,
+    fleetVehicles:Array.isArray(fleet)?fleet.length:0,
+    applications:Array.isArray(applications)?applications.length:0,
+    formSubmissions:Array.isArray(forms)?forms.length:0,
+    tickets:Array.isArray(tickets)?tickets.length:0,
+    developerIssues:Array.isArray(devIssues)?devIssues.length:0,
+    staffMeetings:Array.isArray(meetings)?meetings.length:0,
+    patrols:Array.isArray(patrols)?patrols.length:0,
+    trainingSessions:Array.isArray(training)?training.length:0
+  };
+}
 function guardianBackupWalk(dir=guardianAdminDataDir,base=guardianAdminDataDir,out=[]){
   for(const ent of fs.readdirSync(dir,{withFileTypes:true})){
     const full=path.join(dir,ent.name),rel=path.relative(base,full).split(path.sep).join('/');
@@ -3198,11 +3300,12 @@ async function guardianRunFullBackup(createdBy='SYSTEM',kind='manual'){
       const data=fs.readFileSync(full);
       return {path:rel,size:data.length,sha256:crypto.createHash('sha256').update(data).digest('hex'),data:data.toString('base64')};
     });
-    const payload={format:'guardian-full-data-backup',schemaVersion:1,id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,files:entries};
+    const dataSummary=guardianBackupSummaryFromEntries(entries);
+    const payload={format:'guardian-full-data-backup',schemaVersion:1,id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,dataSummary,files:entries};
     const compressed=gzipSync(Buffer.from(JSON.stringify(payload),'utf8'),{level:6});
     const fileName=`${id}.json.gz`,full=path.join(guardianBackupsDir,fileName),tmp=full+'.tmp';
     fs.writeFileSync(tmp,compressed,{flag:'w'});fs.renameSync(tmp,full);
-    const record={id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,status:'success',fileName,sizeBytes:compressed.length,sourceBytes:totalBytes,fileCount:entries.length,sha256:crypto.createHash('sha256').update(compressed).digest('hex'),retained:true};
+    const record={id,createdAt:startedAt,createdBy:String(createdBy||'SYSTEM'),kind,status:'success',fileName,sizeBytes:compressed.length,sourceBytes:totalBytes,fileCount:entries.length,dataSummary,sha256:crypto.createHash('sha256').update(compressed).digest('hex'),retained:true};
     guardianBackupHistory.unshift(record);guardianBackupSettings.lastRunAt=startedAt;guardianBackupSaveSettings();guardianBackupSaveHistory();guardianBackupApplyRetention();
     guardianAdminAuditLog(String(createdBy||'SYSTEM'),'FULL_BACKUP_CREATED',{id,kind,fileCount:entries.length,sizeBytes:compressed.length});
     return record;
@@ -3217,12 +3320,12 @@ async function guardianRunFullBackup(createdBy='SYSTEM',kind='manual'){
   }finally{guardianBackupRunning=false;}
 }
 function guardianBackupPublicRecord(x){
-  return {id:x.id,createdAt:x.createdAt,createdBy:x.createdBy,kind:x.kind,status:x.status,error:x.error||'',fileName:x.fileName||'',sizeBytes:Number(x.sizeBytes||0),sourceBytes:Number(x.sourceBytes||0),fileCount:Number(x.fileCount||0),sha256:x.sha256||'',retained:x.status==='success'&&x.retained!==false&&!!x.fileName&&fs.existsSync(path.join(guardianBackupsDir,path.basename(x.fileName)))};
+  return {id:x.id,createdAt:x.createdAt,createdBy:x.createdBy,kind:x.kind,status:x.status,error:x.error||'',fileName:x.fileName||'',sizeBytes:Number(x.sizeBytes||0),sourceBytes:Number(x.sourceBytes||0),fileCount:Number(x.fileCount||0),dataSummary:x.dataSummary||null,sha256:x.sha256||'',retained:x.status==='success'&&x.retained!==false&&!!x.fileName&&fs.existsSync(path.join(guardianBackupsDir,path.basename(x.fileName)))};
 }
 app.get('/api/admin/recovery',guardianRequireAdmin('settings.view'),(_req,res)=>{
   const history=guardianBackupHistory.map(guardianBackupPublicRecord).slice(0,100);
   res.setHeader('Cache-Control','no-store');
-  res.json({ok:true,settings:guardianBackupSettings,backups:history,backupRunning:guardianBackupRunning,storagePath:'data/backups',persistentStorageRequired:true});
+  res.json({ok:true,settings:guardianBackupSettings,backups:history,backupRunning:guardianBackupRunning,storagePath:path.join(guardianAdminDataDir,'backups'),dataDirectory:guardianAdminDataDir,persistentStorageConfigured:guardianStorageMigration.configured,storageMigration:{copiedFiles:guardianStorageMigration.copiedFiles,keptExistingFiles:guardianStorageMigration.keptExistingFiles,skippedSymlinks:guardianStorageMigration.skippedSymlinks,error:guardianStorageMigration.error},persistentStorageRequired:true});
 });
 app.post('/api/admin/recovery/settings',guardianRequireAdmin('settings.edit'),(req,res)=>{
   const body=req.body||{},enabled=body.enabled===true,intervalHours=Number(body.intervalHours),retentionCount=Number(body.retentionCount),alertChannelId=String(body.alertChannelId||'').trim();
@@ -3258,14 +3361,28 @@ async function guardianRestoreFullBackupBytes(compressed,actor,backupId='uploade
     total+=data.length;if(total>200*1024*1024)throw new Error('Backup exceeds the 200 MB restore limit');planned.push({full,rel:entry.path,data});
   }
   if(!planned.length)throw new Error('Backup contains no files');
+  // A full Guardian archive must include the member database and core station config.
+  // Fleet may be absent in very old archives, so it remains optional for compatibility.
+  const requiredPaths=new Set(planned.map(x=>x.rel));
+  for(const required of ['guardian-admin-config.json','guardian-admin-users.json'])if(!requiredPaths.has(required))throw new Error('Backup is incomplete: missing '+required);
+  for(const item of planned){
+    if(item.rel.endsWith('.json')){try{JSON.parse(item.data.toString('utf8'))}catch{throw new Error('Backup contains invalid JSON: '+item.rel)}}
+  }
+  const dataSummary=guardianBackupSummaryFromEntries(payload.files);
   // Preserve a full rollback image before overwriting data.
   const pre=await guardianRunFullBackup(actor,'pre-restore');
-  const keepCurrent=new Set(planned.map(x=>path.resolve(x.full)));
-  for(const item of guardianBackupWalk())if(!keepCurrent.has(path.resolve(item.full))){try{fs.unlinkSync(item.full)}catch(e){throw new Error('Could not remove data file '+item.rel+': '+e.message)}}
-  for(const item of planned){fs.mkdirSync(path.dirname(item.full),{recursive:true});const tmp=item.full+'.restore-tmp';fs.writeFileSync(tmp,item.data);fs.renameSync(tmp,item.full)}
+  // Restore every file present in the archive, but do not delete files that were
+  // introduced by a newer release. This avoids silently deleting new user data
+  // when restoring an archive created by an older version of Guardian.
+  for(const item of planned){
+    fs.mkdirSync(path.dirname(item.full),{recursive:true});
+    const tmp=item.full+'.restore-tmp';
+    fs.writeFileSync(tmp,item.data);
+    fs.renameSync(tmp,item.full);
+  }
   guardianBackupSettings=guardianBackupReadSettings();
-  guardianAdminAuditLog(String(actor||'SYSTEM'),'FULL_BACKUP_RESTORED',{backupId,filesRestored:planned.length,preRestoreBackupId:pre.id});
-  return {ok:true,filesRestored:planned.length,preRestoreBackupId:pre.id,restartRequired:true,message:'Backup restored. Restart the Guardian web service to reload all in-memory data.'};
+  guardianAdminAuditLog(String(actor||'SYSTEM'),'FULL_BACKUP_RESTORED',{backupId,filesRestored:planned.length,preRestoreBackupId:pre.id,dataSummary});
+  return {ok:true,filesRestored:planned.length,preRestoreBackupId:pre.id,dataSummary,restartRequired:true,message:'Backup restored. Restart the Guardian web service to reload all in-memory data.'};
 }
 app.post('/api/admin/recovery/backups/:id/restore',guardianRequireAdmin('settings.edit'),async(req,res)=>{
   const id=String(req.params.id||'');if(!/^backup-[a-z0-9-]+$/.test(id))return res.status(400).json({ok:false,error:'Invalid backup ID'});

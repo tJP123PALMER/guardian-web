@@ -1,0 +1,118 @@
+GUARDIAN BACKUP + PERSISTENT DATA FIX
+====================================
+
+FILES IN THIS PATCH
+- server.js                              (replace your existing server.js)
+- public/guardian_control_centre.js      (replace the matching public file)
+
+This patch is based on the latest Guardian server bundle supplied in this conversation,
+including the Staff Meetings integration. It does not replace your website source tree.
+
+WHAT IT FIXES
+1. Unifies ALL Guardian data paths. Previously most records used ./data while station-map
+   files alone followed GUARDIAN_DATA_DIR. This meant the backup did not reliably cover the
+   same folder used by every feature.
+2. Makes GUARDIAN_DATA_DIR control the complete Guardian data store, including member
+   accounts, whitelist applications, stations, fleet, role permissions, tickets, forms,
+   staff records, developer issues, training files and uploaded attachments.
+3. On first startup with GUARDIAN_DATA_DIR configured, copies files from the old project
+   ./data folder to the new data folder only when the target file does not already exist.
+   It does not overwrite files already on the persistent disk.
+4. Full backups now show a data inventory (members, stations, vehicles, applications,
+   tickets, developer issues, etc.) and the Backup page warns when a custom data path is
+   not configured.
+5. Full restore validates required member/config files and every JSON file, restores the
+   files in the archive, and DOES NOT delete extra files introduced by newer releases.
+6. Configuration restore points now also include the separate fleet file, so the fleet
+   vehicle list is restored along with stations and configured appliances.
+
+IMPORTANT: RENDER PERSISTENT STORAGE IS REQUIRED TO SURVIVE DEPLOYS
+-----------------------------------------------------------------
+Render services use an ephemeral filesystem by default. A code deploy/restart can remove
+files stored in the project directory. The code patch alone cannot make an ephemeral disk
+persistent; you must configure Render storage as follows.
+
+A. Before changing anything, download and keep a copy of your latest Guardian full-data
+   backup (.json.gz) somewhere outside Render (your computer or secure cloud storage).
+
+B. In Render, open the Guardian WEB SERVICE -> Disks -> Add Disk.
+   Set the mount path to:
+       /var/data
+   Choose a size suitable for your stored uploads and backups, then save.
+   Render persistent disks are available on paid web services and are single-instance.
+   Attaching one disables zero-downtime deploys for that service.
+
+C. In Render -> Guardian web service -> Environment, add:
+       GUARDIAN_DATA_DIR = /var/data
+   Save changes and let Render deploy/restart.
+
+D. On startup, the new server code uses /var/data for every Guardian persistent file. If
+   the old ./data directory is present, it migrates files to /var/data without overwriting
+   files already on the disk. Check Render logs for a line beginning:
+       [Guardian Storage] Data directory: /var/data
+
+E. Open Guardian Settings -> Backups / Restore Points. The storage notice should say
+   “Custom data directory configured”. Confirm the displayed directory matches the Disk
+   mount path you configured in Render.
+
+F. If you need to recover records from a downloaded archive, use:
+   Backups & Restore Points -> Restore from an off-site full backup.
+   Upload the .json.gz file. Guardian creates a pre-restore backup before writing the
+   archived files. Once restore reports success, restart the Render web service so the
+   in-memory records reload from the restored files.
+
+G. Create a fresh manual full backup. Download it off-site and check the “Records included”
+   column shows the expected members, stations and vehicles. Keep at least one copy outside
+   Render. Do not rely on backups stored only on the same disk they protect.
+
+ABOUT THE BACKUP FILE YOU UPLOADED IN THIS CHAT
+----------------------------------------------
+The supplied file backup-mvwewm9u-ab44d76d.json.gz is marked kind="pre-restore". That means
+it is an automatic rollback copy made immediately before an earlier restore attempt; it is
+not necessarily the older archive you originally intended to restore.
+
+Its contents were successfully checksum-verified. It contains:
+- 3 member accounts
+- 5 stations
+- 23 configured appliances
+- 23 fleet vehicles
+- 5 services
+- member/account and configuration records, radio config, role permissions, applications,
+  developer issue data and a developer attachment
+
+This particular archive DOES NOT contain these files:
+- guardian-tickets.json
+- guardian-form-submissions.json
+- guardian-staff-meetings.json
+
+Those records cannot be reconstructed from this archive if they existed elsewhere at the
+moment it was created. After installing the fix, create a new full backup and confirm the
+record inventory. If ticket/form records are still missing from new backups, they are not
+being saved into the unified data directory and need a separate persistence fix.
+
+WHAT THIS BACKUP DOES NOT DO
+----------------------------
+- It backs up Guardian DATA, not the website source code. Keep source code in GitHub and
+  use commits/releases to roll back code changes.
+- It does not back up Render environment variables, Discord bot secrets, FiveM server.cfg,
+  or data held only by an external provider. Keep secrets in Render Environment and back
+  up server.cfg separately without sharing its secret values.
+- Do not commit your data folder or downloaded .json.gz archives to a public Git repository.
+  They contain private account hashes, member details, tickets and staff information.
+
+FREE PLAN NOTE
+--------------
+If your Render web service is on a plan that does not offer persistent disks, do not assume
+this patch alone will preserve filesystem data over deploys. Use a managed database (such
+as Render Postgres) and suitable object storage for uploaded files, or move to a plan/host
+that supports persistent storage.
+
+INSTALL
+-------
+1. Back up your current project and download the current .json.gz data backup.
+2. Replace server.js at the project root.
+3. Replace public/guardian_control_centre.js.
+4. Commit and push to GitHub; wait for Render to deploy.
+5. Complete the Render Disk + GUARDIAN_DATA_DIR setup above.
+6. Test one manual backup, download it, and verify the record inventory.
+7. Do not test restore on your live data until you have an off-site copy.
