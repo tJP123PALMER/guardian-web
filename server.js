@@ -1214,6 +1214,133 @@ function guardianStaffMeetingApplyResponse(interaction,action){
   return {ok:true,meeting,status};
 }
 
+
+const guardianTicketSlashStatuses=[
+  {name:"Open",value:"open"},
+  {name:"In progress",value:"in_progress"},
+  {name:"Under review",value:"under_review"},
+  {name:"Waiting on member",value:"waiting"},
+  {name:"Resolved",value:"resolved"},
+  {name:"Closed",value:"closed"}
+];
+function guardianTicketDiscordStaff(interaction,ticket=null){
+  const roleIds=new Set([
+    ...String(process.env.DISCORD_TICKET_STAFF_ROLE_IDS||"").split(",").map(x=>x.trim()).filter(Boolean),
+    ...(ticket&&Array.isArray(ticket.accessRoleIds)?ticket.accessRoleIds.map(String):[])
+  ]);
+  const memberRoles=interaction.member?.roles?.cache;
+  return interaction.memberPermissions?.has?.("ManageChannels")===true ||
+    [...roleIds].some(id=>memberRoles?.has?.(id));
+}
+async function guardianTicketFindGuild(){
+  if(!guardianDiscordGatewayClient?.isReady?.())return null;
+  if(guardianDiscord.guildId)return await guardianDiscordGatewayClient.guilds.fetch(String(guardianDiscord.guildId)).catch(()=>null);
+  const panelChannelId=String(guardianTicketPanelState?.channelId||process.env.DISCORD_TICKET_PANEL_CHANNEL_ID||"").trim();
+  if(panelChannelId){
+    const panel=await guardianDiscordGatewayClient.channels.fetch(panelChannelId).catch(()=>null);
+    if(panel?.guild)return panel.guild;
+  }
+  if(guardianDiscordGatewayClient.guilds.cache.size===1)return guardianDiscordGatewayClient.guilds.cache.first();
+  return null;
+}
+async function guardianRegisterTicketSlashCommands(client,djs){
+  try{
+    const guild=await guardianTicketFindGuild();
+    if(!guild){console.warn("[Guardian Tickets] Slash commands not registered: set the Discord server ID in Discord Integration (or connect the bot to exactly one server).");return;}
+    const str=(name,description,required=true)=>({type:3,name,description,required});
+    const user=(name,description)=>({type:6,name,description,required:true});
+    const commands=[
+      {name:"ticket-open",description:"Staff: force-open a private ticket for a member",options:[user("member","Member to open the ticket for"),str("category","Ticket category key or name"),str("reason","Reason/context for opening the ticket",false)]},
+      {name:"adduser",description:"Add a member to this ticket",options:[user("member","Member to add")]},
+      {name:"removeuser",description:"Remove a member from this ticket",options:[user("member","Member to remove")]},
+      {name:"status",description:"Update this ticket's status",options:[{type:4,name:"status",description:"New ticket status",required:true,choices:guardianTicketSlashStatuses}]},
+      {name:"claim",description:"Claim this ticket"},
+      {name:"unclaim",description:"Unclaim this ticket"},
+      {name:"close",description:"Close and archive this ticket"},
+      {name:"reopen",description:"Reopen a ticket if its channel has not been deleted"},
+      {name:"rename",description:"Rename this ticket channel",options:[str("name","New channel name")]}
+    ];
+    await client.application.commands.set(commands,guild.id);
+    console.log(`[Guardian Tickets] Registered ${commands.length} staff ticket slash commands in ${guild.name}.`);
+  }catch(e){console.error("[Guardian Tickets] slash command registration failed:",e?.message||e);}
+}
+async function guardianHandleTicketSlashCommand(interaction,djs){
+  const name=interaction.commandName;
+  if(!["ticket-open","adduser","removeuser","status","claim","unclaim","close","reopen","rename"].includes(name))return false;
+  const guild=interaction.guild;
+  if(!guild){await interaction.reply({content:"This command can only be used in the Guardian Discord server.",ephemeral:true});return true;}
+  if(name==="ticket-open"){
+    if(!guardianTicketDiscordStaff(interaction)){await interaction.reply({content:"You need an authorised ticket staff role or Manage Channels to force-open tickets.",ephemeral:true});return true;}
+    const member=interaction.options.getMember("member")||await guild.members.fetch(interaction.options.getUser("member").id).catch(()=>null);
+    if(!member){await interaction.reply({content:"I could not find that member in this server.",ephemeral:true});return true;}
+    const categoryInput=String(interaction.options.getString("category")||"").toLowerCase();
+    const category=guardianTicketCategories.find(c=>c.key.toLowerCase()===categoryInput||c.label.toLowerCase()===categoryInput);
+    if(!category){await interaction.reply({content:`Category not found. Available categories: ${guardianTicketCategories.map(c=>`${c.label} (${c.key})`).join(", ")}`,ephemeral:true});return true;}
+    await interaction.deferReply({ephemeral:true});
+    const created=await guardianCreateDiscordTicket({guild,user:member.user,client:guardianDiscordGatewayClient},category.key);
+    if(!created){await interaction.editReply("Could not create the ticket. Check the ticket parent category and configured access-role IDs in the logs.");return true;}
+    created.createdByType="staff-created";
+    created.openedByStaffId=interaction.user.id;
+    const reason=String(interaction.options.getString("reason")||"").trim();
+    if(reason){created.messages ||= [];created.messages.push({id:crypto.randomUUID(),authorId:interaction.user.id,authorName:interaction.user.globalName||interaction.user.username,source:"discord",content:`Staff-created ticket reason: ${reason}`,createdAt:new Date().toISOString(),attachments:[]});}
+    guardianSaveTickets();
+    const channel=await guild.channels.fetch(created.channelId).catch(()=>null);
+    if(channel?.isTextBased?.())await channel.send(`🛡️ This ticket was opened by staff for <@${member.id}>.${reason?`\n**Reason:** ${reason}`:""}`).catch(()=>{});
+    await interaction.editReply(`Created **${created.number}** for <@${member.id}>: <#${created.channelId}>`);
+    return true;
+  }
+  const ticket=guardianTickets.find(t=>t.channelId===interaction.channelId&&String(t.guildId||guild.id)===guild.id);
+  if(!ticket){await interaction.reply({content:"Use this command inside the ticket channel it applies to.",ephemeral:true});return true;}
+  if(!guardianTicketDiscordStaff(interaction,ticket)){await interaction.reply({content:"You do not have permission to manage this ticket.",ephemeral:true});return true;}
+  if(name==="adduser"||name==="removeuser"){
+    const member=interaction.options.getMember("member")||await guild.members.fetch(interaction.options.getUser("member").id).catch(()=>null);
+    if(!member){await interaction.reply({content:"Member not found in this server.",ephemeral:true});return true;}
+    const channel=await guild.channels.fetch(ticket.channelId).catch(()=>null);
+    if(!channel?.permissionOverwrites){await interaction.reply({content:"Ticket channel could not be found.",ephemeral:true});return true;}
+    try{
+      if(name==="adduser")await channel.permissionOverwrites.edit(member.id,{ViewChannel:true,SendMessages:true,ReadMessageHistory:true,AttachFiles:true});
+      else{
+        if(member.id===ticket.createdByDiscordId){await interaction.reply({content:"The ticket creator cannot be removed from their own ticket.",ephemeral:true});return true;}
+        await channel.permissionOverwrites.delete(member.id).catch(async()=>channel.permissionOverwrites.edit(member.id,{ViewChannel:false,SendMessages:false,ReadMessageHistory:false}));
+      }
+      ticket.events ||= [];ticket.events.push({type:name==="adduser"?"member_added":"member_removed",discordUserId:member.id,actor:interaction.user.username,at:new Date().toISOString()});ticket.updatedAt=new Date().toISOString();guardianSaveTickets();
+      await interaction.reply({content:`${name==="adduser"?"Added":"Removed"} <@${member.id}> ${name==="adduser"?"to":"from"} ticket **${ticket.number}**.`,ephemeral:true});
+      if(name==="adduser")await channel.send(`➕ <@${member.id}> was added to this ticket by <@${interaction.user.id}>.`);
+    }catch(e){await interaction.reply({content:`Discord could not update this member's ticket access: ${e?.message||"unknown error"}`,ephemeral:true});}
+    return true;
+  }
+  if(name==="status"){
+    const status=interaction.options.getString("status");
+    await interaction.deferReply({ephemeral:true});
+    const previous=ticket.status;
+    const result=await guardianTicketSyncStatus(ticket,status,"Discord",interaction.user.globalName||interaction.user.username,previous);
+    if(!result.ok){await interaction.editReply(`Could not update status: ${result.error||"Discord channel update failed"}`);return true;}
+    await interaction.editReply(`Ticket **${ticket.number}** status set to **${status.replaceAll("_"," ")}**.`);
+    return true;
+  }
+  if(name==="claim"||name==="unclaim"){
+    if(name==="claim"&&ticket.assignedTo&&ticket.assignedTo!==interaction.user.id){await interaction.reply({content:`Already claimed by ${ticket.assignedTo}.`,ephemeral:true});return true;}
+    ticket.assignedTo=name==="claim"?interaction.user.id:"";ticket.assignedToName=name==="claim"?(interaction.user.globalName||interaction.user.username):"";ticket.updatedAt=new Date().toISOString();ticket.events ||= [];ticket.events.push({type:name==="claim"?"claimed":"unclaimed",actor:interaction.user.username,at:ticket.updatedAt});guardianSaveTickets();
+    await interaction.reply({content:name==="claim"?`You claimed ticket **${ticket.number}**.`:`Ticket **${ticket.number}** is unclaimed.`,ephemeral:true});
+    return true;
+  }
+  if(name==="close"||name==="reopen"){
+    await interaction.deferReply({ephemeral:true});
+    const next=name==="close"?"closed":"open",previous=ticket.status;
+    const result=await guardianTicketSyncStatus(ticket,next,"Discord",interaction.user.globalName||interaction.user.username,previous);
+    await interaction.editReply(result.ok?`Ticket **${ticket.number}** ${name==="close"?"closed and archived":"reopened"}.`:`Could not ${name} ticket: ${result.error||"Discord channel operation failed"}`);
+    return true;
+  }
+  if(name==="rename"){
+    const newName=String(interaction.options.getString("name")||"").toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,90);
+    if(!newName){await interaction.reply({content:"Enter a valid channel name.",ephemeral:true});return true;}
+    try{await interaction.channel.setName(newName);ticket.channelName=newName;ticket.updatedAt=new Date().toISOString();guardianSaveTickets();await interaction.reply({content:`Ticket channel renamed to **#${newName}**.`,ephemeral:true});}
+    catch(e){await interaction.reply({content:`Could not rename channel: ${e?.message||"unknown error"}`,ephemeral:true});}
+    return true;
+  }
+  return true;
+}
+
 let guardianDiscordGatewayClient=null;
 async function guardianStartDiscordGateway(){
   const token=String(process.env.DISCORD_BOT_TOKEN||'').trim();if(!token)return;
@@ -1222,6 +1349,10 @@ async function guardianStartDiscordGateway(){
     const client=new djs.Client({intents:[djs.GatewayIntentBits.Guilds,djs.GatewayIntentBits.GuildMessages,djs.GatewayIntentBits.DirectMessages,djs.GatewayIntentBits.MessageContent],partials:[djs.Partials.Channel]});guardianDiscordGatewayClient=client;
     client.on('interactionCreate',async interaction=>{
       try{
+        if(interaction.isChatInputCommand?.()){
+          const handled=await guardianHandleTicketSlashCommand(interaction,djs);
+          if(handled)return;
+        }
         const customId=String(interaction.customId||'');
         if(interaction.isButton?.() && customId==='guardian_dev_issue_open'){
           const configuredPanel=String(guardianDevIssueSettings?.panelChannelId||'').trim();
@@ -1301,7 +1432,10 @@ async function guardianStartDiscordGateway(){
         ticket.messages ||= [];ticket.messages.push(item);ticket.updatedAt=item.createdAt;guardianSaveTickets();
       }catch(e){console.error('[Guardian Tickets] incoming Discord message failed:',e?.message||e)}
     });
-    client.once('ready',()=>console.log(`[Guardian] Discord gateway connected as ${client.user?.tag||client.user?.id||client.user?.id||'bot'}; patrol buttons and tickets are live.`));
+    client.once('ready',async()=>{
+      console.log(`[Guardian] Discord gateway connected as ${client.user?.tag||client.user?.id||'bot'}; patrol buttons and tickets are live.`);
+      await guardianRegisterTicketSlashCommands(client,djs);
+    });
     await client.login(token);
   }catch(e){console.error('[Guardian] Discord gateway unavailable:',e?.message||e)}
 }
@@ -4132,7 +4266,7 @@ app.post("/api/admin/tickets/:id/messages",guardianRequireAdmin("settings.edit")
 });
 app.post("/api/admin/tickets/:id/status",guardianRequireAdmin("settings.edit"),async(req,res)=>{
   const ticket=guardianTickets.find(t=>t.id===req.params.id);if(!ticket)return res.status(404).json({ok:false,error:"Ticket not found"});
-  const status=String(req.body?.status||"");if(!["open","in_progress","waiting","closed"].includes(status))return res.status(400).json({ok:false,error:"Invalid ticket status"});
+  const status=String(req.body?.status||"");if(!["open","in_progress","under_review","waiting","resolved","closed"].includes(status))return res.status(400).json({ok:false,error:"Invalid ticket status"});
   const previousStatus=ticket.status;
   if(previousStatus==="closed"&&status!=="closed")return res.status(409).json({ok:false,error:ticket.channelDeleted?"This ticket is archived and its Discord channel was deleted. The website transcript is retained, but the ticket cannot be reopened.":"This ticket is already closed. Retry the archive/deletion operation instead of reopening it."});
   if(previousStatus===status&&status!=="closed")return res.json({ok:true,ticket:guardianTicketSafe(ticket),channelUpdated:true});
