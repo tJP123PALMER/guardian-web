@@ -3395,6 +3395,75 @@ app.post('/api/admin/recovery/restore-upload',guardianRequireAdmin('settings.edi
   try{const result=await guardianRestoreFullBackupBytes(req.body,req.guardianAdmin.username,'uploaded-archive');res.json(result)}
   catch(e){console.error('[Guardian Backups] Uploaded restore failed:',e?.message||e);res.status(400).json({ok:false,error:'Uploaded restore failed: '+String(e?.message||e)})}
 });
+// Recover records from an older archive without replacing the current configuration.
+// Missing files are copied. Existing member accounts and audit events are merged
+// by stable ID/username, and station-map positions are merged with current values winning.
+async function guardianMergeMissingBackupBytes(compressed,actor,backupId='uploaded-archive'){
+  if(!Buffer.isBuffer(compressed)||compressed.length<3||compressed.length>220*1024*1024)throw new Error('Backup archive is empty or exceeds the 220 MB upload limit');
+  if(compressed[0]!==0x1f||compressed[1]!==0x8b)throw new Error('This is not a gzip-compressed Guardian full backup (.json.gz)');
+  const json=gunzipSync(compressed,{maxOutputLength:220*1024*1024}).toString('utf8');
+  const payload=JSON.parse(json);
+  if(payload?.format!=='guardian-full-data-backup'||payload.schemaVersion!==1||!Array.isArray(payload.files)||payload.files.length>10000)throw new Error('Backup format is invalid or unsupported');
+  let total=0;const planned=[];const seen=new Set();
+  for(const entry of payload.files){
+    const full=guardianBackupSafePath(entry.path);
+    if(seen.has(entry.path))throw new Error('Backup contains duplicate file paths');
+    seen.add(entry.path);
+    const data=Buffer.from(String(entry.data||''),'base64');
+    if(data.length!==Number(entry.size)||data.length>200*1024*1024)throw new Error('Backup file size validation failed: '+entry.path);
+    if(crypto.createHash('sha256').update(data).digest('hex')!==String(entry.sha256||''))throw new Error('Backup checksum validation failed: '+entry.path);
+    total+=data.length;if(total>200*1024*1024)throw new Error('Backup exceeds the 200 MB recovery limit');
+    if(entry.path.endsWith('.json')){try{JSON.parse(data.toString('utf8'))}catch{throw new Error('Backup contains invalid JSON: '+entry.path)}}
+    planned.push({full,rel:entry.path,data});
+  }
+  if(!planned.length)throw new Error('Backup contains no files');
+
+  // Capture the exact current state before adding anything from the older archive.
+  const pre=await guardianRunFullBackup(actor,'pre-merge-recovery');
+  let restored=0,merged=0,skipped=0;
+  const mergeArray=(current,incoming,key)=>{
+    const result=Array.isArray(current)?current.slice():[];const seenKeys=new Set();
+    for(const item of result){const v=String(key(item)||'');if(v)seenKeys.add(v)}
+    for(const item of (Array.isArray(incoming)?incoming:[])){
+      const v=String(key(item)||'');if(v&&!seenKeys.has(v)){result.push(item);seenKeys.add(v)}
+    }
+    return result;
+  };
+  for(const item of planned){
+    if(!fs.existsSync(item.full)){
+      fs.mkdirSync(path.dirname(item.full),{recursive:true});
+      const tmp=item.full+'.merge-tmp';fs.writeFileSync(tmp,item.data);fs.renameSync(tmp,item.full);restored++;
+      continue;
+    }
+    // Preserve current values on conflicts while bringing back unique historical entries.
+    if(item.rel==='guardian-admin-audit.json'||item.rel==='guardian-admin-users.json'){
+      const current=guardianReadJson(item.full,[]),incoming=JSON.parse(item.data.toString('utf8'));
+      if(!Array.isArray(current)||!Array.isArray(incoming)){skipped++;continue}
+      const key=item.rel==='guardian-admin-users.json'?(x=>String(x?.username||'').toLowerCase()):(x=>String(x?.id||''));
+      let combined=mergeArray(current,incoming,key);
+      if(item.rel==='guardian-admin-audit.json')combined.sort((a,b)=>String(b?.at||'').localeCompare(String(a?.at||''))).splice(500);
+      if(combined.length!==current.length){const tmp=item.full+'.merge-tmp';fs.writeFileSync(tmp,JSON.stringify(combined,null,2),'utf8');fs.renameSync(tmp,item.full);merged++}else skipped++;
+      continue;
+    }
+    if(item.rel==='station-map-positions.json'){
+      const current=guardianReadJson(item.full,{}),incoming=JSON.parse(item.data.toString('utf8'));
+      if(current&&typeof current==='object'&&!Array.isArray(current)&&incoming&&typeof incoming==='object'&&!Array.isArray(incoming)){
+        const combined={...incoming,...current};
+        if(Object.keys(combined).length!==Object.keys(current).length){const tmp=item.full+'.merge-tmp';fs.writeFileSync(tmp,JSON.stringify(combined,null,2),'utf8');fs.renameSync(tmp,item.full);merged++}else skipped++;
+      }else skipped++;
+      continue;
+    }
+    skipped++;
+  }
+  const currentEntries=guardianBackupWalk().map(({full,rel})=>{const data=fs.readFileSync(full);return {path:rel,size:data.length,data:data.toString('base64')}});
+  const dataSummary=guardianBackupSummaryFromEntries(currentEntries);
+  guardianAdminAuditLog(String(actor||'SYSTEM'),'FULL_BACKUP_MERGED',{backupId,filesRestored:restored,filesMerged:merged,filesSkipped:skipped,preMergeBackupId:pre.id});
+  return {ok:true,filesRestored:restored,filesMerged:merged,filesSkipped:skipped,preMergeBackupId:pre.id,dataSummary,restartRequired:true,message:'Missing files were recovered without replacing existing configuration. Restart the Guardian web service to reload in-memory records.'};
+}
+app.post('/api/admin/recovery/merge-missing',guardianRequireAdmin('settings.edit'),express.raw({type:['application/gzip','application/x-gzip','application/octet-stream'],limit:'220mb'}),async(req,res)=>{
+  try{const result=await guardianMergeMissingBackupBytes(req.body,req.guardianAdmin.username,'uploaded-archive');res.json(result)}
+  catch(e){console.error('[Guardian Backups] Merge recovery failed:',e?.message||e);res.status(400).json({ok:false,error:'Merge recovery failed: '+String(e?.message||e)})}
+});
 async function guardianBackupScheduleTick(){
   if(!guardianBackupSettings.enabled||guardianBackupRunning)return;
   const due=guardianBackupSettings.nextRunAt?Date.parse(guardianBackupSettings.nextRunAt):NaN;

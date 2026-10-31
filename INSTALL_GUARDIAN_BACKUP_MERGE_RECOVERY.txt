@@ -1,0 +1,38 @@
+GUARDIAN BACKUP MERGE RECOVERY PATCH
+
+WHAT THIS PATCH DOES
+- Adds a non-destructive "Merge missing data only" workflow to Settings > Backups / Restore Points.
+- Validates a gzip Guardian backup format, file paths, sizes and SHA-256 checksums.
+- Creates a pre-merge backup before writing any recovered data.
+- Copies files from the uploaded archive only when the corresponding current file is missing.
+- Merges historical audit entries by ID and member accounts by username, keeping current values where they conflict.
+- Merges older station-map positions while keeping current coordinates for keys that already exist.
+- Does NOT overwrite the current station/appliance configuration, current radio settings, current qualification catalogue, or other existing files.
+- Bumps the browser cache key for guardian_control_centre.js so the updated backup screen is loaded.
+
+INSTALL
+1. Keep a copy of your current GitHub repository / current server.js first.
+2. In the correct repository root (the folder containing package.json and server.js), replace:
+   - server.js
+   - public/guardian_control_centre.js
+   - public/settings.html
+3. Commit and push those three files to GitHub. Let Render deploy.
+4. Keep GUARDIAN_DATA_DIR=/var/data unchanged.
+5. Open Guardian Settings > Backups / Restore Points. Look for the new section:
+   "Recover missing records without overwriting newer data".
+6. Choose the older 23-file pre-restore archive (backup-mvwewm9u-ab44d76d.json.gz), NOT the latest 7-file manual backup.
+7. Click "Merge missing data only" and confirm. Guardian validates the archive and creates a pre-merge backup automatically.
+8. After it reports success, restart the Guardian web service in Render.
+9. Create a new full backup and download it off-site. Check the record counts and file count.
+
+IMPORTANT RECOVERY LIMITS
+- The older archive has 23 verified files. It contains older member, fleet, applications, developer issue, patrol, training, service, role-permission, announcement, and audit data.
+- This patch will preserve the current guardian-admin-config.json (12 stations / 25 configured appliances) rather than reverting it to the older configuration (5 stations / 23 appliances).
+- The older archive does NOT contain guardian-tickets.json, guardian-form-submissions.json, or guardian-staff-meetings.json. It cannot recover records that are not in that archive.
+- Do not use the standard "Upload & restore full backup" button for the older archive unless you intentionally want to replace current files with the older versions.
+- Do not delete either backup until the recovered data has been checked.
+
+FILES IN THIS PATCH
+- server.js
+- public/guardian_control_centre.js
+- public/settings.html
