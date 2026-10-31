@@ -3691,39 +3691,10 @@ function guardianRadioPage(req,res){
   if(!guardianRoleAllows(session.role,"radio"))return res.status(403).sendFile(portalFile);
   return res.sendFile(radioFile);
 }
-// Serve the public portal robustly. A missing portal file in a deployment should
-// never make the service root itself return Express' plain "Not Found" page.
-const guardianPublicIndexFile=path.join(__dirname,"public","index.html");
-const guardianRootIndexFile=path.join(__dirname,"index.html");
-const guardianEmergencyHomeHtml=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guardian Operations</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#07131e;color:#eaf5ff;font:16px Segoe UI,Arial,sans-serif}.card{max-width:620px;margin:24px;padding:32px;border:1px solid #31516a;border-radius:14px;background:#102333}a{color:#8edcff}code{color:#b6e7ff}</style></head><body><main class="card"><h1>Guardian Operations</h1><p>The Guardian server is running, but the portal page file was not found in this deployment.</p><p>Open <a href="/__guardian_deploy_check">the deployment check</a> to see which website files Render has deployed.</p></main></body></html>`;
-function guardianServePortalHome(_req,res){
-  res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
-  const candidates=[portalFile,guardianPublicIndexFile,guardianRootIndexFile];
-  const target=candidates.find(file=>{try{return fs.statSync(file).isFile()}catch{return false}});
-  if(!target)return res.status(200).type("html").send(guardianEmergencyHomeHtml);
-  return res.sendFile(target,error=>{
-    if(error&&!res.headersSent){console.error("[Guardian Portal] Home page send failed:",error.message);res.status(200).type("html").send(guardianEmergencyHomeHtml)}
-  });
-}
-app.get("/__guardian_deploy_check",(_req,res)=>res.json({
-  ok:true,
-  build:"guardian-homepage-fallback-2026-10-31",
-  files:{
-    portalPage:fs.existsSync(portalFile),
-    publicRootIndex:fs.existsSync(guardianPublicIndexFile),
-    projectRootIndex:fs.existsSync(guardianRootIndexFile),
-    loginPage:fs.existsSync(loginFile),
-    applicationPage:fs.existsSync(applicationFile),
-    controlPage:fs.existsSync(controlFile),
-    mdtPage:fs.existsSync(mdtFile),
-    radioPage:fs.existsSync(radioFile)
-  },
-  persistentDataDirectoryConfigured:guardianStorageMigration.configured
-}));
 app.get(["/login","/login/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(loginFile)});
 app.get(["/apply","/apply/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(applicationFile)});
-app.get(["/portal","/portal/","/portal/index.html"],guardianServePortalHome);
-app.get("/",guardianServePortalHome);
+app.get(["/portal","/portal/"],(_q,r)=>{r.setHeader("Cache-Control","no-store");r.sendFile(portalFile)});
+app.get("/",(_q,r)=>r.sendFile(portalFile));
 app.get(["/control","/control/"],guardianControlPage);
 app.get(["/mdt","/mdt/"],guardianMdtPage);
 app.get(["/radio","/radio/"],guardianRadioPage);
