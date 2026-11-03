@@ -212,7 +212,7 @@
       if(micIsLive()){setMic('MIC READY');hint('MIC READY — SELECT CONTACTS / TALKGROUP');return;}
       setMic('RETRYING MIC…');hint('RELEASING AUDIO DEVICE AND RETRYING…');releaseMic();
       await sleep(450);
-      try{await ensureMic();setMicGate(false);setMic('MIC READY');hint('MIC READY — HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH');}
+      try{await ensureMic();setMicGate(false);setMic('MIC READY');hint('MIC READY — HOLD 1 OR 7 FOR 2 SECONDS FOR PRIVATE CONTROL');}
       catch(e){console.error('[Guardian vehicle mic retry]',e);setMic('MIC ERROR');hint(friendlyMicError(e),'error');}
       return;
     }
@@ -285,7 +285,7 @@
     try{
       const j=await api('/api/radio/channel',{method:'POST',body:JSON.stringify(withIdentity({clientId,channelId:ch.id}))});
       selectedChannel={id:j.channel.id,name:j.channel.name};tunedChannel=null;menuLevel='home';closeAllGroupPeers();
-      state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL');renderMenu();
+      state(`CHANNEL ${selectedChannel.name} — MONITORING`);hint('ON CHANNEL · HOLD PTT TO TALK · HOLD 1 OR 7 FOR PRIVATE CONTROL');renderMenu();
       // Receive-first negotiation: do NOT open the microphone just to monitor a channel.
       // A sendrecv transceiver is created with a null sender; the real microphone is
       // attached only while PTT is held. This stops Guardian from monopolising the
@@ -341,7 +341,7 @@
     key=String(key||'');
     if(!/^[0-9*#]$/.test(key))return;
     keyTone(key);
-    if(!powered||activeCall||!/^[0-9]$/.test(key))return;
+    if(!powered||activeCall||!/^[17]$/.test(key))return;
     if(keyboardKeyHeld===key)return;
     keyboardKeyHeld=key;keyboardKeyFired=false;
     btn?.classList.add('holding');startHoldTone();hint(`HOLDING ${key}…`);
@@ -352,7 +352,7 @@
     key=String(key||'');
     if(keyboardKeyHeld && keyboardKeyHeld!==key)return;
     stopHoldTone();clearTimeout(keyboardKeyTimer);keyboardKeyTimer=null;btn?.classList.remove('holding');
-    if(!keyboardKeyFired&&powered&&!activeCall&&/^[0-9]$/.test(key)){hint(key==='1'?'HOLD 1 FOR 2 SECONDS TO REQUEST SPEECH':`HOLD ${key} FOR 2 SECONDS TO SEND URGENCY ${key}`)}
+    if(!keyboardKeyFired&&powered&&!activeCall&&/^[17]$/.test(key)){hint('HOLD 1 OR 7 FOR 2 SECONDS FOR PRIVATE CONTROL')}
     keyboardKeyHeld='';keyboardKeyFired=false;
   }
   function bindNumberKeys(){
@@ -489,7 +489,7 @@
   async function signal(kind,data,target){if(!clientId)return;await api('/api/radio/signal',{method:'POST',body:JSON.stringify(withIdentity({fromId:clientId,target,kind,data}))})}
   async function endCall(){if(!activeCall)return;const id=activeCall.id,target=activeCall.controlClientId;try{if(target)await signal('hangup',{},target)}catch{};try{await api('/api/radio/call',{method:'POST',body:JSON.stringify(withIdentity({clientId,action:'end',callId:id}))})}catch{};teardownPeer(false);resetCall()}
   function teardownPeer(stopStream){try{pc?.close()}catch{};pc=null;setMicGate(false);if(stopStream)releaseMic();activeCall=null}
-  function resetCall(){activeCall=null;setMicGate(false);setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — TALKGROUP NULL');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · CONTACTS SELECTS SERVICE');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
+  function resetCall(){activeCall=null;setMicGate(false);setMic(powered?'RX':'RADIO OFF');if(powered){state(selectedChannel?`CHANNEL ${selectedChannel.name} — MONITORING`:'REGISTERED — TALKGROUP NULL');hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 OR 7 FOR PRIVATE CONTROL':'TALKGROUP NULL · CONTACTS SELECTS SERVICE');syncGroupPeers().catch(console.error)}else{state('PRESS GREEN TO START RADIO');hint('RADIO OFF')}}
   function resetCallSoon(){setTimeout(resetCall,1300)}
 
   async function softwarePttStart(){
@@ -517,7 +517,7 @@
   function softwarePttStop(){
     softwarePttDown=false;clearTimeout(softwarePttTimer);softwarePttTimer=null;stopHoldTone();
     if(activeCall?.status==='connected'){detachAndReleaseMic().catch(console.warn);setMic('PTT READY');state('CONNECTED TO CONTROL','connected');hint('HOLD PTT TO TRANSMIT · RELEASE TO LISTEN','connected')}
-    else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 FOR PRIVATE CONTROL':'TALKGROUP NULL · LEFT/RIGHT AFTER SELECTING SERVICE')}
+    else if(powered&&!activeCall){channelPttStop();hint(selectedChannel?'HOLD PTT TO TALK · HOLD 1 OR 7 FOR PRIVATE CONTROL':'TALKGROUP NULL · LEFT/RIGHT AFTER SELECTING SERVICE')}
   }
 
   function bindControls(){
