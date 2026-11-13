@@ -1032,3 +1032,213 @@
 #tab-messages{
   overflow:hidden !important;
 }
+
+
+/* ===== GUARDIAN MDT / PANASONIC FZ-G2 — FINAL LCD APERTURE FIT ===== */
+html, body {
+  width:100% !important;
+  height:100% !important;
+  margin:0 !important;
+  overflow:hidden !important;
+  background:transparent !important;
+}
+
+.frame {
+  position:fixed !important;
+  inset:50% auto auto 50% !important;
+  transform:translate(-50%,-50%) !important;
+  width:min(90vw, 118vh) !important;
+  height:auto !important;
+  aspect-ratio:1448 / 1086 !important;
+  margin:0 !important;
+  padding:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  overflow:hidden !important;
+  box-shadow:none !important;
+  z-index:999999 !important;
+  background:transparent url("assets/toughbook.png") center center / 100% 100% no-repeat !important;
+}
+
+/* Match the actual LCD opening: preserve the left/top alignment,
+   extend the right edge and lower edge into the unused glass area. */
+.frame > .top,
+.frame > .statusStrip,
+.frame > .body,
+.frame > .bottom {
+  position:absolute !important;
+  left:10.704% !important;
+  width:74.2% !important;
+  margin:0 !important;
+  box-sizing:border-box !important;
+  opacity:1 !important;
+  filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  z-index:2 !important;
+}
+
+.frame > .top {
+  top:14.088% !important;
+  height:5.34% !important;
+  display:grid !important;
+  overflow:hidden !important;
+  border:0 !important;
+  border-bottom:2px solid #294760 !important;
+  border-radius:2.9% 2.9% 0 0 / 52% 52% 0 0 !important;
+  background:#1769a8 !important;
+}
+
+.frame > .statusStrip {
+  top:19.428% !important;
+  height:3.13% !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  overflow:hidden !important;
+  border:0 !important;
+  border-bottom:1px solid #1b6db0 !important;
+  background:#1769a8 !important;
+}
+
+.frame > .body {
+  top:22.558% !important;
+  height:56.72% !important;
+  display:flex !important;
+  min-height:0 !important;
+  overflow:hidden !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:#eef2f4 !important;
+}
+
+.frame > .body > .main {
+  flex:1 1 auto !important;
+  width:100% !important;
+  min-width:0 !important;
+  min-height:0 !important;
+  height:100% !important;
+  overflow:hidden !important;
+  background:#eef2f4 !important;
+}
+
+.frame > .bottom {
+  top:79.278% !important;
+  height:6.22% !important;
+  display:grid !important;
+  overflow:hidden !important;
+  border:0 !important;
+  border-top:2px solid #294760 !important;
+  border-radius:0 0 2.9% 2.9% / 0 0 52% 52% !important;
+  background:#1769a8 !important;
+}
+
+/* Keep every MDT page opaque; no game-world bleed-through. */
+.frame .main,
+.frame .pane,
+.frame .pane.active,
+.frame .status-grid,
+.frame .incidentLayout,
+.frame .messageLayout,
+.frame .mapPage,
+.frame .browserPage,
+.frame .agencyPage,
+.frame .browserReference,
+.frame .messageReferenceLayout {
+  opacity:1 !important;
+  background-color:#eef2f4;
+}
+
+.frame .statusBtn {
+  opacity:1 !important;
+  background:linear-gradient(180deg,#79add2 0%,#4d82ad 100%) !important;
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}
+.frame .statusBtn.current,
+.frame .statusBtn.sent,
+.frame .statusBtn.active {
+  background:#35e900 !important;
+  background-image:none !important;
+  color:#111 !important;
+}
+.frame .send {
+  background:linear-gradient(180deg,#397fb5 0%,#145b91 100%) !important;
+  opacity:1 !important;
+}
+.frame .close,
+.frame .headerClose {
+  background:linear-gradient(180deg,#f01818 0%,#c90000 100%) !important;
+  opacity:1 !important;
+}
+
+
+/* ===== SATNAV RIGHT-HAND MENU: ENABLE REAL VERTICAL SCROLLING ===== */
+/* Keep the map itself fixed; only the right-hand menu list scrolls. */
+.mapPage {
+  min-height:0 !important;
+  overflow:hidden !important;
+}
+.mapPage > .mapMenu,
+.mapPage > aside.mapMenu {
+  box-sizing:border-box !important;
+  height:100% !important;
+  min-height:0 !important;
+  max-height:100% !important;
+  overflow-x:hidden !important;
+  overflow-y:auto !important;
+  overscroll-behavior-y:contain !important;
+  -webkit-overflow-scrolling:touch !important;
+  align-content:start !important;
+  grid-auto-rows:minmax(72px, auto) !important;
+  scrollbar-width:thin !important;
+  scrollbar-color:#9fc8e6 #234b70 !important;
+  touch-action:pan-y !important;
+  pointer-events:auto !important;
+}
+.mapPage > .mapMenu::-webkit-scrollbar,
+.mapPage > aside.mapMenu::-webkit-scrollbar {
+  width:9px !important;
+}
+.mapPage > .mapMenu::-webkit-scrollbar-track,
+.mapPage > aside.mapMenu::-webkit-scrollbar-track {
+  background:#234b70 !important;
+}
+.mapPage > .mapMenu::-webkit-scrollbar-thumb,
+.mapPage > aside.mapMenu::-webkit-scrollbar-thumb {
+  background:#9fc8e6 !important;
+  border:1px solid #234b70 !important;
+  border-radius:8px !important;
+}
+.mapPage > .mapMenu > button,
+.mapPage > aside.mapMenu > button {
+  min-height:72px !important;
+  box-sizing:border-box !important;
+  flex-shrink:0 !important;
+}
+.mapPage > .mapMenu .mapMenuGrid {
+  min-height:144px !important;
+  grid-auto-rows:minmax(72px, auto) !important;
+}
+.mapPage > .mapMenu .mapBack {
+  min-height:58px !important;
+}
+
+/* A hidden submenu must stay hidden; visible submenu gets its own scroll area. */
+.mapPage > .mapMenu[hidden],
+.mapPage > aside.mapMenu[hidden] {
+  display:none !important;
+}
+.mapPage > .mapMenu:not([hidden]),
+.mapPage > aside.mapMenu:not([hidden]) {
+  display:grid !important;
+}
+
+/* Keep the right menu in its own column and prevent the footer from overlaying it. */
+.mapPage {
+  grid-template-rows:minmax(0,1fr) !important;
+}
+.mapPage > .mapMenu {
+  grid-column:2 !important;
+  grid-row:1 !important;
+}

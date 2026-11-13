@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Guardian MDT</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Arial,sans-serif}
+    body{pointer-events:none}
+    #guardianRoot{display:none;position:fixed;inset:0;background:transparent;pointer-events:none}
+    #stage{position:absolute;left:50%;top:50%;width:1240px;height:760px;transform-origin:center center;pointer-events:auto}
+    #frameShell{position:absolute;inset:0;overflow:hidden;background:transparent;border:0;border-radius:0;box-shadow:0 16px 50px rgba(0,0,0,.35)}
+    #guardianFrame{position:absolute;inset:0;width:1240px;height:760px;border:0;background:transparent;display:block}
+    /* FiveM-only emergency close control. Kept small and aligned to the MDT edge. */
+    #closeBtn{position:absolute;z-index:20;right:-42px;top:0;width:36px;height:36px;border:1px solid rgba(255,255,255,.38);border-radius:5px;background:rgba(177,29,44,.92);color:#fff;font-weight:900;font-size:21px;line-height:32px;cursor:pointer}
+    #closeBtn:hover{background:#d51f31}
+    #closeBtn:focus{outline:2px solid #fff;outline-offset:2px}
+    #status{position:absolute;z-index:19;left:0;bottom:-28px;padding:4px 7px;border:1px solid rgba(91,194,255,.35);border-radius:4px;background:rgba(3,13,22,.72);color:#9fd7ff;font-size:10px;letter-spacing:.2px;pointer-events:none}
+  </style>
+</head>
+<body>
+  <div id="guardianRoot">
+    <div id="stage">
+      <div id="frameShell">
+        <iframe id="guardianFrame" title="Guardian Web MDT" allow="microphone; autoplay" src="https://guardian-web-qmnz.onrender.com/mdt/?fivem=1&build=19"></iframe>
+      </div>
+      <button id="closeBtn" type="button" aria-label="Close Guardian MDT">×</button>
+      <div id="status">GUARDIAN WEB MDT • FIVEM</div>
+    </div>
+  </div>
+<script>
+(function(){
+  const root=document.getElementById('guardianRoot');
+  const stage=document.getElementById('stage');
+  const frame=document.getElementById('guardianFrame');
+  const closeBtn=document.getElementById('closeBtn');
+  const targetOrigin='https://guardian-web-qmnz.onrender.com';
+
+  function fit(){
+    const padX=72, padY=70;
+    const sx=Math.max(.35,(window.innerWidth-padX)/1240);
+    const sy=Math.max(.35,(window.innerHeight-padY)/760);
+    const scale=Math.min(1,sx,sy);
+    stage.style.transform=`translate(-50%,-50%) scale(${scale})`;
+  }
+
+  async function closeNui(){
+    try{await fetch(`https://${GetParentResourceName()}/close`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}catch(e){}
+    root.style.display='none';
+  }
+
+  closeBtn.addEventListener('click',closeNui);
+  window.addEventListener('resize',fit);
+  window.addEventListener('message',(event)=>{
+    const data=event.data||{};
+    if(data.type==='open'){
+      root.style.display='block';
+      fit();
+      frame.focus();
+    }
+    if(data.type==='close') root.style.display='none';
+    try{frame.contentWindow.postMessage({source:'guardian-fivem',payload:data},targetOrigin);}catch(e){}
+  });
+  window.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'){
+      e.preventDefault();
+      closeNui();
+    }
+  });
+  fit();
+})();
+</script>
+</body>
+</html>

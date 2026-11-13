@@ -2,7 +2,7 @@ let selectedStatus=null,currentStatus='Home Station',incidents=[],messages=[],ar
   const b=document.getElementById('bottomIncidentTab');
   if(b)b.textContent=`Incident (${archivedIncidents.length})`;
 }
-function switchTab(name){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));const t={status:'Request Status from Control',incidents:'Incident',messages:'Messages',map:'SatNav',browser:'Browser',agency:'Agency Login',radio:'Radio Call','update-history':'Update History'};document.getElementById('pageTitle').textContent=t[name]||'Guardian MDT';if(name==='map')showSatnavMainMenu()}document.querySelectorAll('[data-tab]').forEach(x=>x.addEventListener('click',()=>switchTab(x.dataset.tab)));document.getElementById('closeBtn').onclick=closeMDT;document.getElementById('closeBottom').onclick=closeMDT;
+function switchTab(name){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));const t={status:'Request Status from Control',incidents:'Incident',messages:'Messages',map:'SatNav',browser:'Browser',agency:'Agency Login','update-history':'Update History'};document.getElementById('pageTitle').textContent=t[name]||'Guardian MDT';if(name==='map')showSatnavMainMenu()}document.querySelectorAll('[data-tab]').forEach(x=>x.addEventListener('click',()=>switchTab(x.dataset.tab)));document.getElementById('closeBtn').onclick=closeMDT;document.getElementById('closeBottom').onclick=closeMDT;
 if(mobilisingOverlay){
   mobilisingOverlay.onclick=(ev)=>{
     ev.preventDefault();
@@ -13,52 +13,45 @@ if(mobilisingOverlay){
     selectedMessageIndex=messages.length-1;
     renderMessages();
   };
-}document.getElementById('satnavBtn').onclick=()=>{switchTab('map');showSatnavMainMenu()};document.getElementById('liveStatus').onclick=()=>switchTab('status');document.getElementById('browserBtn').onclick=()=>switchTab('browser');document.getElementById('radioStatusBtn').onclick=()=>switchTab('radio');document.getElementById('agencyBackBtn').onclick=()=>switchTab('status');document.getElementById('loginAgencyBtn').onclick=()=>openAgencyChoices();const testAlertsBtn=document.getElementById('testAlertsBtn');if(testAlertsBtn){testAlertsBtn.onclick=()=>{const a=document.getElementById('alert');if(a){a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{})}}};function showSatnavMainMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=false;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavAdminMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=false;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMapMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=false;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMessagesMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=false}const mapMenuBtn=document.querySelector('#satnavMainMenu .spanBoth');if(mapMenuBtn)mapMenuBtn.onclick=showSatnavMapMenu;const adminMenuBtn=document.getElementById('adminMenuBtn');if(adminMenuBtn)adminMenuBtn.onclick=showSatnavAdminMenu;const messagesMenuBtn=document.getElementById('messagesMenuBtn');if(messagesMenuBtn)messagesMenuBtn.onclick=showSatnavMessagesMenu;const satnavMessagesBack=document.getElementById('satnavMessagesBack');if(satnavMessagesBack)satnavMessagesBack.onclick=showSatnavMainMenu;const textMessagesBtn=document.getElementById('textMessagesBtn');if(textMessagesBtn)textMessagesBtn.onclick=()=>switchTab('messages');const messageHistoryBtn=document.getElementById('messageHistoryBtn');if(messageHistoryBtn)messageHistoryBtn.onclick=()=>switchTab('messages');const statusUpdateBtn=document.getElementById('statusUpdateBtn');if(statusUpdateBtn)statusUpdateBtn.onclick=()=>switchTab('status');const mapAdminBack=document.getElementById('mapAdminBack');if(mapAdminBack)mapAdminBack.onclick=showSatnavMainMenu;const zoomOutMenu=document.getElementById('zoomOutMenu');if(zoomOutMenu)zoomOutMenu.onclick=()=>document.getElementById('zoomOut').click();const zoomInMenu=document.getElementById('zoomInMenu');if(zoomInMenu)zoomInMenu.onclick=()=>document.getElementById('zoomIn').click();const mapMenuZoomOut=document.getElementById('mapMenuZoomOut');if(mapMenuZoomOut)mapMenuZoomOut.onclick=()=>document.getElementById('zoomOut').click();const mapMenuZoomIn=document.getElementById('mapMenuZoomIn');if(mapMenuZoomIn)mapMenuZoomIn.onclick=()=>document.getElementById('zoomIn').click();const mapMenuBack=document.getElementById('mapMenuBack');if(mapMenuBack)mapMenuBack.onclick=showSatnavMainMenu;let scaleFrozen=false;const freezeScaleBtn=document.getElementById('freezeScale');if(freezeScaleBtn)freezeScaleBtn.onclick=()=>{scaleFrozen=!scaleFrozen;freezeScaleBtn.classList.toggle('mapOptionActive',scaleFrozen)};const dimMapBtn=document.getElementById('dimMap');if(dimMapBtn)dimMapBtn.onclick=()=>{document.getElementById('mapViewport').classList.toggle('mapDimmed');dimMapBtn.classList.toggle('mapOptionActive')};const gotoMapRef=document.getElementById('gotoMapRef');if(gotoMapRef)gotoMapRef.onclick=()=>{const ref=prompt('Enter map reference:');if(ref)document.getElementById('mapRefReadout').textContent=ref};const getMapRef=document.getElementById('getMapRef');if(getMapRef)getMapRef.onclick=()=>{document.getElementById('mapRefReadout').textContent='E (433751), N (386852)'};const measuringTool=document.getElementById('measuringTool');if(measuringTool)measuringTool.onclick=()=>{document.getElementById('mapViewport').classList.toggle('measuringMode');measuringTool.classList.toggle('mapOptionActive')};const printMap=document.getElementById('printMap');if(printMap)printMap.onclick=()=>window.print();const gisLayers=document.getElementById('gisLayers');if(gisLayers)gisLayers.onclick=()=>{document.getElementById('dispatchMap').classList.toggle('gisLayerHint');gisLayers.classList.toggle('mapOptionActive')};const defaultMap=document.getElementById('defaultMap');if(defaultMap)defaultMap.onclick=()=>document.getElementById('mapReset').click();const browserHome=document.getElementById('browserHome');if(browserHome)browserHome.onclick=()=>switchTab('status');const browserPrev=document.getElementById('browserPrev');if(browserPrev)browserPrev.onclick=()=>{};const browserNext=document.getElementById('browserNext');if(browserNext)browserNext.onclick=()=>{};const browserRefresh=document.getElementById('browserRefresh');if(browserRefresh)browserRefresh.onclick=()=>{const b=document.querySelector('.browserLegend');if(b)b.scrollTop=0};const browserLock=document.getElementById('browserLock');if(browserLock)browserLock.onclick=()=>{};function updateAgencyDisplay(){const cs=document.getElementById('agencyCallsign');const nm=document.getElementById('agencyName');const msg=document.getElementById('agencyMessage');if(cs)cs.textContent=callsignBox.textContent||'UNSET';if(nm)nm.textContent=currentAgency;if(msg)msg.textContent=`Logged in to ${currentAgency} as call sign ${callsignBox.textContent||'UNSET'}.`;const rf=document.getElementById('radioStatusBtn');if(rf)rf.textContent='CALL';}function openAgencyChoices(){const existing=document.getElementById('agencyChoiceOverlay');if(existing)existing.remove();const overlay=document.createElement('div');overlay.id='agencyChoiceOverlay';overlay.innerHTML=`<div class=\"agencyChoiceCard\"><div class=\"agencyChoiceTitle\">Select Agency</div><div class=\"agencyChoiceGrid\">${agencyNames.map(a=>`<button type=\"button\" data-agency=\"${a}\">${a}</button>`).join('')}</div><button type=\"button\" class=\"agencyChoiceCancel\">Cancel</button></div>`;document.body.appendChild(overlay);overlay.querySelectorAll('[data-agency]').forEach(b=>b.onclick=()=>{currentAgency=b.dataset.agency;updateAgencyDisplay();overlay.remove();switchTab('agency')});overlay.querySelector('.agencyChoiceCancel').onclick=()=>overlay.remove();}updateAgencyDisplay();
-function mdtIncidentNumber(inc){
+}document.getElementById('satnavBtn').onclick=()=>{switchTab('map');showSatnavMainMenu()};document.getElementById('liveStatus').onclick=()=>switchTab('status');document.getElementById('browserBtn').onclick=()=>switchTab('browser');document.getElementById('radioStatusBtn').onclick=()=>switchTab('agency');document.getElementById('agencyBackBtn').onclick=()=>switchTab('status');document.getElementById('loginAgencyBtn').onclick=()=>openAgencyChoices();const testAlertsBtn=document.getElementById('testAlertsBtn');if(testAlertsBtn){testAlertsBtn.onclick=()=>{const a=document.getElementById('alert');if(a){a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>{})}}};function showSatnavMainMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=false;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavAdminMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=false;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMapMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=false;if(messagesMenu)messagesMenu.hidden=true}function showSatnavMessagesMenu(){const main=document.getElementById('satnavMainMenu'),admin=document.getElementById('satnavAdminMenu'),mapMenu=document.getElementById('satnavMapMenu'),messagesMenu=document.getElementById('satnavMessagesMenu');if(main)main.hidden=true;if(admin)admin.hidden=true;if(mapMenu)mapMenu.hidden=true;if(messagesMenu)messagesMenu.hidden=false}const mapMenuBtn=document.querySelector('#satnavMainMenu .spanBoth');if(mapMenuBtn)mapMenuBtn.onclick=showSatnavMapMenu;const adminMenuBtn=document.getElementById('adminMenuBtn');if(adminMenuBtn)adminMenuBtn.onclick=showSatnavAdminMenu;const messagesMenuBtn=document.getElementById('messagesMenuBtn');if(messagesMenuBtn)messagesMenuBtn.onclick=showSatnavMessagesMenu;const satnavMessagesBack=document.getElementById('satnavMessagesBack');if(satnavMessagesBack)satnavMessagesBack.onclick=showSatnavMainMenu;const textMessagesBtn=document.getElementById('textMessagesBtn');if(textMessagesBtn)textMessagesBtn.onclick=()=>switchTab('messages');const messageHistoryBtn=document.getElementById('messageHistoryBtn');if(messageHistoryBtn)messageHistoryBtn.onclick=()=>switchTab('messages');const statusUpdateBtn=document.getElementById('statusUpdateBtn');if(statusUpdateBtn)statusUpdateBtn.onclick=()=>switchTab('status');const mapAdminBack=document.getElementById('mapAdminBack');if(mapAdminBack)mapAdminBack.onclick=showSatnavMainMenu;const zoomOutMenu=document.getElementById('zoomOutMenu');if(zoomOutMenu)zoomOutMenu.onclick=()=>document.getElementById('zoomOut').click();const zoomInMenu=document.getElementById('zoomInMenu');if(zoomInMenu)zoomInMenu.onclick=()=>document.getElementById('zoomIn').click();const mapMenuZoomOut=document.getElementById('mapMenuZoomOut');if(mapMenuZoomOut)mapMenuZoomOut.onclick=()=>document.getElementById('zoomOut').click();const mapMenuZoomIn=document.getElementById('mapMenuZoomIn');if(mapMenuZoomIn)mapMenuZoomIn.onclick=()=>document.getElementById('zoomIn').click();const mapMenuBack=document.getElementById('mapMenuBack');if(mapMenuBack)mapMenuBack.onclick=showSatnavMainMenu;let scaleFrozen=false;const freezeScaleBtn=document.getElementById('freezeScale');if(freezeScaleBtn)freezeScaleBtn.onclick=()=>{scaleFrozen=!scaleFrozen;freezeScaleBtn.classList.toggle('mapOptionActive',scaleFrozen)};const dimMapBtn=document.getElementById('dimMap');if(dimMapBtn)dimMapBtn.onclick=()=>{document.getElementById('mapViewport').classList.toggle('mapDimmed');dimMapBtn.classList.toggle('mapOptionActive')};const gotoMapRef=document.getElementById('gotoMapRef');if(gotoMapRef)gotoMapRef.onclick=()=>{const ref=prompt('Enter map reference:');if(ref)document.getElementById('mapRefReadout').textContent=ref};const getMapRef=document.getElementById('getMapRef');if(getMapRef)getMapRef.onclick=()=>{document.getElementById('mapRefReadout').textContent='E (433751), N (386852)'};const measuringTool=document.getElementById('measuringTool');if(measuringTool)measuringTool.onclick=()=>{document.getElementById('mapViewport').classList.toggle('measuringMode');measuringTool.classList.toggle('mapOptionActive')};const printMap=document.getElementById('printMap');if(printMap)printMap.onclick=()=>window.print();const gisLayers=document.getElementById('gisLayers');if(gisLayers)gisLayers.onclick=()=>{document.getElementById('dispatchMap').classList.toggle('gisLayerHint');gisLayers.classList.toggle('mapOptionActive')};const defaultMap=document.getElementById('defaultMap');if(defaultMap)defaultMap.onclick=()=>document.getElementById('mapReset').click();const browserHome=document.getElementById('browserHome');if(browserHome)browserHome.onclick=()=>switchTab('status');const browserPrev=document.getElementById('browserPrev');if(browserPrev)browserPrev.onclick=()=>{};const browserNext=document.getElementById('browserNext');if(browserNext)browserNext.onclick=()=>{};const browserRefresh=document.getElementById('browserRefresh');if(browserRefresh)browserRefresh.onclick=()=>{const b=document.querySelector('.browserLegend');if(b)b.scrollTop=0};const browserLock=document.getElementById('browserLock');if(browserLock)browserLock.onclick=()=>{};function updateAgencyDisplay(){const cs=document.getElementById('agencyCallsign');const nm=document.getElementById('agencyName');const msg=document.getElementById('agencyMessage');if(cs)cs.textContent=callsignBox.textContent||'UNSET';if(nm)nm.textContent=currentAgency;if(msg)msg.textContent=`Logged in to ${currentAgency} as call sign ${callsignBox.textContent||'UNSET'}.`;const rf=document.getElementById('radioStatusBtn');if(rf)rf.textContent=`${currentAgency} Online`;}function openAgencyChoices(){const existing=document.getElementById('agencyChoiceOverlay');if(existing)existing.remove();const overlay=document.createElement('div');overlay.id='agencyChoiceOverlay';overlay.innerHTML=`<div class=\"agencyChoiceCard\"><div class=\"agencyChoiceTitle\">Select Agency</div><div class=\"agencyChoiceGrid\">${agencyNames.map(a=>`<button type=\"button\" data-agency=\"${a}\">${a}</button>`).join('')}</div><button type=\"button\" class=\"agencyChoiceCancel\">Cancel</button></div>`;document.body.appendChild(overlay);overlay.querySelectorAll('[data-agency]').forEach(b=>b.onclick=()=>{currentAgency=b.dataset.agency;updateAgencyDisplay();overlay.remove();switchTab('agency')});overlay.querySelector('.agencyChoiceCancel').onclick=()=>overlay.remove();}updateAgencyDisplay();
+function currentStatusIncident(){
+  const cs=String(callsignBox?.textContent||"").trim().toUpperCase();
+  if(!cs)return null;
+
+  const all=[
+    ...(Array.isArray(incidents)?incidents:[]),
+    ...messages.map(m=>m?.incident).filter(Boolean)
+  ];
+
+  for(let i=all.length-1;i>=0;i--){
+    const inc=all[i]||{};
+    const assigned=incidentUnits(inc).map(x=>String(x).trim().toUpperCase());
+    if(assigned.includes(cs))return inc;
+  }
+  return null;
+}
+function statusIncidentNo(inc){
   if(!inc)return "";
   const raw=String(inc.incidentNumber||inc.id||"");
   const m=raw.match(/(\d{5})(?!.*\d)/);
   return m?m[1]:"";
 }
-function activeIncidentForHeader(){
-  const cs=String(callsignBox?.textContent||"").trim().toUpperCase();
-  if(!cs)return null;
-
-  // Prefer the newest incident actually assigned to this appliance.
-  for(let i=incidents.length-1;i>=0;i--){
-    const inc=incidents[i]||{};
-    const assigned=incidentUnits(inc).map(x=>String(x).toUpperCase());
-    if(assigned.includes(cs)) return inc;
-  }
-
-  // A turnout can live in Messages before it is archived.
-  for(let i=messages.length-1;i>=0;i--){
-    const inc=messages[i]?.incident;
-    if(!inc)continue;
-    const assigned=incidentUnits(inc).map(x=>String(x).toUpperCase());
-    if(assigned.includes(cs)) return inc;
-  }
-  return null;
-}
-function statusUsesIncidentNumber(status){
+function statusHasIncidentContext(status){
   const s=String(status||"").toUpperCase();
-  return s.includes("INCIDENT") ||
-         s==="MOBILE TO INCIDENT" ||
+  return s==="MOBILE TO INCIDENT" ||
          s==="IN ATTENDANCE AT INCIDENT" ||
          s==="AVAILABLE AT INCIDENT";
 }
 function updateStatusHeader(){
   if(!liveStatus)return;
   const status=String(currentStatus||"Home Station");
-  const inc=activeIncidentForHeader();
-  const no=mdtIncidentNumber(inc);
-
-  liveStatus.textContent=(statusUsesIncidentNumber(status)&&no)
+  const no=statusIncidentNo(currentStatusIncident());
+  liveStatus.textContent=(statusHasIncidentContext(status)&&no)
     ? `${status} · #${no}`
     : status;
 }
 
-function buildStatuses(){statusesDiv.innerHTML='';statuses.forEach((s,i)=>{const b=document.createElement('button');b.className='statusBtn';b.textContent=s;if(i===8)b.style.gridColumn='2';if(i===9)b.style.gridColumn='3';if(s===currentStatus)b.classList.add('current');b.onclick=()=>{document.querySelectorAll('.statusBtn').forEach(x=>x.classList.remove('pending'));b.classList.add('pending');selectedStatus=s};statusesDiv.appendChild(b)})}buildStatuses();updateStatusHeader();updateIncidentArchiveCount();sendStatusBtn.onclick=()=>{if(!selectedStatus)return;currentStatus=selectedStatus;document.querySelectorAll('.statusBtn').forEach(b=>b.classList.remove('sent','active','pending','current'));const b=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(b)b.classList.add('current');updateStatusHeader();selectedStatus=null;nui('sendStatus',{status:currentStatus})};
+function buildStatuses(){statusesDiv.innerHTML='';statuses.forEach((s,i)=>{const b=document.createElement('button');b.className='statusBtn';b.textContent=s;if(i===8)b.style.gridColumn='2';if(i===9)b.style.gridColumn='3';if(s===currentStatus)b.classList.add('current');b.onclick=()=>{document.querySelectorAll('.statusBtn').forEach(x=>x.classList.remove('pending'));b.classList.add('pending');selectedStatus=s};statusesDiv.appendChild(b)})}buildStatuses();updateIncidentArchiveCount();sendStatusBtn.onclick=()=>{if(!selectedStatus)return;currentStatus=selectedStatus;document.querySelectorAll('.statusBtn').forEach(b=>b.classList.remove('sent','active','pending','current'));const b=[...document.querySelectorAll('.statusBtn')].find(x=>x.textContent===selectedStatus);if(b)b.classList.add('current');updateStatusHeader();selectedStatus=null;nui('sendStatus',{status:currentStatus})};
 /* Message conversation + incidents + NUI events */
 function escapeHtml(v){
   return String(v == null ? '' : v)
@@ -113,10 +106,7 @@ function incidentRolesText(inc){
   }
   return inc?.roles||'—';
 }
-function incidentMessageKey(inc){
-  if(inc?.standbyMoveId) return `STANDBY:${String(inc.standbyMoveId)}`;
-  return `INCIDENT:${String(inc?.incidentNumber||inc?.id||'')}`;
-}
+function incidentMessageKey(inc){ return `INCIDENT:${String(inc?.incidentNumber||inc?.id||'')}`; }
 function incidentToDispatchMessage(inc){
   return {
     kind:'incident', sender:'CONTROL',
@@ -129,28 +119,10 @@ function incidentToDispatchMessage(inc){
 function upsertIncidentMessage(inc){
   if(!inc)return;
   const key=incidentMessageKey(inc);
-  const item=incidentToDispatchMessage(inc);
-
-  // Clean up any old temporary/authoritative duplicate for the same standby move.
-  if(inc?.standbyMoveId){
-    const moveId=String(inc.standbyMoveId);
-    for(let i=messages.length-1;i>=0;i--){
-      const existing=messages[i];
-      if(existing?.kind!=='incident') continue;
-      const existingMove=existing?.incident?.standbyMoveId;
-      if(existingMove && String(existingMove)===moveId && existing.incidentKey!==key){
-        messages.splice(i,1);
-        unreadMessageIndexes.delete(i);
-        if(selectedMessageIndex>i) selectedMessageIndex--;
-      }
-    }
-  }
-
   const idx=messages.findIndex(m=>m?.kind==='incident'&&m?.incidentKey===key);
-  if(idx>=0){
-    messages[idx]=item;
-    selectedMessageIndex=idx;
-  }else{
+  const item=incidentToDispatchMessage(inc);
+  if(idx>=0)messages[idx]=item;
+  else{
     messages.push(item);
     selectedMessageIndex=messages.length-1;
     unreadMessageIndexes.add(messages.length-1);
@@ -855,13 +827,7 @@ window.addEventListener('message',function(e){
   }
   if(d.type==='loadIncidents'){
     incidents=Array.isArray(d.incidents)?d.incidents:[];
-    for(const inc of incidents){
-      const idx=messages.findIndex(m=>m?.kind==='incident' && String(m?.incident?.id||"")===String(inc.id||""));
-      if(idx>=0) messages[idx]={...messages[idx],incident:{...messages[idx].incident,...inc}};
-    }
-    renderMessages();
     renderIncidents();
-    updateStatusHeader();
     return;
   }
   if(d.type==='incidentUpdate'&&d.item){
@@ -870,20 +836,9 @@ window.addEventListener('message',function(e){
   }
   if(d.type==='incident'&&d.item){
     const incoming=d.item;
-    const idx=incidents.findIndex(x=>
-      String(x.id)===String(incoming.id) ||
-      (incoming.standbyMoveId && x?.standbyMoveId &&
-       String(x.standbyMoveId)===String(incoming.standbyMoveId))
-    );
-
-    if(idx>=0){
-      incidents[idx]={...incidents[idx],...incoming};
-    }else{
-      incidents.push(incoming);
-    }
-
-    // One message per standbyMoveId. Authoritative numeric incident replaces
-    // the immediate temporary standby card instead of creating a duplicate.
+    const idx=incidents.findIndex(x=>String(x.id)===String(incoming.id));
+    if(idx>=0)incidents[idx]={...incidents[idx],...incoming};
+    else incidents.push(incoming);
     upsertIncidentMessage(incoming);
     updateStatusHeader();
     return;
